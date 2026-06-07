@@ -1,19 +1,21 @@
-// Load environment variables from .env file
 require('dotenv').config();
 const db = require('./db/database');
 
 const express = require('express');
 const cors = require('cors');
 
-// Create the Express application
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// MIDDLEWARE — runs on every request
-app.use(cors());           // Allow frontend to talk to this backend
-app.use(express.json());   // Allow reading JSON from request body
+// MIDDLEWARE
+app.use(cors());
+app.use(express.json());
 
-// TEST ROUTE — just to confirm server is working
+// ROUTES
+const customerRoutes = require('./routes/customers');
+app.use('/api/customers', customerRoutes);
+
+// TEST ROUTE
 app.get('/', (req, res) => {
   res.json({ message: 'FlexShop Manager API is running!' });
 });
