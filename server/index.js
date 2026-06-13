@@ -16,6 +16,8 @@ const customerRoutes = require('./routes/customers');
 const orderRoutes = require('./routes/orders');
 const paymentRoutes = require('./routes/payments');
 const employeeRoutes = require('./routes/employees');
+const dashboardRoutes = require('./routes/dashboard');
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/customers', customerRoutes);
