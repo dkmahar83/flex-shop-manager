@@ -14,7 +14,8 @@ app.use(express.json());
 // ROUTES
 const customerRoutes = require('./routes/customers');
 const orderRoutes = require('./routes/orders');
-
+const paymentRoutes = require('./routes/payments');
+app.use('/api/payments', paymentRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/orders', orderRoutes);
 
