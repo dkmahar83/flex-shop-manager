@@ -10,11 +10,11 @@ router.get('/', (req, res) => {
   const { status, customer_id, search } = req.query;
 
   let query = `
-    SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
-    FROM orders
-    JOIN customers ON orders.customer_id = customers.id
-    WHERE 1=1
-  `;
+  SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
+  FROM orders
+  JOIN customers ON orders.customer_id = customers.id
+  WHERE 1=1 AND orders.deleted_at IS NULL
+`;
   let params = [];
 
   // Add filters dynamically
@@ -200,4 +200,39 @@ router.put('/:id', (req, res) => {
   });
 });
 
+// Soft delete order
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  db.run(`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`,
+  [id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json({ message: 'Order deleted (recoverable for 24 hours)' });
+  });
+});
+
+// Restore deleted order
+router.put('/:id/restore', (req, res) => {
+  const { id } = req.params;
+  db.run(`UPDATE orders SET deleted_at = NULL WHERE id = ?`,
+  [id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: 'Order restored successfully' });
+  });
+});
+
+// Get recently deleted orders
+router.get('/deleted/recent', (req, res) => {
+  db.all(`
+    SELECT orders.*, customers.firm_name 
+    FROM orders
+    JOIN customers ON orders.customer_id = customers.id
+    WHERE orders.deleted_at IS NOT NULL
+    AND orders.deleted_at > datetime('now', '-24 hours')
+    ORDER BY orders.deleted_at DESC
+  `, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
 module.exports = router;

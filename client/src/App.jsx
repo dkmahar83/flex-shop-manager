@@ -4,6 +4,7 @@ import Customers from './pages/Customers'
 import Orders from './pages/Orders'
 import Employees from './pages/Employees'
 import Navbar from './components/Navbar'
+import RecycleBin from './pages/RecycleBin'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/customers" element={<Customers />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/employees" element={<Employees />} />
+          <Route path="/recycle-bin" element={<RecycleBin />} />
         </Routes>
       </div>
     </BrowserRouter>

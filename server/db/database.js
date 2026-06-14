@@ -16,6 +16,10 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 // Enable foreign keys (SQLite has them off by default)
 db.run('PRAGMA foreign_keys = ON');
 
+// Add soft delete columns if they don't exist yet
+db.run(`ALTER TABLE customers ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE orders ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
+
 // Create all tables if they don't exist
 db.serialize(() => {
 

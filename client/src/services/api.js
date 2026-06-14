@@ -29,6 +29,8 @@ export const updateOrderStatus = (id, status) =>
 // PAYMENTS
 export const createPayment = (data) => api.post('/payments', data)
 export const getDues = () => api.get('/payments/dues')
+export const getOrderDetail = (id) => api.get(`/orders/${id}`)
+export const addPayment = (data) => api.post('/payments', data)
 
 // EMPLOYEES
 export const getEmployees = () => api.get('/employees')

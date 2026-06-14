@@ -1,0 +1,131 @@
+import { useState, useEffect } from 'react'
+import axios from 'axios'
+
+const BASE = 'http://localhost:5000/api'
+
+function RecycleBin() {
+  const [deletedCustomers, setDeletedCustomers] = useState([])
+  const [deletedOrders, setDeletedOrders] = useState([])
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    fetchDeleted()
+  }, [])
+
+  function fetchDeleted() {
+    axios.get(`${BASE}/customers/deleted/recent`)
+      .then(res => setDeletedCustomers(res.data))
+    axios.get(`${BASE}/orders/deleted/recent`)
+      .then(res => setDeletedOrders(res.data))
+  }
+
+  function restoreCustomer(id) {
+    axios.put(`${BASE}/customers/${id}/restore`)
+      .then(() => {
+        setMessage('Customer restored!')
+        fetchDeleted()
+      })
+  }
+
+  function restoreOrder(id) {
+    axios.put(`${BASE}/orders/${id}/restore`)
+      .then(() => {
+        setMessage('Order restored!')
+        fetchDeleted()
+      })
+  }
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: '8px' }}>🗑️ Recycle Bin</h2>
+      <p style={{ color: '#888', marginBottom: '20px', fontSize: '14px' }}>
+        Items deleted in last 24 hours. After 24 hours they are permanently gone.
+      </p>
+
+      {message && (
+        <p style={styles.message} onClick={() => setMessage('')}>{message}</p>
+      )}
+
+      {/* DELETED CUSTOMERS */}
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>Deleted Customers ({deletedCustomers.length})</h3>
+        {deletedCustomers.length === 0 ? (
+          <p style={styles.empty}>No recently deleted customers.</p>
+        ) : (
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Firm Name</th>
+                <th style={styles.th}>Phone</th>
+                <th style={styles.th}>Deleted At</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deletedCustomers.map(c => (
+                <tr key={c.id}>
+                  <td style={styles.td}>{c.firm_name}</td>
+                  <td style={styles.td}>{c.phone || '—'}</td>
+                  <td style={styles.td}>{new Date(c.deleted_at).toLocaleString('en-IN')}</td>
+                  <td style={styles.td}>
+                    <button onClick={() => restoreCustomer(c.id)} style={styles.restoreBtn}>
+                      ↩ Restore
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* DELETED ORDERS */}
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>Deleted Orders ({deletedOrders.length})</h3>
+        {deletedOrders.length === 0 ? (
+          <p style={styles.empty}>No recently deleted orders.</p>
+        ) : (
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Order #</th>
+                <th style={styles.th}>Firm</th>
+                <th style={styles.th}>Amount</th>
+                <th style={styles.th}>Deleted At</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deletedOrders.map(o => (
+                <tr key={o.id}>
+                  <td style={styles.td}>#{o.id}</td>
+                  <td style={styles.td}>{o.firm_name}</td>
+                  <td style={styles.td}>₹{o.total_amount}</td>
+                  <td style={styles.td}>{new Date(o.deleted_at).toLocaleString('en-IN')}</td>
+                  <td style={styles.td}>
+                    <button onClick={() => restoreOrder(o.id)} style={styles.restoreBtn}>
+                      ↩ Restore
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const styles = {
+  section: { marginBottom: '30px' },
+  sectionTitle: { marginBottom: '12px', fontSize: '16px' },
+  empty: { color: '#888', fontSize: '14px' },
+  message: { backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '10px 16px', borderRadius: '6px', marginBottom: '16px', cursor: 'pointer' },
+  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  th: { padding: '10px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
+  td: { padding: '10px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
+  restoreBtn: { backgroundColor: '#fff', color: '#27ae60', border: '1px solid #27ae60', padding: '5px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }
+}
+
+export default RecycleBin
