@@ -9,13 +9,13 @@ const db = require('../db/database');
 router.get('/', (req, res) => {
   const search = req.query.search; // e.g. /api/customers?search=sharma
 
-  let query = `SELECT * FROM customers ORDER BY firm_name ASC`;
+  let query = `SELECT * FROM customers ORDER BY created_at ASC`;
   let params = [];
 
   if (search) {
     query = `SELECT * FROM customers 
              WHERE firm_name LIKE ? OR contact_name LIKE ? OR phone LIKE ?
-             ORDER BY firm_name ASC`;
+             ORDER BY created_at ASC`;
     params = [`%${search}%`, `%${search}%`, `%${search}%`];
   }
 
@@ -92,6 +92,17 @@ router.put('/:id', (req, res) => {
     if (this.changes === 0) return res.status(404).json({ error: 'Customer not found' });
 
     res.json({ message: 'Customer updated successfully' });
+  });
+});
+
+// DELETE /api/customers/:id
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.run(`DELETE FROM customers WHERE id = ?`, [id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: 'Customer not found' });
+    res.json({ message: 'Customer deleted successfully' });
   });
 });
 
