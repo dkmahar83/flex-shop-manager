@@ -265,6 +265,48 @@ function DailySales() {
                 </div>
               </div>
 
+              {/* UPI breakdown */}
+                {todayData.upi_by_account && todayData.upi_by_account.length > 0 && (
+                <div style={{ ...styles.todayCard, gridColumn: '1/-1', marginTop: '8px' }}>
+                    <div style={styles.todayCardLabel}>📱 UPI Received Today — ₹{todayData.upi_total}</div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' }}>
+                    {todayData.upi_by_account.map(u => (
+                        <div key={u.upi_account} style={{ backgroundColor: '#fff', padding: '10px 14px', borderRadius: '6px', minWidth: '160px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#27ae60' }}>₹{u.total}</div>
+                        <div style={{ fontSize: '11px', color: '#555' }}>{u.upi_account}</div>
+                        <div style={{ fontSize: '11px', color: '#aaa' }}>{u.count} transaction(s)</div>
+                        </div>
+                    ))}
+                    </div>
+                    {todayData.upi_detail && todayData.upi_detail.length > 0 && (
+                    <div style={{ marginTop: '10px' }}>
+                        {todayData.upi_detail.map(t => (
+                        <div key={t.id} style={styles.paymentLine}>
+                            <span>{t.customer_name || t.customer_firm || 'Unknown'} → {t.upi_account}</span>
+                            <span style={{ fontWeight: 'bold', color: '#27ae60' }}>₹{t.amount}</span>
+                        </div>
+                        ))}
+                    </div>
+                    )}
+                </div>
+                )}
+
+                {/* Cheques received today */}
+                {todayData.cheques_today && todayData.cheques_today.length > 0 && (
+                <div style={{ ...styles.todayCard, gridColumn: '1/-1', marginTop: '8px', backgroundColor: '#f5f0ff' }}>
+                    <div style={styles.todayCardLabel}>🧾 Cheques Received Today — ₹{todayData.cheque_total}</div>
+                    {todayData.cheques_today.map(c => (
+                    <div key={c.id} style={{ ...styles.paymentLine, marginTop: '6px' }}>
+                        <span>{c.firm_name} • {c.bank_name || 'Unknown Bank'} • #{c.cheque_number || 'No number'}</span>
+                        <span style={{ fontWeight: 'bold', color: '#8e44ad' }}>₹{c.amount}</span>
+                    </div>
+                    ))}
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
+                    Note: Cheque amounts are NOT counted in cash total until cleared
+                    </div>
+                </div>
+                )}
+
               {/* Net today */}
               <div style={styles.netToday}>
                 <span style={{ fontSize: '16px', color: '#555' }}>Net Today (Cash In - Expenses):</span>

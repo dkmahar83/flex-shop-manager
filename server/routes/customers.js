@@ -39,11 +39,73 @@ router.get('/:id', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    // Also get their orders
-    db.all(`SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC`, 
-      [id], (err, orders) => {
+    // GET ORDERS
+    db.all(`SELECT * FROM orders WHERE customer_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [id], (err, orders) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      // GET ORDER PAYMENTS (recorded via payments table)
+      db.all(`SELECT id, amount, payment_date as date, note as source, 'Order Payment' as payment_type FROM payments WHERE customer_id = ?`, [id], (err, orderPayments) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ ...customer, orders });
+
+        // GET UPI PAYMENTS
+        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type FROM upi_transactions WHERE customer_id = ?`, [id], (err, upiPayments) => {
+          if (err) return res.status(500).json({ error: err.message });
+
+          // GET ALL CHEQUES (not just cleared — show all with status)
+          db.all(`SELECT id, amount, received_date as date, bank_name as source, status, cheque_number, 'Cheque' as payment_type FROM cheques WHERE customer_id = ?`, [id], (err, chequePayments) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            // CALCULATIONS
+            const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0)
+
+            // Advance paid is part of order creation — already in orders.advance_paid
+            const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0)
+
+            // Additional order payments
+            const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+            // UPI payments
+            const totalUpi = upiPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+            // Only cleared cheques count as received payment
+            const totalChequeCleared = chequePayments
+              .filter(p => p.status === 'cleared')
+              .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+            const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared
+            const totalDue = totalBilled - totalPaid
+
+            // Combine all payments sorted by date
+            const allPayments = [
+              // Advances (from orders)
+              ...orders.filter(o => o.advance_paid > 0).map(o => ({
+                id: `adv-${o.id}`,
+                amount: o.advance_paid,
+                date: o.created_at?.split('T')[0],
+                source: 'Advance Payment',
+                payment_type: 'Advance',
+                order_description: o.description
+              })),
+              ...orderPayments.map(p => ({ ...p })),
+              ...upiPayments.map(p => ({ ...p })),
+              ...chequePayments.map(p => ({ ...p }))
+            ].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+            res.json({
+              ...customer,
+              orders,
+              payments: allPayments,
+              totalBilled,
+              totalAdvance,
+              totalOrderPayments,
+              totalUpi,
+              totalChequeCleared,
+              totalPaid,
+              totalDue
+            });
+          });
+        });
+      });
     });
   });
 });

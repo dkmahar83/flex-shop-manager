@@ -10,24 +10,41 @@ function CustomerProfile() {
 
   useEffect(() => {
     getCustomerProfile(id)
-      .then(res => {
-        setCustomer(res.data)
-        setLoading(false)
-      })
+      .then(res => { setCustomer(res.data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [id])
 
-  if (loading) return <p>Loading...</p>
-  if (!customer) return <p>Customer not found.</p>
+  if (loading) return <p style={{ padding: '20px' }}>Loading...</p>
+  if (!customer) return <p style={{ padding: '20px' }}>Customer not found.</p>
 
   const orders = customer.orders || []
-  const totalBilled = orders.reduce((sum, o) => sum + o.total_amount, 0)
-  const totalDue = orders.reduce((sum, o) => sum + o.balance_due, 0)
-  const totalPaid = totalBilled - totalDue
+  const payments = customer.payments || []
+  const totalBilled = customer.totalBilled || 0
+  const totalPaid = customer.totalPaid || 0
+  const totalDue = customer.totalDue || 0
+
+  function paymentTypeColor(type) {
+    const colors = {
+      'Advance': '#f39c12',
+      'Order Payment': '#3498db',
+      'UPI': '#27ae60',
+      'Cheque': '#8e44ad'
+    }
+    return colors[type] || '#888'
+  }
+
+  function chequeStatusBadge(status) {
+    const colors = {
+      received: '#f39c12',
+      deposited: '#3498db',
+      cleared: '#27ae60',
+      bounced: '#e74c3c'
+    }
+    return colors[status] || '#888'
+  }
 
   return (
     <div>
-      {/* BACK BUTTON */}
       <button onClick={() => navigate('/customers')} style={styles.backBtn}>
         ← Back to Customers
       </button>
@@ -63,7 +80,7 @@ function CustomerProfile() {
         </div>
       </div>
 
-      {/* PENDING DUES ALERT */}
+      {/* DUE ALERT */}
       {totalDue > 0 && (
         <div style={styles.dueAlert}>
           ⚠️ This customer has <strong>₹{totalDue}</strong> pending across{' '}
@@ -71,8 +88,91 @@ function CustomerProfile() {
         </div>
       )}
 
+      {/* PAYMENT BREAKDOWN */}
+      <div style={styles.paymentBreakdown}>
+        <h3 style={{ marginBottom: '12px' }}>💰 Payment Breakdown</h3>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          {customer.totalAdvance > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #f39c12' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f39c12' }}>₹{customer.totalAdvance}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>Advance Payments</div>
+            </div>
+          )}
+          {customer.totalOrderPayments > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #3498db' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#3498db' }}>₹{customer.totalOrderPayments}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>Order Payments</div>
+            </div>
+          )}
+          {customer.totalUpi > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #27ae60' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#27ae60' }}>₹{customer.totalUpi}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>UPI Payments</div>
+            </div>
+          )}
+          {customer.totalChequeCleared > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #8e44ad' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#8e44ad' }}>₹{customer.totalChequeCleared}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>Cheques (Cleared)</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* COMPLETE PAYMENT HISTORY */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ marginBottom: '12px' }}>📋 Complete Payment History</h3>
+        {payments.length === 0 ? (
+          <p style={{ color: '#888' }}>No payments recorded yet.</p>
+        ) : (
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Date</th>
+                <th style={styles.th}>Type</th>
+                <th style={styles.th}>Source / Account</th>
+                <th style={styles.th}>Amount</th>
+                <th style={styles.th}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p, i) => (
+                <tr key={i} style={styles.tr}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                >
+                  <td style={styles.td}>{p.date || '—'}</td>
+                  <td style={styles.td}>
+                    <span style={{ ...styles.badge, backgroundColor: paymentTypeColor(p.payment_type) }}>
+                      {p.payment_type}
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    {p.source || '—'}
+                    {p.cheque_number && <span style={{ fontSize: '12px', color: '#888' }}> #{p.cheque_number}</span>}
+                    {p.order_description && <span style={{ fontSize: '12px', color: '#888' }}> ({p.order_description})</span>}
+                  </td>
+                  <td style={styles.td}>
+                    <strong style={{ color: p.status === 'bounced' ? '#e74c3c' : '#27ae60' }}>
+                      ₹{p.amount}
+                    </strong>
+                  </td>
+                  <td style={styles.td}>
+                    {p.status ? (
+                      <span style={{ ...styles.badge, backgroundColor: chequeStatusBadge(p.status), fontSize: '11px' }}>
+                        {p.status}
+                      </span>
+                    ) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       {/* ALL ORDERS */}
-      <h3 style={{ marginBottom: '12px' }}>All Orders</h3>
+      <h3 style={{ marginBottom: '12px' }}>📦 All Orders</h3>
       {orders.length === 0 ? (
         <p style={{ color: '#888' }}>No orders yet.</p>
       ) : (
@@ -100,18 +200,12 @@ function CustomerProfile() {
                 <td style={styles.td}>₹{o.total_amount}</td>
                 <td style={styles.td}>₹{o.advance_paid}</td>
                 <td style={styles.td}>
-                  <span style={{
-                    fontWeight: 'bold',
-                    color: o.balance_due > 0 ? '#e74c3c' : '#27ae60'
-                  }}>
+                  <span style={{ fontWeight: 'bold', color: o.balance_due > 0 ? '#e74c3c' : '#27ae60' }}>
                     ₹{o.balance_due}
                   </span>
                 </td>
                 <td style={styles.td}>
-                  <span style={{
-                    ...styles.badge,
-                    backgroundColor: statusColor(o.status)
-                  }}>
+                  <span style={{ ...styles.badge, backgroundColor: statusColor(o.status) }}>
                     {o.status?.replace('_', ' ')}
                   </span>
                 </td>
@@ -122,21 +216,16 @@ function CustomerProfile() {
                       </span>
                     : '—'}
                 </td>
-                <td style={styles.td}>
-                  {new Date(o.created_at).toLocaleDateString('en-IN')}
-                </td>
+                <td style={styles.td}>{new Date(o.created_at).toLocaleDateString('en-IN')}</td>
               </tr>
             ))}
           </tbody>
-          {/* TOTALS ROW */}
           <tfoot>
             <tr style={{ backgroundColor: '#f8f8f8' }}>
               <td colSpan="2" style={{ ...styles.td, fontWeight: 'bold' }}>Total</td>
               <td style={{ ...styles.td, fontWeight: 'bold' }}>₹{totalBilled}</td>
-              <td style={{ ...styles.td, fontWeight: 'bold' }}>₹{totalPaid}</td>
-              <td style={{ ...styles.td, fontWeight: 'bold', color: totalDue > 0 ? '#e74c3c' : '#27ae60' }}>
-                ₹{totalDue}
-              </td>
+              <td style={{ ...styles.td, fontWeight: 'bold' }}>₹{customer.totalAdvance}</td>
+              <td style={{ ...styles.td, fontWeight: 'bold', color: totalDue > 0 ? '#e74c3c' : '#27ae60' }}>₹{totalDue}</td>
               <td colSpan="3"></td>
             </tr>
           </tfoot>
@@ -159,7 +248,9 @@ const styles = {
   statNum: { fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e' },
   statLabel: { fontSize: '12px', color: '#888', marginTop: '4px' },
   dueAlert: { backgroundColor: '#fff3cd', border: '1px solid #ffc107', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  paymentBreakdown: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' },
+  breakdownItem: { backgroundColor: '#f8f8f8', padding: '14px 18px', borderRadius: '8px', minWidth: '140px' },
+  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '24px' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },

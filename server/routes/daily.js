@@ -26,35 +26,72 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/daily/today
-// GET /api/daily/today
 router.get('/today', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
 
-  // Get today's manual sales record
   db.get(`SELECT * FROM daily_records WHERE record_date = ?`, [today], (err, record) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    // Get today's payments from orders
+    // Order payments today
     db.all(`
       SELECT payments.*, orders.description, customers.firm_name
       FROM payments
       JOIN orders ON payments.order_id = orders.id
       JOIN customers ON payments.customer_id = customers.id
       WHERE payments.payment_date = ?
-      ORDER BY payments.id DESC
-    `, [today], (err, payments) => {
+    `, [today], (err, orderPayments) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      const paymentsTotal = payments.reduce((sum, p) => sum + p.amount, 0)
+      // UPI received today — grouped by account
+      db.all(`
+        SELECT upi_account, SUM(amount) as total, COUNT(*) as count
+        FROM upi_transactions
+        WHERE transaction_date = ?
+        GROUP BY upi_account
+      `, [today], (err, upiToday) => {
+        if (err) return res.status(500).json({ error: err.message });
 
-      res.json({
-        record_date: today,
-        manual_sales: record ? record.total_sales : 0,
-        total_expenses: record ? record.total_expenses : 0,
-        notes: record ? record.notes : '',
-        payments_received: payments,
-        payments_total: paymentsTotal,
-        total_cash_in: (record ? record.total_sales : 0) + paymentsTotal
+        // UPI transactions detail today
+        db.all(`
+          SELECT upi_transactions.*, customers.firm_name as customer_firm
+          FROM upi_transactions
+          LEFT JOIN customers ON upi_transactions.customer_id = customers.id
+          WHERE transaction_date = ?
+          ORDER BY id DESC
+        `, [today], (err, upiDetail) => {
+          if (err) return res.status(500).json({ error: err.message });
+
+          // Cheques received today
+          db.all(`
+            SELECT cheques.*, customers.firm_name as customer_firm
+            FROM cheques
+            LEFT JOIN customers ON cheques.customer_id = customers.id
+            WHERE received_date = ?
+          `, [today], (err, chequesToday) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const orderPaymentsTotal = orderPayments.reduce((s, p) => s + p.amount, 0)
+            const upiTotal = upiToday.reduce((s, u) => s + u.total, 0)
+            const chequeTotal = chequesToday.reduce((s, c) => s + c.amount, 0)
+            const manualSales = record ? record.total_sales : 0
+            const totalCashIn = manualSales + orderPaymentsTotal + upiTotal
+
+            res.json({
+              record_date: today,
+              manual_sales: manualSales,
+              total_expenses: record ? record.total_expenses : 0,
+              notes: record ? record.notes : '',
+              order_payments: orderPayments,
+              order_payments_total: orderPaymentsTotal,
+              upi_by_account: upiToday,
+              upi_detail: upiDetail,
+              upi_total: upiTotal,
+              cheques_today: chequesToday,
+              cheque_total: chequeTotal,
+              total_cash_in: totalCashIn
+            });
+          });
+        });
       });
     });
   });
