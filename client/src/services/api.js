@@ -1,6 +1,5 @@
 import axios from 'axios'
 
-// Your backend URL — change this if port is different
 const BASE_URL = 'http://localhost:5000/api'
 
 const api = axios.create({
@@ -41,6 +40,8 @@ export const getAttendance = (employeeId, month, year) =>
   api.get(`/employees/attendance/${employeeId}?month=${month}&year=${year}`)
 export const getSalary = (id, month, year) => 
   api.get(`/employees/salary/${id}?month=${month}&year=${year}`)
+export const getEmployeeProfile = (id) => api.get(`/employees/profile/${id}`)
+export const generateSalary = (data) => api.post('/employees/generate-salary', data)
 
 // DASHBOARD
 export const getDashboard = () => api.get('/dashboard')
@@ -52,18 +53,26 @@ export const getDailySummary = (month, year) =>
   api.get(`/daily/summary?month=${month}&year=${year}`)
 export const saveDailyRecord = (data) => api.post('/daily', data)
 export const getTodaySales = () => api.get('/daily/today')
+export const getDailyLedger = (month, year) => api.get(`/daily/ledger?month=${month}&year=${year}`)
+
+// CASH INCOME (linked to customers)
+export const saveCashIncome = (data) => api.post('/daily/cash-income', data)
 
 // EXPENSES
 export const getExpenses = (month, year) =>
   api.get(`/expenses?month=${month}&year=${year}`)
 export const addExpense = (data) => api.post('/expenses', data)
 export const deleteExpense = (id) => api.delete(`/expenses/${id}`)
+export const getExpensesByDate = (date) => api.get(`/expenses/daily?date=${date}`)
+export const getExpenseSummary = (month, year) => api.get(`/expenses/summary?month=${month}&year=${year}`)
 
 // CHEQUES
 export const getCheques = (params = {}) => api.get('/cheques', { params })
 export const addCheque = (data) => api.post('/cheques', data)
 export const updateChequeStatus = (id, status) => api.put(`/cheques/${id}/status`, { status })
 export const getChequeSummary = () => api.get('/cheques/summary')
+export const getCheque = (id) => api.get(`/cheques/${id}`)
+export const updateCheque = (id, data) => api.put(`/cheques/${id}`, data)
 
 // UPI
 export const getUpiTransactions = (params = {}) => api.get('/upi', { params })

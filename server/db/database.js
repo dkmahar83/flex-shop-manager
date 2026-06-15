@@ -16,9 +16,39 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 // Enable foreign keys (SQLite has them off by default)
 db.run('PRAGMA foreign_keys = ON');
 
+// Add new columns to expenses if they don't exist
+db.run(`ALTER TABLE expenses ADD COLUMN paid_to_type TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN paid_to_id INTEGER DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN payment_mode TEXT DEFAULT 'cash'`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN upi_account TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN utr_number TEXT DEFAULT NULL`, () => {})
+
+// Create employee_salary_credits table
+db.run(`CREATE TABLE IF NOT EXISTS employee_salary_credits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  month TEXT NOT NULL,
+  year TEXT NOT NULL,
+  salary_amount REAL NOT NULL,
+  credited_date TEXT DEFAULT CURRENT_DATE,
+  notes TEXT,
+  payment_mode TEXT DEFAULT 'cash',
+  upi_account TEXT,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`)
+
 // Add soft delete columns if they don't exist yet
 db.run(`ALTER TABLE customers ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE orders ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN paid_to_type TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN paid_to_id INTEGER DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN payment_mode TEXT DEFAULT 'cash'`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN upi_account TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN utr_number TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE employee_salary_credits ADD COLUMN payment_mode TEXT DEFAULT 'cash'`, () => {})
+db.run(`ALTER TABLE employee_salary_credits ADD COLUMN upi_account TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE cash_income ADD COLUMN payment_mode TEXT DEFAULT 'cash'`, () => {})
+db.run(`ALTER TABLE cash_income ADD COLUMN upi_account TEXT DEFAULT NULL`, () => {})
 
 // Create all tables if they don't exist
 db.serialize(() => {
@@ -80,6 +110,19 @@ db.serialize(() => {
     join_date TEXT,
     is_active INTEGER DEFAULT 1
   )`);
+// Employee salary credits (for recording monthly salary payments)
+db.run(`
+CREATE TABLE IF NOT EXISTS employee_salary_credits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  month TEXT NOT NULL,
+  year TEXT NOT NULL,
+  salary_amount REAL NOT NULL,
+  credited_date TEXT DEFAULT CURRENT_DATE,
+  notes TEXT,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)
+`)
 
   // 6. ATTENDANCE
   db.run(`CREATE TABLE IF NOT EXISTS attendance (
@@ -195,6 +238,30 @@ db.run(`CREATE TABLE IF NOT EXISTS vendor_transactions (
   description TEXT,
   FOREIGN KEY (vendor_id) REFERENCES vendors(id)
 )`);
+
+// NEW: cash_income table — links manual cash entries to a customer
+  db.run(`CREATE TABLE IF NOT EXISTS cash_income (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    income_date TEXT DEFAULT CURRENT_DATE,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS employee_salary_credits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  month TEXT NOT NULL,
+  year TEXT NOT NULL,
+  salary_amount REAL NOT NULL,
+  credited_date TEXT DEFAULT CURRENT_DATE,
+  notes TEXT,
+  payment_mode TEXT DEFAULT 'cash',
+  upi_account TEXT DEFAULT NULL,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`)
 
   console.log('All tables created successfully.');
 });

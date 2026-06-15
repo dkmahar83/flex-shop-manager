@@ -1,10 +1,25 @@
 import { useState, useEffect } from 'react'
 import {
-  getCheques, addCheque, updateChequeStatus, getChequeSummary,
-  getUpiTransactions, getUpiSummary, addUpiTransaction,
-  getVendors, getVendor, addVendor, addVendorPurchase, addVendorPayment,
+  getCheques,
+  addCheque,
+  updateChequeStatus,
+  getChequeSummary,
+  getCheque,
+  updateCheque,
+
+  getUpiTransactions,
+  getUpiSummary,
+  addUpiTransaction,
+
+  getVendors,
+  getVendor,
+  addVendor,
+  addVendorPurchase,
+  addVendorPayment,
+
   getCustomers
 } from '../services/api'
+
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -13,9 +28,8 @@ const UPI_ACCOUNTS = [
   'Amazon Pay - Deepak'
 ]
 
-const CHEQUE_STATUSES = ['received', 'deposited', 'cleared', 'bounced']
-
 function Accounts() {
+    
   const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0')
   const currentYear = String(new Date().getFullYear())
 
@@ -32,6 +46,10 @@ function Accounts() {
     bank_name: '', amount: '', received_date: '', order_id: '', notes: ''
   })
   const [showChequeForm, setShowChequeForm] = useState(false)
+  const [selectedCheque, setSelectedCheque] = useState(null)
+const [chequeDetail, setChequeDetail] = useState(null)
+const [editingCheque, setEditingCheque] = useState(false)
+const [chequeEditForm, setChequeEditForm] = useState({})
 
   // UPI
   const [upiTransactions, setUpiTransactions] = useState([])
@@ -269,53 +287,200 @@ function Accounts() {
           )}
 
           {/* Cheque list */}
-          {cheques.length === 0 ? (
-            <p style={{ color: '#888' }}>No cheques for this period.</p>
-          ) : (
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Date</th>
-                  <th style={styles.th}>Cheque No.</th>
-                  <th style={styles.th}>Firm</th>
-                  <th style={styles.th}>Bank</th>
-                  <th style={styles.th}>Amount</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}>Notes</th>
-                  <th style={styles.th}>Update</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cheques.map(c => (
-                  <tr key={c.id} style={styles.tr}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
-                  >
-                    <td style={styles.td}>{c.received_date}</td>
-                    <td style={styles.td}><strong>{c.cheque_number || '—'}</strong></td>
-                    <td style={styles.td}>{c.firm_name}</td>
-                    <td style={styles.td}>{c.bank_name || '—'}</td>
-                    <td style={styles.td}><strong>₹{c.amount}</strong></td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.badge, backgroundColor: statusColor(c.status) }}>
-                        {c.status}
-                      </span>
-                    </td>
-                    <td style={{ ...styles.td, fontSize: '12px', color: '#888' }}>{c.notes || '—'}</td>
-                    <td style={styles.td}>
-                      <select
-                        value={c.status}
-                        onChange={e => handleChequeStatusUpdate(c.id, e.target.value)}
-                        style={{ ...styles.input, padding: '4px 8px', fontSize: '12px' }}
-                      >
-                        {CHEQUE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {/* Cheque list + detail panel */}
+<div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+
+  {/* LEFT — Cheque list */}
+  <div style={{ flex: '1', minWidth: '300px' }}>
+    {cheques.length === 0 ? (
+      <p style={{ color: '#888' }}>No cheques for this period.</p>
+    ) : (
+      <table style={styles.table}>
+        <thead>
+          <tr>
+            <th style={styles.th}>Date</th>
+            <th style={styles.th}>Cheque No.</th>
+            <th style={styles.th}>Firm</th>
+            <th style={styles.th}>Amount</th>
+            <th style={styles.th}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cheques.map(c => (
+            <tr key={c.id}
+              style={{
+                ...styles.tr,
+                cursor: 'pointer',
+                backgroundColor: selectedCheque?.id === c.id ? '#f0f7ff' : '#fff',
+                borderLeft: selectedCheque?.id === c.id ? '3px solid #1a1a2e' : '3px solid transparent'
+              }}
+              onClick={() => {
+                setSelectedCheque(c)
+                getCheque(c.id).then(res => {
+                  setChequeDetail(res.data)
+                  setChequeEditForm({
+                    cheque_number: res.data.cheque_number || '',
+                    bank_name: res.data.bank_name || '',
+                    notes: res.data.notes || '',
+                    received_date: res.data.received_date || ''
+                  })
+                })
+              }}
+              onMouseEnter={e => { if (selectedCheque?.id !== c.id) e.currentTarget.style.backgroundColor = '#f9f9f9' }}
+              onMouseLeave={e => { if (selectedCheque?.id !== c.id) e.currentTarget.style.backgroundColor = '#fff' }}
+            >
+              <td style={styles.td}>{c.received_date}</td>
+              <td style={styles.td}><strong>{c.cheque_number || '—'}</strong></td>
+              <td style={styles.td}>{c.firm_name}</td>
+              <td style={styles.td}><strong>₹{c.amount}</strong></td>
+              <td style={styles.td}>
+                <span style={{ ...styles.badge, backgroundColor: statusColor(c.status) }}>
+                  {c.status}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+  {/* RIGHT — Cheque detail panel */}
+  {chequeDetail && (
+    <div style={{ flex: '1', minWidth: '280px' }}>
+      <div style={styles.formBox}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <h3>Cheque Details</h3>
+          <button
+            onClick={() => setEditingCheque(!editingCheque)}
+            style={{ ...styles.addBtn, padding: '6px 14px', fontSize: '13px' }}
+          >
+            {editingCheque ? 'Cancel Edit' : '✏️ Edit'}
+          </button>
+        </div>
+
+        {/* Detail view */}
+        {!editingCheque ? (
+          <div>
+            <div style={styles.detailRow}>
+              <span style={styles.detailLabel}>Cheque Number</span>
+              <span style={styles.detailValue}>{chequeDetail.cheque_number || '—'}</span>
+            </div>
+            <div style={styles.detailRow}>
+              <span style={styles.detailLabel}>Firm / Person</span>
+              <span style={styles.detailValue}>{chequeDetail.firm_name}</span>
+            </div>
+            {chequeDetail.customer_firm && chequeDetail.customer_firm !== chequeDetail.firm_name && (
+              <div style={styles.detailRow}>
+                <span style={styles.detailLabel}>Linked Customer</span>
+                <span style={styles.detailValue}>{chequeDetail.customer_firm}</span>
+              </div>
+            )}
+            <div style={styles.detailRow}>
+              <span style={styles.detailLabel}>Bank</span>
+              <span style={styles.detailValue}>{chequeDetail.bank_name || '—'}</span>
+            </div>
+            <div style={styles.detailRow}>
+              <span style={styles.detailLabel}>Amount</span>
+              <span style={{ ...styles.detailValue, fontWeight: 'bold', fontSize: '18px', color: '#1a1a2e' }}>
+                ₹{chequeDetail.amount}
+              </span>
+            </div>
+            <div style={styles.detailRow}>
+              <span style={styles.detailLabel}>Received Date</span>
+              <span style={styles.detailValue}>{chequeDetail.received_date}</span>
+            </div>
+            <div style={styles.detailRow}>
+              <span style={styles.detailLabel}>Notes</span>
+              <span style={styles.detailValue}>{chequeDetail.notes || '—'}</span>
+            </div>
+
+            {/* Current status */}
+                <div style={{ marginTop: '20px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '13px', color: '#888', fontWeight: 'bold' }}>Current Status:</span>
+                <span style={{ ...styles.badge, backgroundColor: statusColor(chequeDetail.status), fontSize: '13px', padding: '5px 14px' }}>
+                    {chequeDetail.status}
+                </span>
+                </div>
+
+                <div style={{ fontSize: '13px', color: '#555', marginBottom: '10px', fontWeight: 'bold' }}>
+                Update Status:
+                </div>
+
+            {/* Status update buttons */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+              {['received', 'deposited', 'cleared', 'bounced'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    handleChequeStatusUpdate(chequeDetail.id, s)
+                    setChequeDetail({ ...chequeDetail, status: s })
+                    setCheques(cheques.map(c => c.id === chequeDetail.id ? { ...c, status: s } : c))
+                  }}
+                  style={{
+                    padding: '8px 14px', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '13px', fontWeight: chequeDetail.status === s ? 'bold' : 'normal',
+                    backgroundColor: chequeDetail.status === s ? statusColor(s) : '#fff',
+                    color: chequeDetail.status === s ? '#fff' : '#555',
+                    border: `1px solid ${statusColor(s)}`
+                  }}
+                >
+                  {s === 'received' ? '📬 Received'
+                    : s === 'deposited' ? '🏦 In Bank'
+                    : s === 'cleared' ? '✅ Cleared'
+                    : '❌ Bounced'}
+                </button>
+              ))}
+            </div>
+
+            {/* Status explanation */}
+            <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#f8f8f8', borderRadius: '6px', fontSize: '12px', color: '#666' }}>
+              {chequeDetail.status === 'received' && '📬 Cheque is with you, not yet deposited in bank.'}
+              {chequeDetail.status === 'deposited' && '🏦 Cheque deposited in bank, waiting to clear.'}
+              {chequeDetail.status === 'cleared' && '✅ Payment received. This amount is now counted in customer dues.'}
+              {chequeDetail.status === 'bounced' && '❌ Cheque bounced. Follow up with customer.'}
+            </div>
+          </div>
+        ) : (
+          /* Edit form */
+          <form onSubmit={e => {
+            e.preventDefault()
+            updateCheque(chequeDetail.id, chequeEditForm)
+              .then(() => {
+                setMessage('Cheque updated.')
+                setEditingCheque(false)
+                getCheque(chequeDetail.id).then(res => setChequeDetail(res.data))
+                fetchCheques()
+              })
+              .catch(() => setMessage('Error updating cheque.'))
+          }}>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={styles.label}>Cheque Number</label>
+              <input style={styles.input} value={chequeEditForm.cheque_number}
+                onChange={e => setChequeEditForm({ ...chequeEditForm, cheque_number: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={styles.label}>Bank Name</label>
+              <input style={styles.input} value={chequeEditForm.bank_name}
+                onChange={e => setChequeEditForm({ ...chequeEditForm, bank_name: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={styles.label}>Received Date</label>
+              <input style={styles.input} type="date" value={chequeEditForm.received_date}
+                onChange={e => setChequeEditForm({ ...chequeEditForm, received_date: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={styles.label}>Notes</label>
+              <input style={styles.input} value={chequeEditForm.notes}
+                onChange={e => setChequeEditForm({ ...chequeEditForm, notes: e.target.value })} />
+            </div>
+            <button style={styles.submitBtn} type="submit">Save Changes</button>
+          </form>
+        )}
+      </div>
+    </div>
+  )}
+</div>
         </div>
       )}
 
@@ -639,6 +804,9 @@ const styles = {
   td: { padding: '10px 14px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },
   badge: { padding: '3px 10px', borderRadius: '12px', color: '#fff', fontSize: '12px', textTransform: 'capitalize' },
+  detailRow: { display: 'flex',justifyContent: 'space-between',padding: '10px 0',borderBottom: '1px solid #f0f0f0'},
+  detailLabel: {fontSize: '12px', color: '#888', fontWeight: 'bold' },
+  detailValue: {fontSize: '14px', color: '#333', textAlign: 'right' },
   vendorCard: { backgroundColor: '#fff', padding: '14px 16px', borderRadius: '8px', marginBottom: '10px', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' },
   vendorStat: { flex: '1', minWidth: '100px', backgroundColor: '#f8f8f8', padding: '12px', borderRadius: '8px', textAlign: 'center' },
   txnTypeBtn: { padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }

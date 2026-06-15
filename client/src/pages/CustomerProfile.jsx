@@ -28,7 +28,8 @@ function CustomerProfile() {
       'Advance': '#f39c12',
       'Order Payment': '#3498db',
       'UPI': '#27ae60',
-      'Cheque': '#8e44ad'
+      'Cheque': '#8e44ad',
+      'Cash Income': '#16a085'   // teal for cash income
     }
     return colors[type] || '#888'
   }
@@ -114,6 +115,13 @@ function CustomerProfile() {
             <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #8e44ad' }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#8e44ad' }}>₹{customer.totalChequeCleared}</div>
               <div style={{ fontSize: '12px', color: '#888' }}>Cheques (Cleared)</div>
+            </div>
+          )}
+          {/* NEW: cash income breakdown tile */}
+          {customer.totalCashIncome > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #16a085' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a085' }}>₹{customer.totalCashIncome}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>Cash Income</div>
             </div>
           )}
         </div>

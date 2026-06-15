@@ -13,6 +13,7 @@ router.get('/', (req, res) => {
   });
 });
 
+
 // ─────────────────────────────────────────
 // POST /api/employees
 // ─────────────────────────────────────────
@@ -155,5 +156,216 @@ router.get('/salary/:employee_id', (req, res) => {
     });
   });
 });
+
+// ─────────────────────────────────────────
+// GET /api/employees/profile/:id
+// Employee profile + payment history
+// ─────────────────────────────────────────
+router.get('/profile/:id', (req, res) => {
+  const { id } = req.params
+
+  db.get(`
+    SELECT * FROM employees
+    WHERE id = ?
+  `, [id], (err, employee) => {
+    if (err) return res.status(500).json({ error: err.message })
+    if (!employee) return res.status(404).json({ error: 'Employee not found' })
+
+    // Employee advances from expenses
+    db.all(`
+      SELECT
+        id,
+        expense_date as date,
+        amount,
+        description,
+        payment_mode,
+        upi_account,
+        'advance' as type
+      FROM expenses
+      WHERE paid_to_type = 'employee'
+      AND paid_to_id = ?
+
+      UNION ALL
+
+      SELECT
+        id,
+        credited_date as date,
+        salary_amount as amount,
+        notes as description,
+        payment_mode,
+        upi_account,
+        'salary_credit' as type
+      FROM employee_salary_credits
+      WHERE employee_id = ?
+
+      ORDER BY date DESC
+    `, [id, id], (err, history) => {
+      if (err) return res.status(500).json({ error: err.message })
+
+      db.all(`
+        SELECT *
+        FROM employee_salary_credits
+        WHERE employee_id = ?
+        ORDER BY id DESC
+      `, [id], (err, salaries) => {
+        if (err) return res.status(500).json({ error: err.message })
+
+        const totalAdvancePaid =
+          history
+            .filter(h => h.type === 'advance')
+            .reduce((sum, h) => sum + h.amount, 0)
+
+        const totalSalaryGenerated =
+          salaries.reduce((sum, s) => sum + s.salary_amount, 0)
+
+        const totalPaid =
+          history.reduce((sum, h) => sum + h.amount, 0)
+
+        res.json({
+          employee,
+          payment_history: history,
+          salaries,
+          total_advance_paid: totalAdvancePaid,
+          total_salary_generated: totalSalaryGenerated,
+          total_paid: totalPaid,
+          remaining_due:
+            totalSalaryGenerated - totalAdvancePaid
+        })
+      })
+    })
+  })
+})
+
+
+// ─────────────────────────────────────────
+// POST /api/employees/generate-salary
+// Generate salary + create expense
+// ─────────────────────────────────────────
+router.post('/generate-salary', (req, res) => {
+  const {
+    employee_id,
+    month,
+    year,
+    payment_mode,
+    upi_account,
+    notes
+  } = req.body
+
+  // Check duplicate
+  db.get(`
+    SELECT *
+    FROM employee_salary_credits
+    WHERE employee_id = ?
+    AND month = ?
+    AND year = ?
+  `, [employee_id, month, year], (err, existing) => {
+    if (err) return res.status(500).json({ error: err.message })
+
+    if (existing) {
+      return res.status(400).json({
+        error: `Salary already generated for ${month}/${year}`
+      })
+    }
+
+    // Get employee
+    db.get(`
+      SELECT *
+      FROM employees
+      WHERE id = ?
+    `, [employee_id], (err, employee) => {
+      if (err) return res.status(500).json({ error: err.message })
+      if (!employee)
+        return res.status(404).json({ error: 'Employee not found' })
+
+      // Attendance for month
+      db.all(`
+        SELECT *
+        FROM attendance
+        WHERE employee_id = ?
+        AND strftime('%m', date) = ?
+        AND strftime('%Y', date) = ?
+      `, [employee_id, month, year], (err, attendance) => {
+        if (err) return res.status(500).json({ error: err.message })
+
+        const presentDays =
+          attendance.filter(a => a.status === 'present').length
+
+        const halfDays =
+          attendance.filter(a => a.status === 'half_day').length
+
+        const effectiveDays =
+          presentDays + (halfDays * 0.5)
+
+        const perDaySalary =
+          employee.monthly_salary / 30
+
+        const calculatedSalary =
+          Math.round(perDaySalary * effectiveDays)
+
+        const today =
+          new Date().toISOString().split('T')[0]
+
+        // Save salary credit
+        db.run(`
+          INSERT INTO employee_salary_credits (
+            employee_id,
+            month,
+            year,
+            salary_amount,
+            credited_date,
+            notes,
+            payment_mode,
+            upi_account
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          employee_id,
+          month,
+          year,
+          calculatedSalary,
+          today,
+          notes || `${month}/${year} salary`,
+          payment_mode || 'cash',
+          upi_account || null
+        ], function(err) {
+          if (err)
+            return res.status(500).json({ error: err.message })
+
+          // Create expense entry automatically
+          db.run(`
+            INSERT INTO expenses (
+              category,
+              amount,
+              expense_date,
+              description,
+              paid_to_type,
+              paid_to_id,
+              payment_mode,
+              upi_account
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            'Employee Salary',
+            calculatedSalary,
+            today,
+            `${employee.name} salary (${month}/${year})`,
+            'employee',
+            employee_id,
+            payment_mode || 'cash',
+            upi_account || null
+          ], (err) => {
+            if (err)
+              return res.status(500).json({ error: err.message })
+
+            res.json({
+              message: 'Salary generated successfully',
+              salary_amount: calculatedSalary
+            })
+          })
+        })
+      })
+    })
+  })
+})
 
 module.exports = router;
