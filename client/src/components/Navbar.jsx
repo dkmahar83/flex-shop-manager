@@ -8,7 +8,9 @@ function Navbar() {
     { path: '/customers', label: 'Customers' },
     { path: '/orders', label: 'Orders' },
     { path: '/employees', label: 'Employees' },
-    { path: '/recycle-bin', label: '🗑️ Bin' }
+    { path: '/recycle-bin', label: '🗑️ Bin' },
+    { path: '/daily-sales', label: '💰 Sales' },
+    { path: '/accounts', label: '🏦 Accounts' }
   ]
 
   return (

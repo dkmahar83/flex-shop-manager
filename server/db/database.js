@@ -141,6 +141,61 @@ db.serialize(() => {
     description TEXT
   )`);
 
+  // 12. CHEQUES REGISTER
+db.run(`CREATE TABLE IF NOT EXISTS cheques (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cheque_number TEXT,
+  firm_name TEXT NOT NULL,
+  customer_id INTEGER,
+  bank_name TEXT,
+  amount REAL NOT NULL,
+  received_date TEXT DEFAULT CURRENT_DATE,
+  status TEXT DEFAULT 'received',
+  order_id INTEGER,
+  notes TEXT,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (order_id) REFERENCES orders(id)
+)`);
+
+// 13. UPI TRANSACTIONS
+db.run(`CREATE TABLE IF NOT EXISTS upi_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  upi_account TEXT NOT NULL,
+  customer_name TEXT,
+  customer_id INTEGER,
+  amount REAL NOT NULL,
+  transaction_date TEXT DEFAULT CURRENT_DATE,
+  utr_number TEXT,
+  order_id INTEGER,
+  notes TEXT,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (order_id) REFERENCES orders(id)
+)`);
+
+// 14. VENDORS
+db.run(`CREATE TABLE IF NOT EXISTS vendors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  shop_type TEXT,
+  city TEXT,
+  total_purchased REAL DEFAULT 0,
+  total_paid REAL DEFAULT 0,
+  balance_due REAL DEFAULT 0,
+  notes TEXT
+)`);
+
+// 15. VENDOR TRANSACTIONS
+db.run(`CREATE TABLE IF NOT EXISTS vendor_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vendor_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  transaction_date TEXT DEFAULT CURRENT_DATE,
+  description TEXT,
+  FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+)`);
+
   console.log('All tables created successfully.');
 });
 

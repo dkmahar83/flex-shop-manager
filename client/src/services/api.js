@@ -15,6 +15,7 @@ export const getCustomer = (id) => api.get(`/customers/${id}`)
 export const createCustomer = (data) => api.post('/customers', data)
 export const updateCustomer = (id, data) => api.put(`/customers/${id}`, data)
 export const deleteCustomer = (id) => api.delete(`/customers/${id}`)
+export const getCustomerProfile = (id) => api.get(`/customers/${id}`)
 
 // ORDERS
 export const getOrders = (filters = {}) => {
@@ -36,8 +37,42 @@ export const addPayment = (data) => api.post('/payments', data)
 export const getEmployees = () => api.get('/employees')
 export const createEmployee = (data) => api.post('/employees', data)
 export const markAttendance = (data) => api.post('/employees/attendance', data)
+export const getAttendance = (employeeId, month, year) =>
+  api.get(`/employees/attendance/${employeeId}?month=${month}&year=${year}`)
 export const getSalary = (id, month, year) => 
   api.get(`/employees/salary/${id}?month=${month}&year=${year}`)
 
 // DASHBOARD
 export const getDashboard = () => api.get('/dashboard')
+
+// DAILY SALES
+export const getDailyRecords = (month, year) =>
+  api.get(`/daily?month=${month}&year=${year}`)
+export const getDailySummary = (month, year) =>
+  api.get(`/daily/summary?month=${month}&year=${year}`)
+export const saveDailyRecord = (data) => api.post('/daily', data)
+export const getTodaySales = () => api.get('/daily/today')
+
+// EXPENSES
+export const getExpenses = (month, year) =>
+  api.get(`/expenses?month=${month}&year=${year}`)
+export const addExpense = (data) => api.post('/expenses', data)
+export const deleteExpense = (id) => api.delete(`/expenses/${id}`)
+
+// CHEQUES
+export const getCheques = (params = {}) => api.get('/cheques', { params })
+export const addCheque = (data) => api.post('/cheques', data)
+export const updateChequeStatus = (id, status) => api.put(`/cheques/${id}/status`, { status })
+export const getChequeSummary = () => api.get('/cheques/summary')
+
+// UPI
+export const getUpiTransactions = (params = {}) => api.get('/upi', { params })
+export const getUpiSummary = (month, year) => api.get(`/upi/summary?month=${month}&year=${year}`)
+export const addUpiTransaction = (data) => api.post('/upi', data)
+
+// VENDORS
+export const getVendors = () => api.get('/vendors')
+export const getVendor = (id) => api.get(`/vendors/${id}`)
+export const addVendor = (data) => api.post('/vendors', data)
+export const addVendorPurchase = (id, data) => api.post(`/vendors/${id}/purchase`, data)
+export const addVendorPayment = (id, data) => api.post(`/vendors/${id}/payment`, data)

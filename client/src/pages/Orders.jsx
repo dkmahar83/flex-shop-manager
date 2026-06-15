@@ -25,7 +25,7 @@ function Orders() {
   useEffect(() => {
     fetchOrders()
     getCustomers().then(res => setCustomers(res.data))
-  }, [filterStatus])
+  }, [filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function fetchOrders() {
     setLoading(true)
@@ -141,7 +141,6 @@ function Orders() {
       .catch(() => setMessage('Error updating status.'))
   }
 
-  // Expand order row to show detail
   function toggleExpand(order) {
     if (expandedOrder === order.id) {
       setExpandedOrder(null)
@@ -154,7 +153,6 @@ function Orders() {
       .catch(() => setMessage('Could not load order detail.'))
   }
 
-  // Add payment to expanded order
   function handleAddPayment(e) {
     e.preventDefault()
     if (!paymentForm.amount) return setMessage('Enter payment amount.')
@@ -169,7 +167,6 @@ function Orders() {
       .then(() => {
         setMessage('Payment recorded!')
         setPaymentForm({ amount: '', note: '', payment_date: '' })
-        // Refresh detail
         getOrderDetail(orderDetail.id).then(res => {
           setOrderDetail(res.data)
           fetchOrders()
@@ -184,7 +181,6 @@ function Orders() {
 
   return (
     <div>
-      {/* HEADER */}
       <div style={styles.header}>
         <h2>Orders</h2>
         <button style={styles.addBtn} onClick={() => showForm ? resetForm() : setShowForm(true)}>
@@ -196,13 +192,13 @@ function Orders() {
         <p style={styles.message} onClick={() => setMessage('')}>{message}</p>
       )}
 
-      {/* ORDER FORM */}
       {showForm && (
         <div style={styles.formBox}>
           <h3 style={{ marginBottom: '16px' }}>
             {editingOrder ? `Edit Order #${editingOrder.id}` : 'New Order'}
           </h3>
           <form onSubmit={handleSubmit}>
+
             <div style={styles.formRow}>
               <select
                 style={styles.input}
@@ -229,7 +225,9 @@ function Orders() {
 
             {!editingOrder && (
               <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '13px', color: '#555', marginBottom: '8px', fontWeight: 'bold' }}>Line Items</p>
+                <p style={{ fontSize: '13px', color: '#555', marginBottom: '8px', fontWeight: 'bold' }}>
+                  Line Items
+                </p>
                 {items.map((item, index) => (
                   <div key={index} style={{ marginBottom: '10px', backgroundColor: '#f9f9f9', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
@@ -252,17 +250,20 @@ function Orders() {
                       </button>
                       <button type="button" onClick={() => removeItemRow(index)} style={styles.removeBtn}>✕</button>
                     </div>
+
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       {item.useSize ? (
                         <>
                           <div style={{ flex: 1 }}>
                             <label style={styles.label}>Length (ft)</label>
-                            <input style={styles.input} type="number" placeholder="e.g. 10" value={item.length} onChange={e => handleItemChange(index, 'length', e.target.value)} />
+                            <input style={styles.input} type="number" placeholder="e.g. 10"
+                              value={item.length} onChange={e => handleItemChange(index, 'length', e.target.value)} />
                           </div>
                           <div style={{ paddingTop: '16px', fontSize: '18px' }}>×</div>
                           <div style={{ flex: 1 }}>
                             <label style={styles.label}>Breadth (ft)</label>
-                            <input style={styles.input} type="number" placeholder="e.g. 4" value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
+                            <input style={styles.input} type="number" placeholder="e.g. 4"
+                              value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
                           </div>
                           <div style={{ paddingTop: '16px', fontSize: '18px' }}>=</div>
                           <div style={{ flex: 1 }}>
@@ -273,12 +274,14 @@ function Orders() {
                       ) : (
                         <div style={{ flex: 1 }}>
                           <label style={styles.label}>Quantity / Sq.ft</label>
-                          <input style={styles.input} type="number" placeholder="0" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} />
+                          <input style={styles.input} type="number" placeholder="0"
+                            value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} />
                         </div>
                       )}
                       <div style={{ flex: 1 }}>
                         <label style={styles.label}>Rate (₹)</label>
-                        <input style={styles.input} type="number" placeholder="0" value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', e.target.value)} />
+                        <input style={styles.input} type="number" placeholder="0"
+                          value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', e.target.value)} />
                       </div>
                       <div style={{ flex: 1 }}>
                         <label style={styles.label}>Subtotal</label>
@@ -311,7 +314,9 @@ function Orders() {
               {!editingOrder && (
                 <div style={styles.totalRow}>
                   <span>Balance Due:</span>
-                  <strong style={{ color: balance > 0 ? '#e74c3c' : '#27ae60' }}>₹{balance.toFixed(2)}</strong>
+                  <strong style={{ color: balance > 0 ? '#e74c3c' : '#27ae60' }}>
+                    ₹{balance.toFixed(2)}
+                  </strong>
                 </div>
               )}
             </div>
@@ -319,11 +324,13 @@ function Orders() {
             <div style={styles.formRow}>
               <div style={{ flex: 1 }}>
                 <label style={styles.label}>Follow-up Date</label>
-                <input style={styles.input} type="date" name="follow_up_date" value={form.follow_up_date} onChange={handleFormChange} />
+                <input style={styles.input} type="date" name="follow_up_date"
+                  value={form.follow_up_date} onChange={handleFormChange} />
               </div>
               <div style={{ flex: 2 }}>
                 <label style={styles.label}>Notes</label>
-                <input style={styles.input} placeholder="Size, GSM, special notes..." name="notes" value={form.notes} onChange={handleFormChange} />
+                <input style={styles.input} placeholder="Size, GSM, special notes..."
+                  name="notes" value={form.notes} onChange={handleFormChange} />
               </div>
             </div>
 
@@ -334,7 +341,6 @@ function Orders() {
         </div>
       )}
 
-      {/* FILTER */}
       <div style={styles.filterRow}>
         {['', 'pending', 'in_progress', 'ready', 'delivered'].map(s => (
           <button key={s}
@@ -346,7 +352,6 @@ function Orders() {
         ))}
       </div>
 
-      {/* ORDERS TABLE */}
       {loading ? <p>Loading...</p> : orders.length === 0 ? (
         <p style={{ color: '#888' }}>No orders found.</p>
       ) : (
@@ -368,10 +373,13 @@ function Orders() {
               <>
                 <tr key={o.id} style={styles.tr}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = expandedOrder === o.id ? '#f0f7ff' : '#fff'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
                 >
                   <td style={styles.td}>{index + 1}</td>
-                  <td style={styles.td}><strong>{o.firm_name}</strong><br /><span style={{ fontSize: '12px', color: '#888' }}>{o.phone}</span></td>
+                  <td style={styles.td}>
+                    <strong>{o.firm_name}</strong><br />
+                    <span style={{ fontSize: '12px', color: '#888' }}>{o.phone}</span>
+                  </td>
                   <td style={styles.td}>{o.description || '—'}</td>
                   <td style={styles.td}>₹{o.total_amount}</td>
                   <td style={styles.td}>
@@ -402,17 +410,17 @@ function Orders() {
                     <button onClick={() => toggleExpand(o)} style={styles.detailBtn}>
                       {expandedOrder === o.id ? '▲ Hide' : '▼ Details'}
                     </button>
-                    <button onClick={() => openEditForm(o)} style={{ ...styles.editBtn, marginLeft: '6px' }}>Edit</button>
+                    <button onClick={() => openEditForm(o)} style={{ ...styles.editBtn, marginLeft: '6px' }}>
+                      Edit
+                    </button>
                   </td>
                 </tr>
 
-                {/* EXPANDED DETAIL ROW */}
                 {expandedOrder === o.id && orderDetail && (
                   <tr key={`detail-${o.id}`}>
                     <td colSpan="8" style={styles.detailCell}>
                       <div style={styles.detailBox}>
 
-                        {/* Items */}
                         <div style={styles.detailSection}>
                           <h4 style={styles.detailTitle}>📦 Order Items</h4>
                           <table style={styles.innerTable}>
@@ -433,11 +441,19 @@ function Orders() {
                                   <td style={styles.innerTd}>₹{item.subtotal}</td>
                                 </tr>
                               ))}
+                              {/* TOTAL ROW */}
+                              <tr style={{ backgroundColor: '#f0f7ff' }}>
+                                <td colSpan="3" style={{ ...styles.innerTd, fontWeight: 'bold', textAlign: 'right' }}>
+                                  Total:
+                                </td>
+                                <td style={{ ...styles.innerTd, fontWeight: 'bold', fontSize: '16px', color: '#1a1a2e' }}>
+                                  ₹{orderDetail.total_amount}
+                                </td>
+                              </tr>
                             </tbody>
                           </table>
                         </div>
 
-                        {/* Payment History */}
                         <div style={styles.detailSection}>
                           <h4 style={styles.detailTitle}>💰 Payment History</h4>
                           <table style={styles.innerTable}>
@@ -450,14 +466,14 @@ function Orders() {
                               </tr>
                             </thead>
                             <tbody>
-                              {/* Advance as first entry */}
                               <tr style={{ backgroundColor: '#fff9e6' }}>
                                 <td style={styles.innerTd}>1</td>
                                 <td style={styles.innerTd}>{orderDetail.created_at?.split('T')[0]}</td>
                                 <td style={styles.innerTd}><strong>₹{orderDetail.advance_paid}</strong></td>
-                                <td style={styles.innerTd}><span style={styles.advanceBadge}>Advance</span></td>
+                                <td style={styles.innerTd}>
+                                  <span style={styles.advanceBadge}>Advance</span>
+                                </td>
                               </tr>
-                              {/* Additional payments */}
                               {orderDetail.payments && orderDetail.payments.map((p, i) => (
                                 <tr key={p.id}>
                                   <td style={styles.innerTd}>{i + 2}</td>
@@ -466,10 +482,14 @@ function Orders() {
                                   <td style={styles.innerTd}>{p.note || '—'}</td>
                                 </tr>
                               ))}
-                              {/* Summary row */}
                               <tr style={{ backgroundColor: '#f0fff4' }}>
-                                <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold' }}>Balance Due</td>
-                                <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: orderDetail.balance_due > 0 ? '#e74c3c' : '#27ae60', fontSize: '16px' }}>
+                                <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold' }}>
+                                  Balance Due
+                                </td>
+                                <td colSpan="2" style={{
+                                  ...styles.innerTd, fontWeight: 'bold', fontSize: '16px',
+                                  color: orderDetail.balance_due > 0 ? '#e74c3c' : '#27ae60'
+                                }}>
                                   ₹{orderDetail.balance_due}
                                   {orderDetail.follow_up_date && (
                                     <span style={{ fontSize: '12px', color: '#888', marginLeft: '10px' }}>
@@ -481,15 +501,13 @@ function Orders() {
                             </tbody>
                           </table>
 
-                          {/* Add Payment Form */}
                           {orderDetail.balance_due > 0 && (
                             <form onSubmit={handleAddPayment} style={styles.paymentForm}>
                               <h5 style={{ marginBottom: '8px', color: '#555' }}>+ Record New Payment</h5>
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 <input
                                   style={{ ...styles.input, maxWidth: '150px' }}
-                                  type="number"
-                                  placeholder="Amount ₹"
+                                  type="number" placeholder="Amount ₹"
                                   value={paymentForm.amount}
                                   onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
                                 />
@@ -511,7 +529,6 @@ function Orders() {
                           )}
                         </div>
 
-                        {/* Notes */}
                         {orderDetail.notes && (
                           <div style={styles.detailSection}>
                             <h4 style={styles.detailTitle}>📝 Notes</h4>
