@@ -66,16 +66,18 @@ router.post('/attendance', (req, res) => {
     return res.status(400).json({ error: 'date and records are required' });
   }
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO attendance (employee_id, date, status)
-    VALUES (?, ?, ?)
-  `);
-
+  db.serialize(() => {
   records.forEach(record => {
-    stmt.run([record.employee_id, date, record.status]);
+    db.run(
+      `INSERT OR IGNORE INTO attendance (employee_id, date, status) VALUES (?, ?, ?)`,
+      [record.employee_id, date, record.status]
+    );
+    db.run(
+      `UPDATE attendance SET status = ? WHERE employee_id = ? AND date = ?`,
+      [record.status, record.employee_id, date]
+    );
   });
-
-  stmt.finalize();
+});
   res.status(201).json({ message: 'Attendance marked successfully' });
 });
 
@@ -96,7 +98,7 @@ router.get('/attendance/:employee_id', (req, res) => {
     params.push(month, year);
   }
 
-  query += ` ORDER BY date ASC`;
+  query += ` GROUP BY date ORDER BY date ASC`;
 
   db.all(query, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -123,6 +125,7 @@ router.get('/salary/:employee_id', (req, res) => {
       WHERE employee_id = ? 
       AND strftime('%m', date) = ? 
       AND strftime('%Y', date) = ?
+      GROUP BY date
     `, [employee_id, month, year], (err, attendance) => {
       if (err) return res.status(500).json({ error: err.message });
 
@@ -163,73 +166,71 @@ router.get('/salary/:employee_id', (req, res) => {
 // ─────────────────────────────────────────
 router.get('/profile/:id', (req, res) => {
   const { id } = req.params
+  const month = req.query.month || String(new Date().getMonth() + 1).padStart(2, '0')
+  const year = req.query.year || String(new Date().getFullYear())
 
-  db.get(`
-    SELECT * FROM employees
-    WHERE id = ?
-  `, [id], (err, employee) => {
+  db.get(`SELECT * FROM employees WHERE id = ?`, [id], (err, employee) => {
     if (err) return res.status(500).json({ error: err.message })
     if (!employee) return res.status(404).json({ error: 'Employee not found' })
 
-    // Employee advances from expenses
+    // Get advances paid from expenses
     db.all(`
-      SELECT
-        id,
-        expense_date as date,
-        amount,
-        description,
-        payment_mode,
-        upi_account,
-        'advance' as type
+      SELECT id, expense_date as date, amount, description, payment_mode, upi_account, 'advance' as type
       FROM expenses
-      WHERE paid_to_type = 'employee'
-      AND paid_to_id = ?
-
-      UNION ALL
-
-      SELECT
-        id,
-        credited_date as date,
-        salary_amount as amount,
-        notes as description,
-        payment_mode,
-        upi_account,
-        'salary_credit' as type
-      FROM employee_salary_credits
-      WHERE employee_id = ?
-
-      ORDER BY date DESC
-    `, [id, id], (err, history) => {
+      WHERE paid_to_type = 'employee' AND paid_to_id = ?
+      ORDER BY expense_date DESC
+    `, [id], (err, advances) => {
       if (err) return res.status(500).json({ error: err.message })
 
+      // Get salary credits
       db.all(`
-        SELECT *
+        SELECT id, credited_date as date, salary_amount as amount, notes as description,
+               payment_mode, upi_account, 'salary' as type
         FROM employee_salary_credits
         WHERE employee_id = ?
-        ORDER BY id DESC
+        ORDER BY credited_date DESC
       `, [id], (err, salaries) => {
         if (err) return res.status(500).json({ error: err.message })
 
-        const totalAdvancePaid =
-          history
-            .filter(h => h.type === 'advance')
-            .reduce((sum, h) => sum + h.amount, 0)
+        // Get attendance for selected month to calculate earned salary
+        db.all(`
+          SELECT * FROM attendance
+          WHERE employee_id = ?
+          AND strftime('%m', date) = ?
+          AND strftime('%Y', date) = ?
+          GROUP BY date
+        `, [id, month, year], (err, attendance) => {
+          if (err) return res.status(500).json({ error: err.message })
 
-        const totalSalaryGenerated =
-          salaries.reduce((sum, s) => sum + s.salary_amount, 0)
+          const presentDays = attendance.filter(a => a.status === 'present').length
+          const halfDays = attendance.filter(a => a.status === 'half_day').length
+          const effectiveDays = presentDays + (halfDays * 0.5)
+          const perDay = employee.monthly_salary / 30
+          const salaryEarned = Math.round(perDay * effectiveDays)
 
-        const totalPaid =
-          history.reduce((sum, h) => sum + h.amount, 0)
+          const totalAdvancePaid = advances.reduce((s, a) => s + a.amount, 0)
+          const totalSalaryCredited = salaries.reduce((s, s2) => s + s2.amount, 0)
+          const totalPaid = totalAdvancePaid + totalSalaryCredited
+          const netPayable = salaryEarned - totalAdvancePaid
 
-        res.json({
-          employee,
-          payment_history: history,
-          salaries,
-          total_advance_paid: totalAdvancePaid,
-          total_salary_generated: totalSalaryGenerated,
-          total_paid: totalPaid,
-          remaining_due:
-            totalSalaryGenerated - totalAdvancePaid
+          // Combined history sorted by date
+          const payment_history = [...advances, ...salaries]
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+          res.json({
+            employee,
+            payment_history,
+            total_advance_paid: totalAdvancePaid,
+            total_salary_credited: totalSalaryCredited,
+            total_paid: totalPaid,
+            salary_earned: salaryEarned,
+            effective_days: effectiveDays,
+            present_days: presentDays,
+            half_days: halfDays,
+            net_payable: netPayable,
+            month,
+            year
+          })
         })
       })
     })
@@ -284,6 +285,7 @@ router.post('/generate-salary', (req, res) => {
         WHERE employee_id = ?
         AND strftime('%m', date) = ?
         AND strftime('%Y', date) = ?
+        GROUP BY date
       `, [employee_id, month, year], (err, attendance) => {
         if (err) return res.status(500).json({ error: err.message })
 

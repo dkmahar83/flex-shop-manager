@@ -263,6 +263,79 @@ db.run(`CREATE TABLE IF NOT EXISTS vendor_transactions (
   FOREIGN KEY (employee_id) REFERENCES employees(id)
 )`)
 
+// INVENTORY TABLES
+
+// Flex Roll Stock
+db.run(`CREATE TABLE IF NOT EXISTS inventory_flex (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand TEXT NOT NULL,
+  size_ft REAL NOT NULL,
+  quantity REAL DEFAULT 0,
+  unit TEXT DEFAULT 'roll',
+  notes TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Stamp Inventory
+db.run(`CREATE TABLE IF NOT EXISTS inventory_stamps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stamp_type TEXT NOT NULL,
+  size TEXT,
+  design_type TEXT,
+  quantity INTEGER DEFAULT 0,
+  notes TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Chemical / Bond Inventory
+db.run(`CREATE TABLE IF NOT EXISTS inventory_chemicals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chemical_name TEXT NOT NULL,
+  quantity REAL DEFAULT 0,
+  unit TEXT DEFAULT 'litre',
+  minimum_stock REAL DEFAULT 0,
+  notes TEXT,
+  items_per_box INTEGER DEFAULT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Photo Frame Inventory
+db.run(`CREATE TABLE IF NOT EXISTS inventory_frames (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  frame_type TEXT NOT NULL,
+  size TEXT,
+  design TEXT,
+  quantity INTEGER DEFAULT 0,
+  notes TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Ink & Solvent Inventory
+db.run(`CREATE TABLE IF NOT EXISTS inventory_ink (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_name TEXT NOT NULL,
+  item_type TEXT DEFAULT 'ink',
+  quantity REAL DEFAULT 0,
+  unit TEXT DEFAULT 'litre',
+  minimum_level REAL DEFAULT 0,
+  notes TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Inventory transaction log (har add/use ka record)
+db.run(`CREATE TABLE IF NOT EXISTS inventory_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_name TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  item_name TEXT,
+  action TEXT NOT NULL,
+  quantity_changed REAL NOT NULL,
+  quantity_before REAL,
+  quantity_after REAL,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
   console.log('All tables created successfully.');
 });
 

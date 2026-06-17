@@ -8,6 +8,8 @@ import RecycleBin from './pages/RecycleBin'
 import CustomerProfile from './pages/CustomerProfile'
 import DailySales from './pages/DailySales'
 import Accounts from './pages/Accounts'
+import Inventory from './pages/Inventory'
+import Reports from './pages/Reports'
 
 function App() {
   return (
@@ -23,6 +25,8 @@ function App() {
           <Route path="/customers/:id" element={<CustomerProfile />} />
           <Route path="/daily-sales" element={<DailySales />} />
           <Route path="/accounts" element={<Accounts />} />
+          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/reports" element={<Reports />} />
         </Routes>
       </div>
     </BrowserRouter>

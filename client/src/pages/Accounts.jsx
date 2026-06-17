@@ -582,26 +582,53 @@ const [chequeEditForm, setChequeEditForm] = useState({})
                   <th style={styles.th}>Amount</th>
                   <th style={styles.th}>UTR No.</th>
                   <th style={styles.th}>Notes</th>
+                  <th style={styles.th}>Type</th>
                 </tr>
               </thead>
               <tbody>
                 {upiTransactions.map(t => (
-                  <tr key={t.id} style={styles.tr}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
-                  >
-                    <td style={styles.td}>{t.transaction_date}</td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.badge, backgroundColor: upiColor(t.upi_account), fontSize: '11px' }}>
-                        {t.upi_account}
-                      </span>
-                    </td>
-                    <td style={styles.td}>{t.customer_name || t.customer_firm || '—'}</td>
-                    <td style={styles.td}><strong style={{ color: '#27ae60' }}>₹{t.amount}</strong></td>
-                    <td style={styles.td}><span style={{ fontSize: '12px', color: '#888' }}>{t.utr_number || '—'}</span></td>
-                    <td style={styles.td}><span style={{ fontSize: '12px', color: '#888' }}>{t.notes || '—'}</span></td>
-                  </tr>
-                ))}
+                <tr key={`${t.direction}-${t.id}`} style={styles.tr}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                >
+                  {/* Date */}
+                  <td style={styles.td}>{t.transaction_date}</td>
+
+                  {/* UPI Account */}
+                  <td style={styles.td}>
+                    <span style={{ ...styles.badge, backgroundColor: upiColor(t.upi_account), fontSize: '11px' }}>
+                      {t.upi_account}
+                    </span>
+                  </td>
+
+                  {/* From (customer name) */}
+                  <td style={styles.td}>{t.customer_name || '—'}</td>
+
+                  {/* Amount */}
+                  <td style={styles.td}>
+                    <strong style={{ color: t.direction === 'debit' ? '#e74c3c' : '#27ae60' }}>
+                      {t.direction === 'debit' ? '-' : '+'}₹{Math.abs(t.amount)}
+                    </strong>
+                  </td>
+
+                  {/* UTR No. */}
+                  <td style={styles.td}>
+                    <span style={{ fontSize: '12px', color: '#888' }}>{t.utr_number || '—'}</span>
+                  </td>
+
+                  {/* Notes */}
+                  <td style={styles.td}>
+                    <span style={{ fontSize: '12px', color: '#888' }}>{t.notes || '—'}</span>
+                  </td>
+
+                  {/* Type — Received / Paid Out badge */}
+                  <td style={styles.td}>
+                    <span style={{ ...styles.badge, backgroundColor: t.direction === 'debit' ? '#e74c3c' : '#27ae60' }}>
+                      {t.direction === 'debit' ? '↑ Paid Out' : '↓ Received'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
               </tbody>
             </table>
           )}

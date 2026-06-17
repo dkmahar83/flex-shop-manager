@@ -53,7 +53,13 @@ export const getDailySummary = (month, year) =>
   api.get(`/daily/summary?month=${month}&year=${year}`)
 export const saveDailyRecord = (data) => api.post('/daily', data)
 export const getTodaySales = () => api.get('/daily/today')
+export const getCashDrawer = (date) => api.get(`/daily/cash-drawer?date=${date}`)
+// Daily Ledger
 export const getDailyLedger = (month, year) => api.get(`/daily/ledger?month=${month}&year=${year}`)
+export const getDailyLedgerByDate = (date) => api.get(`/daily/ledger/date?date=${date}`)
+// Report
+export const getMonthlyReport = (month, year) => api.get(`/daily/report?month=${month}&year=${year}`)
+export const getYearlyReport = (year) => api.get(`/daily/report/yearly?year=${year}`)
 
 // CASH INCOME (linked to customers)
 export const saveCashIncome = (data) => api.post('/daily/cash-income', data)
@@ -85,3 +91,32 @@ export const getVendor = (id) => api.get(`/vendors/${id}`)
 export const addVendor = (data) => api.post('/vendors', data)
 export const addVendorPurchase = (id, data) => api.post(`/vendors/${id}/purchase`, data)
 export const addVendorPayment = (id, data) => api.post(`/vendors/${id}/payment`, data)
+
+// INVENTORY
+export const getFlexStock = () => api.get('/inventory/flex')
+export const addFlexStock = (data) => api.post('/inventory/flex', data)
+export const useFlexStock = (id, data) => api.put(`/inventory/flex/${id}/use`, data)
+export const updateFlexStock = (id, data) => api.put(`/inventory/flex/${id}`, data)
+export const deleteFlexStock = (id) => api.delete(`/inventory/flex/${id}`)
+
+export const getStamps = () => api.get('/inventory/stamps')
+export const addStamp = (data) => api.post('/inventory/stamps', data)
+export const updateStamp = (id, data) => api.put(`/inventory/stamps/${id}`, data)
+export const deleteStamp = (id) => api.delete(`/inventory/stamps/${id}`)
+
+export const getChemicals = () => api.get('/inventory/chemicals')
+export const addChemical = (data) => api.post('/inventory/chemicals', data)
+export const updateChemical = (id, data) => api.put(`/inventory/chemicals/${id}`, data)
+export const deleteChemical = (id) => api.delete(`/inventory/chemicals/${id}`)
+
+export const getFrames = () => api.get('/inventory/frames')
+export const addFrame = (data) => api.post('/inventory/frames', data)
+export const updateFrame = (id, data) => api.put(`/inventory/frames/${id}`, data)
+export const deleteFrame = (id) => api.delete(`/inventory/frames/${id}`)
+
+export const getInkStock = () => api.get('/inventory/ink')
+export const addInkStock = (data) => api.post('/inventory/ink', data)
+export const updateInkStock = (id, data) => api.put(`/inventory/ink/${id}`, data)
+export const deleteInkStock = (id) => api.delete(`/inventory/ink/${id}`)
+
+export const getInventoryLog = () => api.get('/inventory/log')

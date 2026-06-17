@@ -44,17 +44,33 @@ router.get('/:id', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
 
             // NEW: cash income entries linked to this customer
-            db.all(`SELECT id, amount, income_date as date, notes as source, 'Cash Income' as payment_type FROM cash_income WHERE customer_id = ?`, [id], (err, cashIncomePayments) => {
+            db.all(`
+  SELECT 
+    id, 
+    amount, 
+    income_date as date, 
+    CASE 
+      WHEN payment_mode = 'upi' AND upi_account IS NOT NULL 
+      THEN upi_account 
+      ELSE COALESCE(notes, 'Cash') 
+    END as source,
+    CASE 
+      WHEN payment_mode = 'upi' THEN 'UPI'
+      ELSE 'Cash Income'
+    END as payment_type
+  FROM cash_income 
+  WHERE customer_id = ?
+`, [id], (err, cashIncomePayments) => {
               if (err) return res.status(500).json({ error: err.message });
 
               const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
               const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0);
               const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-              const totalUpi = upiPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+              const totalUpi = [ ...upiPayments, ...cashIncomePayments.filter(p => p.payment_type === 'UPI')].reduce((sum, p) => sum + Number(p.amount || 0), 0);
               const totalChequeCleared = chequePayments
                 .filter(p => p.status === 'cleared')
                 .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-              const totalCashIncome = cashIncomePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+              const totalCashIncome = cashIncomePayments.filter(p => p.payment_type === 'Cash Income').reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
               const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared + totalCashIncome;
               const totalDue = totalBilled - totalPaid;

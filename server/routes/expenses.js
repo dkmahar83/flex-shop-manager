@@ -88,8 +88,8 @@ router.post('/', (req, res) => {
       (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
-    category, parseFloat(amount), date, description || null,
-    paid_to_type || null, paid_to_id || null,
+    category, Math.round(parseFloat(amount)), date, description || null,
+    paid_to_type || null, paid_to_id ? parseInt(paid_to_id) : null,
     payment_mode || 'cash', upi_account || null, utr_number || null
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
@@ -107,23 +107,6 @@ router.post('/', (req, res) => {
         SET total_paid = total_paid + ?, balance_due = balance_due - ?
         WHERE id = ?
       `, [parseFloat(amount), parseFloat(amount), paid_to_id], () => {});
-    }
-
-    // UPI payment → add to upi_transactions (works for all categories)
-    if (payment_mode === 'upi' && upi_account) {
-      db.run(`
-        INSERT INTO upi_transactions 
-          (upi_account, customer_name, amount, transaction_date, utr_number, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [
-        upi_account,
-        paid_to_type === 'vendor' || paid_to_type === 'employee'
-          ? description || category
-          : description || category,
-        parseFloat(amount), date,
-        utr_number || null,
-        `EXPENSE: ${category}`
-      ], () => {});
     }
 
     // Update daily_records total_expenses

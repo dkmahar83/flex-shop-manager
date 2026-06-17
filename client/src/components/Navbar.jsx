@@ -5,12 +5,14 @@ function Navbar() {
 
   const links = [
     { path: '/', label: 'Dashboard' },
+    { path: '/daily-sales', label: '💰 Sales' },
     { path: '/customers', label: 'Customers' },
     { path: '/orders', label: 'Orders' },
     { path: '/employees', label: 'Employees' },
-    { path: '/recycle-bin', label: '🗑️ Bin' },
-    { path: '/daily-sales', label: '💰 Sales' },
-    { path: '/accounts', label: '🏦 Accounts' }
+    { path: '/accounts', label: '🏦 Accounts' },
+    { path: '/inventory', label: '📦 Inventory' },
+    { path: '/reports', label: '📊 Reports' },
+    { path: '/recycle-bin', label: '🗑️ Bin' }
   ]
 
   return (

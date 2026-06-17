@@ -27,7 +27,7 @@ function CustomerProfile() {
     const colors = {
       'Advance': '#f39c12',
       'Order Payment': '#3498db',
-      'UPI': '#27ae60',
+      'UPI': '#0a6ebd',
       'Cheque': '#8e44ad',
       'Cash Income': '#16a085'   // teal for cash income
     }
@@ -106,8 +106,8 @@ function CustomerProfile() {
             </div>
           )}
           {customer.totalUpi > 0 && (
-            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #27ae60' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#27ae60' }}>₹{customer.totalUpi}</div>
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #0a6ebd' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#0a6ebd' }}>₹{customer.totalUpi}</div>
               <div style={{ fontSize: '12px', color: '#888' }}>UPI Payments</div>
             </div>
           )}
