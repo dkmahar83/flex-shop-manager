@@ -9,6 +9,7 @@ import {
 const CATEGORIES = [
   'Raw Material (Pipe/Flex)',
   'Employee Advance',
+  'Ghar Khata',
   'Tea / Refreshments',
   'Petrol / Transport',
   'Electricity Bill',
@@ -149,7 +150,11 @@ function DailySales() {
     if (!cashForm.amount || isNaN(cashForm.amount) || Number(cashForm.amount) <= 0)
       return showMsg('Enter a valid amount.', 'error')
 
-    saveCashIncome(cashForm)
+    const cleanForm = {
+      ...cashForm,
+      amount: parseInt(cashForm.amount, 10)
+    }
+    saveCashIncome(cleanForm)
       .then(() => {
         showMsg(`₹${cashForm.amount} cash income saved for ${selectedCustomer?.firm_name}`)
         // BUG 1 FIX: was missing payment_mode and upi_account in reset — they would persist to next entry
@@ -180,7 +185,7 @@ function DailySales() {
 
   const payload = {
     category: expenseForm.category,
-    amount: expenseForm.amount,
+    amount: parseInt(expenseForm.amount, 10),
     expense_date: expenseForm.expense_date,
     description: expenseForm.description,
     payment_mode: expenseForm.payment_mode || 'cash',
@@ -1187,6 +1192,7 @@ function DailySales() {
 const categoryColors = {
   'Raw Material (Pipe/Flex)': '#8e44ad',
   'Employee Advance': '#2980b9',
+  'Ghar Khata': '#e67e22',
   'Tea / Refreshments': '#e67e22',
   'Petrol / Transport': '#16a085',
   'Electricity Bill': '#f39c12',

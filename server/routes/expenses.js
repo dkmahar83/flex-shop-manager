@@ -88,7 +88,7 @@ router.post('/', (req, res) => {
       (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
-    category, Math.round(parseFloat(amount)), date, description || null,
+    category, parseInt(parseFloat(amount), 10), date, description || null,
     paid_to_type || null, paid_to_id ? parseInt(paid_to_id) : null,
     payment_mode || 'cash', upi_account || null, utr_number || null
   ], function(err) {

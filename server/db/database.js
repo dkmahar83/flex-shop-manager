@@ -53,6 +53,14 @@ db.run(`ALTER TABLE cash_income ADD COLUMN upi_account TEXT DEFAULT NULL`, () =>
 // Create all tables if they don't exist
 db.serialize(() => {
 
+  db.run(`
+    INSERT INTO customers (firm_name, contact_name, phone)
+    SELECT 'Ghar Khata', 'Owner', 'internal'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM customers WHERE firm_name = 'Ghar Khata'
+    )
+  `);
+
   // 1. CUSTOMERS
   db.run(`CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
