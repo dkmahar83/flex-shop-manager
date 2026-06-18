@@ -8,6 +8,7 @@ function Navbar() {
     { path: '/daily-sales', label: '💰 Sales' },
     { path: '/customers', label: 'Customers' },
     { path: '/orders', label: 'Orders' },
+    { path: '/whatsapp', label: '📱 WA Setup' },
     { path: '/employees', label: 'Employees' },
     { path: '/accounts', label: '🏦 Accounts' },
     { path: '/inventory', label: '📦 Inventory' },

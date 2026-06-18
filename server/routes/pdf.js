@@ -12,9 +12,8 @@ const SHOP = {
   mobile      : '+91 9950580621',        // Mobile number
   mobile2     : '+91 8824387294',                       // 2nd number (optional, khali chhod do)
   address     : 'Near New Bus Stand, Pilibangan, Rajasthan (335803)',  // Address
-  tagline     : 'Professional Flex Printing Services',
+  tagline     : 'All Type of Printing Solutions',  // Tagline (optional, khali chhod do)
   logoPath    : './assets/Logo.png',   // Logo file ka path, e.g. './assets/logo.png'
-                      // Khali chhodo agar logo nahi hai
 }
 
 // GET /api/pdf/bill/:orderId
@@ -22,7 +21,7 @@ router.get('/bill/:orderId', (req, res) => {
   const { orderId } = req.params
 
   db.get(`
-    SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone, customers.address
+    SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
     FROM orders
     JOIN customers ON orders.customer_id = customers.id
     WHERE orders.id = ?
@@ -36,7 +35,11 @@ router.get('/bill/:orderId', (req, res) => {
       db.all(`SELECT * FROM payments WHERE order_id = ? ORDER BY payment_date ASC`, [orderId], (err, payments) => {
         if (err) return res.status(500).json({ error: err.message })
 
-        const doc = new PDFDocument({ size: 'A4', margin: 50 })
+        const doc = new PDFDocument({ 
+          size: 'A4', 
+          margin: 50,
+          bufferPages: true  // extra auto-pages rokta hai
+        })
 
         res.setHeader('Content-Type', 'application/pdf')
         res.setHeader('Content-Disposition', `attachment; filename=bill-${orderId}.pdf`)
@@ -175,12 +178,10 @@ router.get('/bill/:orderId', (req, res) => {
         doc.fill(statusColor).fontSize(10).font('Helvetica-Bold')
            .text(`Status  : ${statusText}`, META_X, INFO_TOP + 40)
 
-        doc.fill(GRAY).fontSize(9).font('Helvetica')
-        if (order.follow_up_date) {
-          doc.text(`Follow-up : ${order.follow_up_date}`, META_X, INFO_TOP + 56)
-        }
+        doc.fill(GRAY).fontSize(9).font('Helvetica-Bold')
         if (order.description) {
-          doc.text(safeText(order.description, 40), META_X, INFO_TOP + 70, { width: 180 })
+          doc.fill(PRIMARY).fontSize(11).font('Helvetica-Bold')
+             .text(safeText(order.description, 40), META_X, INFO_TOP + 56, { width: 180 })
         }
 
         // ══════════════════════════════════════════
@@ -278,6 +279,15 @@ router.get('/bill/:orderId', (req, res) => {
           curY += 20
         }
 
+        // Discount / Round-off
+        if (parseFloat(order.discount_amount) > 0) {
+          const dLabel = order.discount_note
+            ? `Discount (${order.discount_note}) :`
+            : 'Discount / Round-off :'
+          drawTotalRow(dLabel, `- ${rs(order.discount_amount)}`, curY, false, GREEN)
+          curY += 20
+        }
+
         // Divider before balance
         doc.moveTo(LBL_X, curY)
            .lineTo(MARGIN + CONTENT, curY)
@@ -348,28 +358,41 @@ router.get('/bill/:orderId', (req, res) => {
               curY += 14
             })
           }
+
+          if (parseFloat(order.discount_amount) > 0) {
+            doc.fill('#e67e22').fontSize(9).font('Helvetica')
+               .text(
+                 `✂  Discount : ${rs(order.discount_amount)}${order.discount_note ? '  —  ' + order.discount_note : '  (Round-off)'}`,
+                 MARGIN + 14, curY
+               )
+            curY += 14
+          }
         }
 
         // ══════════════════════════════════════════
-        //  FOOTER
+        //  FOOTER — absolute bottom, no new page
         // ══════════════════════════════════════════
-        const FOOTER_Y = doc.page.height - 72
-        doc.rect(0, FOOTER_Y, PAGE_W, 72).fill(PRIMARY)
+        const FOOTER_H = 72
+        const FOOTER_Y = doc.page.height - FOOTER_H
+
+        // Agar content footer se overlap kar raha hai toh upar compress karo
+        // (sirf check — footer hamesha last page ke bottom pe rahega)
+        doc.rect(0, FOOTER_Y, PAGE_W, FOOTER_H).fill(PRIMARY)
         doc.rect(0, FOOTER_Y, PAGE_W, 3).fill(ACCENT)
 
         doc.fill(WHITE).fontSize(12).font('Helvetica-Bold')
-           .text('Thank you for your business!', MARGIN, FOOTER_Y + 16)
+           .text('Thank you for your business!', MARGIN, FOOTER_Y + 14, { lineBreak: false })
 
         doc.fill(ACCENT).fontSize(9).font('Helvetica-Bold')
-           .text(`${SHOP.name}  |  ${SHOP.ownerName}  |  ${SHOP.mobile}`, MARGIN, FOOTER_Y + 36)
+           .text(`${SHOP.name}  |  ${SHOP.ownerName}  |  ${SHOP.mobile}`, MARGIN, FOOTER_Y + 34, { lineBreak: false })
 
         doc.fill('#aaaaaa').fontSize(9).font('Helvetica')
-           .text(SHOP.address, MARGIN, FOOTER_Y + 50)
+           .text(SHOP.address, MARGIN, FOOTER_Y + 50, { lineBreak: false })
 
-        // Page number (bottom right)
         doc.fill('#aaaaaa').fontSize(8)
-           .text(`Page 1`, 0, FOOTER_Y + 50, { align: 'right', width: PAGE_W - MARGIN })
+           .text('Page 1', PAGE_W - MARGIN - 30, FOOTER_Y + 50, { lineBreak: false })
 
+        doc.flushPages()
         doc.end()
       })
     })

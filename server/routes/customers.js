@@ -37,7 +37,7 @@ router.get('/:id', (req, res) => {
       db.all(`SELECT id, amount, payment_date as date, note as source, 'Order Payment' as payment_type, created_at FROM payments WHERE customer_id = ?`, [id], (err, orderPayments) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type, created_at FROM upi_transactions WHERE customer_id = ?`, [id], (err, upiPayments) => {
+        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type, created_at FROM upi_transactions WHERE customer_id = ? AND order_id IS NULL`, [id], (err, upiPayments) => {
           if (err) return res.status(500).json({ error: err.message });
 
           db.all(`SELECT id, amount, received_date as date, bank_name as source, status, cheque_number, 'Cheque' as payment_type FROM cheques WHERE customer_id = ?`, [id], (err, chequePayments) => {
@@ -66,6 +66,7 @@ router.get('/:id', (req, res) => {
               if (err) return res.status(500).json({ error: err.message });
 
               const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+              const totalDiscount = orders.reduce((sum, o) => sum + Number(o.discount_amount || 0), 0);
               const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0);
               const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
               const totalUpi = [ ...upiPayments, ...cashIncomePayments.filter(p => p.payment_type === 'UPI')].reduce((sum, p) => sum + Number(p.amount || 0), 0);
@@ -75,7 +76,7 @@ router.get('/:id', (req, res) => {
               const totalCashIncome = cashIncomePayments.filter(p => p.payment_type === 'Cash Income').reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
               const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared + totalCashIncome;
-              const totalDue = totalBilled - totalPaid;
+              const totalDue = totalBilled - totalPaid - totalDiscount;
 
               const allPayments = [
                 ...orders.filter(o => o.advance_paid > 0).map(o => ({
@@ -103,6 +104,7 @@ router.get('/:id', (req, res) => {
                 totalChequeCleared,
                 totalCashIncome,
                 totalPaid,
+                totalDiscount,
                 totalDue
               });
             });

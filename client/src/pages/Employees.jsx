@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   getEmployees, createEmployee, markAttendance,
-  getSalary, getAttendance, getEmployeeProfile
+  getSalary, getAttendance, getEmployeeProfile, deleteEmployee
 } from '../services/api'
 
 function Employees() {
@@ -110,6 +110,15 @@ function Employees() {
   function handleCalendarLoad() {
     if (!calendarEmployee) return setMessage('Select an employee first.')
     fetchCalendar(calendarEmployee.id, calendarMonth, calendarYear)
+  }
+  function handleDeleteEmployee(emp) {
+    if (!window.confirm(`"${emp.name}" ko delete karna chahte ho?\nIska attendance, salary aur payments bhi delete ho jayega!`)) return
+    deleteEmployee(emp.id)
+      .then(() => {
+        setMessage(`${emp.name} delete ho gaya.`)
+        fetchEmployees()
+      })
+      .catch(() => setMessage('Error deleting employee.'))
   }
 
   // ── FIX: loadEmployeeProfile now shows real error instead of generic message ──
@@ -276,6 +285,10 @@ function Employees() {
                       👤 Profile
                     </button>
                   </td>
+                  <button onClick={() => handleDeleteEmployee(emp)}
+                    style={{ ...styles.actionBtn, color: '#e74c3c', borderColor: '#e74c3c', marginLeft: '6px' }}>
+                    🗑️ Delete
+                  </button>
                 </tr>
               ))}
             </tbody>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder } from '../services/api'
+import { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp } from '../services/api'
 import axios from 'axios'
 
 const UPI_ACCOUNTS = [
@@ -21,7 +21,18 @@ function Orders() {
   const [orderDetail, setOrderDetail] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null) // order id
   const [followUpValue, setFollowUpValue]     = useState('')
-  const [paymentForm, setPaymentForm] = useState({ amount: '', note: '', payment_date: '' })
+  const [paymentForm, setPaymentForm] = useState({
+      amount: '',
+      note: '',
+      payment_date: '',
+      follow_up_date: '',
+      payment_mode: 'cash',
+      upi_account: '',
+      showDiscount: false,
+      discount_amount: '',
+      discount_note: ''
+    })
+  const [waStatus, setWaStatus] = useState('disconnected')
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -30,13 +41,22 @@ function Orders() {
     advance_payment_mode: 'cash',   // 'cash' | 'upi'
     advance_upi_account: '',
     follow_up_date: '',
-    notes: ''
+    notes: '',
+    discount_amount: '',
+    discount_note: ''
   })
 
   const [items, setItems] = useState([
     { item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }
   ])
-
+  useEffect(() => {
+      // Check WhatsApp status on load
+      import('../services/api').then(({ getWhatsAppStatus }) => {
+        getWhatsAppStatus()
+          .then(res => setWaStatus(res.data.status))
+          .catch(() => {})
+      })
+    }, [])
   useEffect(() => {
     fetchOrders()
     getCustomers().then(res => setCustomers(res.data))
@@ -106,7 +126,9 @@ function Orders() {
       advance_payment_mode: order.advance_payment_mode || 'cash',
       advance_upi_account: order.advance_upi_account || '',
       follow_up_date: order.follow_up_date || '',
-      notes: order.notes || ''
+      notes: order.notes || '',
+      discount_amount: order.discount_amount || '',
+      discount_note: order.discount_note || ''
     })
     axios.get(`http://localhost:5000/api/orders/${order.id}`)
       .then(res => {
@@ -129,7 +151,8 @@ function Orders() {
     setForm({
       customer_id: '', description: '', advance_paid: '',
       advance_payment_mode: 'cash', advance_upi_account: '',
-      follow_up_date: '', notes: ''
+      follow_up_date: '', notes: '',
+      discount_amount: '', discount_note: ''
     })
     setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
     setEditingOrder(null)
@@ -165,7 +188,9 @@ function Orders() {
           advance_paid: advanceAmt,
           advance_payment_mode: advanceAmt > 0 ? form.advance_payment_mode : null,
           advance_upi_account: advanceAmt > 0 && form.advance_payment_mode === 'upi'
-            ? form.advance_upi_account : null
+            ? form.advance_upi_account : null,
+          discount_amount: parseFloat(form.discount_amount) || 0,
+          discount_note: form.discount_note || null
         })
       }).then(() => {
         setMessage('Order updated successfully!')
@@ -183,6 +208,8 @@ function Orders() {
       advance_payment_mode: advanceAmt > 0 ? form.advance_payment_mode : null,
       advance_upi_account: advanceAmt > 0 && form.advance_payment_mode === 'upi'
         ? form.advance_upi_account : null,
+      discount_amount: parseFloat(form.discount_amount) || 0,
+      discount_note: form.discount_note || null,
       items: items.map(i => ({
         item_name: i.item_name,
         quantity: parseFloat(i.quantity) || 1,
@@ -232,19 +259,33 @@ function Orders() {
   function handleAddPayment(e) {
     e.preventDefault()
     if (!paymentForm.amount) return setMessage('Enter payment amount.')
+    if (paymentForm.payment_mode === 'upi' && !paymentForm.upi_account) {
+      return setMessage('UPI ke liye account select karo.')
+    }
+    const discountAmt = parseFloat(paymentForm.discount_amount) || 0
 
-    addPayment({
+    // Discount pehle save karo order mein (agar hai to)
+    const discountPromise = discountAmt > 0
+      ? axios.put(`http://localhost:5000/api/orders/${orderDetail.id}`, {
+          discount_amount: (parseFloat(orderDetail.discount_amount) || 0) + discountAmt,
+          discount_note: paymentForm.discount_note || 'Round-off'
+        })
+      : Promise.resolve()
+
+    discountPromise.then(() => addPayment({
       order_id: orderDetail.id,
       customer_id: orderDetail.customer_id,
       amount: parseFloat(paymentForm.amount),
       note: paymentForm.note,
+      payment_mode: paymentForm.payment_mode,
+      upi_account:  paymentForm.upi_account || null,
       payment_date: paymentForm.payment_date
         ? paymentForm.payment_date + ' ' + new Date().toLocaleTimeString('en-GB', { hour12: false })
         : new Date().toLocaleString('en-GB', {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
           }).replace(',', '')
-    })
+    }))
       .then(() => {
         if (paymentForm.follow_up_date) {
           axios.put(`http://localhost:5000/api/orders/${orderDetail.id}`, {
@@ -252,7 +293,7 @@ function Orders() {
           }).catch(() => {})
         }
         setMessage('Payment recorded!')
-        setPaymentForm({ amount: '', note: '', payment_date: '' })
+        setPaymentForm({ amount: '', note: '', payment_date: '', follow_up_date: '', payment_mode: 'cash', upi_account: '', showDiscount: false, discount_amount: '', discount_note: '' })
         getOrderDetail(orderDetail.id).then(res => {
           setOrderDetail(res.data)
           fetchOrders()
@@ -275,9 +316,10 @@ function Orders() {
       .catch(() => setMessage('Error updating follow-up date.'))
   }
 
-  const total   = calculateTotal()
-  const advance = parseFloat(form.advance_paid) || 0
-  const balance = total - advance
+  const total    = calculateTotal()
+  const advance  = parseFloat(form.advance_paid) || 0
+  const discount = parseFloat(form.discount_amount) || 0
+  const balance  = total - advance - discount
 
   return (
     <div>
@@ -468,14 +510,29 @@ function Orders() {
                 </>
               )}
 
-              {!editingOrder && (
-                <div style={styles.totalRow}>
-                  <span>Balance Due:</span>
-                  <strong style={{ color: balance > 0 ? '#e74c3c' : '#27ae60' }}>
-                    ₹{balance.toFixed(2)}
-                  </strong>
+              <div style={styles.totalRow}>
+                <span>Discount / Round-off:</span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <input
+                    style={{ ...styles.input, width: '110px', flex: 'none' }}
+                    placeholder="₹0" type="number" name="discount_amount"
+                    value={form.discount_amount} onChange={handleFormChange}
+                  />
+                  <input
+                    style={{ ...styles.input, width: '160px', flex: 'none' }}
+                    placeholder="Note (e.g. round-off)"
+                    name="discount_note"
+                    value={form.discount_note} onChange={handleFormChange}
+                  />
                 </div>
-              )}
+              </div>
+
+              <div style={styles.totalRow}>
+                <span>Balance Due:</span>
+                <strong style={{ color: balance > 0 ? '#e74c3c' : '#27ae60' }}>
+                  ₹{balance.toFixed(2)}
+                </strong>
+              </div>
             </div>
 
             <div style={styles.formRow}>
@@ -620,6 +677,27 @@ function Orders() {
                     >
                       📄 Bill
                     </button>
+                    <button
+                      onClick={() => {
+                        if (!o.phone) return setMessage('Customer has no phone number.')
+                        sendBillWhatsApp(o.id)
+                          .then(res => setMessage(res.data.message))
+                          .catch(err => setMessage('WhatsApp error: ' + (err.response?.data?.error || 'Not connected')))
+                      }}
+                      style={{
+                        backgroundColor: waStatus === 'ready' ? '#25D366' : '#ccc',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '5px 12px',
+                        borderRadius: '4px',
+                        cursor: waStatus === 'ready' ? 'pointer' : 'not-allowed',
+                        fontSize: '12px',
+                        marginLeft: '6px'
+                      }}
+                      title={waStatus === 'ready' ? 'Send bill on WhatsApp' : 'WhatsApp not connected'}
+                    >
+                      📱 WA
+                    </button>
                     <button onClick={() => handleDeleteOrder(o)} style={{ ...styles.deleteBtn, marginLeft: '6px' }}>
                       Delete
                     </button>
@@ -704,18 +782,42 @@ function Orders() {
                                 <tr key={p.id}>
                                   <td style={styles.innerTd}>{(orderDetail.advance_paid > 0 ? 2 : 1) + i}</td>
                                   <td style={styles.innerTd}>
-                                    {p.payment_date ? (() => {
-                                      const d = new Date(p.payment_date)
-                                      if (isNaN(d)) return p.payment_date
+                                    {(p.created_at || p.payment_date) ? (() => {
+                                      const d = new Date(p.created_at || p.payment_date)
+                                      if (isNaN(d)) return p.created_at || p.payment_date
                                       const date = d.toLocaleDateString('en-GB').replace(/\//g, '.')
                                       const time = d.toLocaleTimeString('en-GB', { hour12: false })
                                       return <span>{time}<br /><span style={{ fontSize: '11px', color: '#888' }}>{date}</span></span>
                                     })() : '—'}
                                   </td>
                                   <td style={styles.innerTd}><strong>₹{p.amount}</strong></td>
-                                  <td style={styles.innerTd}>{p.note || '—'}</td>
+                                  <td style={styles.innerTd}>
+                                    {p.note || '—'}
+                                    {p.payment_mode && (
+                                      <span style={{
+                                        ...styles.advanceBadge,
+                                        marginLeft: '6px',
+                                        backgroundColor: p.payment_mode === 'upi' ? '#e3f2fd' : '#e8f5e9',
+                                        color: p.payment_mode === 'upi' ? '#1565c0' : '#2e7d32'
+                                      }}>
+                                        {p.payment_mode === 'upi'
+                                          ? `📱 ${p.upi_account || 'UPI'}`
+                                          : '💵 Cash'}
+                                      </span>
+                                    )}
+                                  </td>
                                 </tr>
                               ))}
+                              {orderDetail.discount_amount > 0 && (
+                                <tr style={{ backgroundColor: '#fff8e1' }}>
+                                  <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: '#e67e22' }}>
+                                    ✂ Discount {orderDetail.discount_note ? `(${orderDetail.discount_note})` : '(Round-off)'}
+                                  </td>
+                                  <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: '#e67e22' }}>
+                                    - ₹{orderDetail.discount_amount}
+                                  </td>
+                                </tr>
+                              )}
                               <tr style={{ backgroundColor: '#f0fff4' }}>
                                 <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold' }}>Balance Due</td>
                                 <td colSpan="2" style={{
@@ -736,25 +838,123 @@ function Orders() {
                           {orderDetail.balance_due > 0 && (
                             <form onSubmit={handleAddPayment} style={styles.paymentForm}>
                               <h5 style={{ marginBottom: '8px', color: '#555' }}>+ Record New Payment</h5>
+
+                              {/* Discount toggle */}
+                              <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <label style={{ fontSize: '13px', color: '#888' }}>
+                                  Kuch amount discount karna hai?
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentForm(f => ({ ...f, showDiscount: !f.showDiscount, discount_amount: '', discount_note: '' }))}
+                                  style={{
+                                    padding: '4px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer',
+                                    backgroundColor: paymentForm.showDiscount ? '#e67e22' : '#f0f0f0',
+                                    color: paymentForm.showDiscount ? '#fff' : '#333',
+                                    border: '1px solid #ddd'
+                                  }}
+                                >
+                                  ✂ {paymentForm.showDiscount ? 'Discount ON' : 'Discount OFF'}
+                                </button>
+                              </div>
+
+                              {paymentForm.showDiscount && (
+                                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'center', backgroundColor: '#fff8e1', padding: '10px', borderRadius: '8px' }}>
+                                  <span style={{ fontSize: '13px', color: '#e67e22', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✂ Discount:</span>
+                                  <input
+                                    style={{ ...styles.input, maxWidth: '130px' }}
+                                    type="number" placeholder="Amount ₹"
+                                    value={paymentForm.discount_amount || ''}
+                                    onChange={e => setPaymentForm({ ...paymentForm, discount_amount: e.target.value })}
+                                  />
+                                  <input
+                                    style={{ ...styles.input, flex: 2 }}
+                                    placeholder="Note (e.g. round-off, 15 rs maafi)"
+                                    value={paymentForm.discount_note || ''}
+                                    onChange={e => setPaymentForm({ ...paymentForm, discount_note: e.target.value })}
+                                  />
+                                  <span style={{ fontSize: '13px', color: '#888', whiteSpace: 'nowrap' }}>
+                                    Remaining: ₹{Math.max(0, orderDetail.balance_due - (parseFloat(paymentForm.discount_amount) || 0) - (parseFloat(paymentForm.amount) || 0))}
+                                  </span>
+                                </div>
+                              )}
+
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                
+                                {/* Amount */}
                                 <input
                                   style={{ ...styles.input, maxWidth: '150px' }}
                                   type="number" placeholder="Amount ₹"
                                   value={paymentForm.amount}
                                   onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
                                 />
+
+                                {/* Date */}
                                 <input
                                   style={{ ...styles.input, maxWidth: '160px' }}
                                   type="date"
                                   value={paymentForm.payment_date}
                                   onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
                                 />
+
+                                {/* Note */}
                                 <input
                                   style={{ ...styles.input, flex: 2 }}
-                                  placeholder="Note (e.g. delivery payment, cash)"
+                                  placeholder="Note (e.g. final payment)"
                                   value={paymentForm.note}
                                   onChange={e => setPaymentForm({ ...paymentForm, note: e.target.value })}
                                 />
+
+                                {/* ✅ NEW: Payment Mode toggle */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <label style={{ fontSize: '11px', color: '#888' }}>Payment Mode</label>
+                                  <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'cash', upi_account: '' }))}
+                                      style={{
+                                        padding: '8px 14px', borderRadius: '6px', border: '1px solid #ddd',
+                                        backgroundColor: paymentForm.payment_mode === 'cash' ? '#27ae60' : '#fff',
+                                        color: paymentForm.payment_mode === 'cash' ? '#fff' : '#333',
+                                        cursor: 'pointer', fontSize: '13px', fontWeight: '500'
+                                      }}
+                                    >
+                                      💵 Cash
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'upi' }))}
+                                      style={{
+                                        padding: '8px 14px', borderRadius: '6px', border: '1px solid #ddd',
+                                        backgroundColor: paymentForm.payment_mode === 'upi' ? '#1565c0' : '#fff',
+                                        color: paymentForm.payment_mode === 'upi' ? '#fff' : '#333',
+                                        cursor: 'pointer', fontSize: '13px', fontWeight: '500'
+                                      }}
+                                    >
+                                      📱 UPI
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* ✅ NEW: UPI account selector — sirf jab UPI select ho */}
+                                {paymentForm.payment_mode === 'upi' && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <label style={{ fontSize: '11px', color: '#888' }}>UPI Account *</label>
+                                    <select
+                                      style={{ ...styles.input, minWidth: '200px' }}
+                                      value={paymentForm.upi_account}
+                                      onChange={e => setPaymentForm({ ...paymentForm, upi_account: e.target.value })}
+                                      required
+                                    >
+                                      <option value="">Select Account</option>
+                                      {UPI_ACCOUNTS.map(acc => (
+                                        <option key={acc} value={acc}>{acc}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+
+                                {/* Next Follow-up */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                   <label style={{ fontSize: '11px', color: '#888' }}>Next Follow-up</label>
                                   <input
@@ -764,6 +964,7 @@ function Orders() {
                                     onChange={e => setPaymentForm({ ...paymentForm, follow_up_date: e.target.value })}
                                   />
                                 </div>
+
                                 <button type="submit" style={styles.submitBtn}>Save Payment</button>
                               </div>
                             </form>

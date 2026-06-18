@@ -262,6 +262,12 @@ function handleOpeningBalance(e) {
               <div style={{ fontSize: '12px', color: '#888' }}>Cash Income</div>
             </div>
           )}
+          {customer.totalDiscount > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #e67e22' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#e67e22' }}>₹{customer.totalDiscount}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>✂ Discount / Round-off</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -282,6 +288,29 @@ function handleOpeningBalance(e) {
               </tr>
             </thead>
             <tbody>
+              {orders.filter(o => o.discount_amount > 0).map((o) => (
+                <tr key={`disc-${o.id}`} style={{ ...styles.tr, backgroundColor: '#fff8e1' }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fff3cd'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff8e1'}
+                >
+                  <td style={styles.td}>
+                    <div>{o.created_at?.split(' ')[0] || '—'}</div>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={{ ...styles.badge, backgroundColor: '#e67e22' }}>
+                      ✂ Discount
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    {o.discount_note || 'Round-off'}
+                    <span style={{ fontSize: '12px', color: '#888' }}> (Order #{o.id})</span>
+                  </td>
+                  <td style={styles.td}>
+                    <strong style={{ color: '#e67e22' }}>- ₹{o.discount_amount}</strong>
+                  </td>
+                  <td style={styles.td}>—</td>
+                </tr>
+              ))}
               {payments.map((p, i) => (
                 <tr key={i} style={styles.tr}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}

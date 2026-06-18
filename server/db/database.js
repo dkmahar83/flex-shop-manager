@@ -54,6 +54,10 @@ db.run(`ALTER TABLE orders ADD COLUMN advance_entry_table TEXT DEFAULT NULL`, ()
 db.run(`ALTER TABLE orders ADD COLUMN advance_entry_id INTEGER DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE cash_income ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`, () => {})
 db.run(`ALTER TABLE upi_transactions ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`, () => {})
+db.run(`ALTER TABLE payments ADD COLUMN payment_mode TEXT DEFAULT 'cash'`, () => {})
+db.run(`ALTER TABLE payments ADD COLUMN upi_account TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE payments ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`, () => {})
+db.run(`UPDATE payments SET payment_mode = 'cash' WHERE payment_mode IS NULL`, () => {})
 
 // Create all tables if they don't exist
 db.serialize(() => {

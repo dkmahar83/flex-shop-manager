@@ -84,7 +84,6 @@ function recordAdvancePayment({ customer_id, firm_name, advance, payment_mode, u
   const createdAt = nowIST();
   const notes = `Order Advance Payment`;
 
-  // ── Step 1: Always write to customer_payments (feeds Customer Profile) ──
   db.run(`
     INSERT INTO customer_payments
       (customer_id, amount, payment_mode, payment_date, source, source_id, notes, created_at)
@@ -92,36 +91,32 @@ function recordAdvancePayment({ customer_id, firm_name, advance, payment_mode, u
   `,
   [customer_id, advance, payment_mode, date, order_id, notes, createdAt],
   function(cpErr) {
-    // Log but don't abort if customer_payments insert fails — table may not exist yet
     if (cpErr) console.warn('customer_payments insert skipped:', cpErr.message);
 
-    // ── Step 2: Write to cash_income or upi_transactions ──
-    // These are what Daily Sales / Ledger / Cash Drawer / UPI Accounts read.
+    // ✅ FIX: payments table mein bhi insert karo — ledger/daily-sales isi se padhta hai
     if (payment_mode === 'upi') {
-      db.run(`
-        INSERT INTO upi_transactions
-          (upi_account, customer_name, customer_id, amount, transaction_date, notes, order_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [upi_account, firm_name, customer_id, advance, date, notes, order_id, createdAt],
-      function(err) {
-        if (err) return callback(err);
-        callback(null, { table: 'upi_transactions', id: this.lastID });
-      });
-
-    } else {
-      // Cash payment
-      db.run(`
-        INSERT INTO cash_income
-          (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
-        VALUES (?, ?, ?, ?, 'cash', NULL, ?)
-      `,
-      [customer_id, advance, date, notes, createdAt],
-      function(err) {
-        if (err) return callback(err);
-        callback(null, { table: 'cash_income', id: this.lastID });
-      });
-    }
+        db.run(`
+          INSERT INTO upi_transactions
+            (upi_account, customer_name, customer_id, amount, transaction_date, notes, order_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [upi_account, firm_name, customer_id, advance, date, notes, order_id, createdAt],
+        function(err) {
+          if (err) return callback(err);
+          callback(null, { table: 'upi_transactions', id: this.lastID });
+        });
+      } else {
+        db.run(`
+          INSERT INTO cash_income
+            (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
+          VALUES (?, ?, ?, ?, 'cash', NULL, ?)
+        `,
+        [customer_id, advance, date, notes, createdAt],
+        function(err) {
+          if (err) return callback(err);
+          callback(null, { table: 'cash_income', id: this.lastID });
+        });
+      }
   });
 }
 
@@ -158,13 +153,16 @@ router.post('/', (req, res) => {
     advance_upi_account,   // required if mode = 'upi'
     follow_up_date,
     notes,
-    items
+    items,
+    discount_amount,
+    discount_note
   } = req.body;
 
   if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
   if (!items || items.length === 0) return res.status(400).json({ error: 'At least one item is required' });
 
-  const advance = parseFloat(advance_paid) || 0;
+  const advance  = parseFloat(advance_paid) || 0;
+  const discount = parseFloat(discount_amount) || 0;
 
   if (advance > 0 && !advance_payment_mode) {
     return res.status(400).json({ error: 'advance_payment_mode is required when advance_paid > 0' });
@@ -174,7 +172,7 @@ router.post('/', (req, res) => {
   }
 
   const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-  const balance_due  = total_amount - advance;
+  const balance_due  = total_amount - advance - discount;
   const today        = todayIST();
   const createdAt    = nowIST();
 
@@ -185,12 +183,14 @@ router.post('/', (req, res) => {
     db.run(`
       INSERT INTO orders
         (customer_id, description, status, total_amount, advance_paid, balance_due,
-         advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id, created_at)
-      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+         advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id,
+         discount_amount, discount_note, created_at)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
     `,
     [customer_id, description, total_amount, advance, balance_due,
      advance > 0 ? advance_payment_mode : null,
-     follow_up_date, notes, createdAt],
+     follow_up_date, notes,
+     discount, discount_note || null, createdAt],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
 
@@ -273,7 +273,9 @@ router.put('/:id', (req, res) => {
     follow_up_date,
     advance_paid,
     advance_payment_mode,
-    advance_upi_account
+    advance_upi_account,
+    discount_amount,
+    discount_note
   } = req.body;
 
   db.get(`
@@ -286,7 +288,8 @@ router.put('/:id', (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     const new_advance     = advance_paid !== undefined ? parseFloat(advance_paid) || 0 : order.advance_paid;
-    const new_balance     = order.total_amount - new_advance;
+    const new_discount    = discount_amount !== undefined ? parseFloat(discount_amount) || 0 : (order.discount_amount || 0);
+    const new_balance     = order.total_amount - new_advance - new_discount;
     const advance_changed = new_advance !== order.advance_paid;
     const today           = todayIST();
 
@@ -298,29 +301,25 @@ router.put('/:id', (req, res) => {
     }
 
     const doUpdate = (entryTable, entryId) => {
-      db.run(`
-        UPDATE orders
-        SET description = ?, notes = ?, follow_up_date = ?,
-            advance_paid = ?, balance_due = ?,
-            advance_payment_mode = ?,
-            advance_entry_table = ?, advance_entry_id = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `,
-      [
-        description  || order.description,
-        notes        || order.notes,
-        follow_up_date || order.follow_up_date,
-        new_advance,
-        new_balance,
-        new_advance > 0 ? (advance_payment_mode || order.advance_payment_mode) : null,
-        entryTable   || order.advance_entry_table,
-        entryId      || order.advance_entry_id,
-        id
-      ],
-      function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: 'Order updated successfully', balance_due: new_balance });
+      // Fresh balance from payments table
+      db.get('SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE order_id=?', [id], (err, r) => {
+        const fresh_balance = order.total_amount - new_advance - new_discount - (r ? r.paid : 0)
+        db.run(`UPDATE orders SET description=?, notes=?, follow_up_date=?,
+                advance_paid=?, balance_due=?, advance_payment_mode=?,
+                advance_entry_table=?, advance_entry_id=?,
+                discount_amount=?, discount_note=?,
+                updated_at=CURRENT_TIMESTAMP
+                WHERE id=?`,
+          [description||order.description, notes||order.notes, follow_up_date||order.follow_up_date,
+          new_advance, fresh_balance,
+          new_advance>0?(advance_payment_mode||order.advance_payment_mode):null,
+          entryTable||order.advance_entry_table, entryId||order.advance_entry_id,
+          new_discount, discount_note !== undefined ? discount_note : (order.discount_note || null),
+          id],
+          function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ message: 'Order updated successfully', balance_due: fresh_balance });
+          });
       });
     };
 

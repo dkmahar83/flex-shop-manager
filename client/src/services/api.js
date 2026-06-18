@@ -46,6 +46,7 @@ export const getSalary = (id, month, year) =>
 export const getEmployeeProfile = (id, month, year) => 
   api.get(`/employees/profile/${id}?month=${month}&year=${year}`)
 export const generateSalary = (data) => api.post('/employees/generate-salary', data)
+export const deleteEmployee = (id) => api.delete(`/employees/${id}`)
 
 // DASHBOARD
 export const getDashboard = () => api.get('/dashboard')
@@ -95,6 +96,10 @@ export const getVendor = (id) => api.get(`/vendors/${id}`)
 export const addVendor = (data) => api.post('/vendors', data)
 export const addVendorPurchase = (id, data) => api.post(`/vendors/${id}/purchase`, data)
 export const addVendorPayment = (id, data) => api.post(`/vendors/${id}/payment`, data)
+export const updateVendor = (id, data) =>
+  api.put(`/vendors/${id}`, data)
+export const deleteVendor = (id) =>
+  api.delete(`/vendors/${id}`)
 
 // INVENTORY
 export const getFlexStock = () => api.get('/inventory/flex')
@@ -124,3 +129,7 @@ export const updateInkStock = (id, data) => api.put(`/inventory/ink/${id}`, data
 export const deleteInkStock = (id) => api.delete(`/inventory/ink/${id}`)
 
 export const getInventoryLog = () => api.get('/inventory/log')
+
+// whatsapp
+export const getWhatsAppStatus = () => api.get('/whatsapp/status')
+export const sendBillWhatsApp = (orderId) => api.post(`/whatsapp/send-bill/${orderId}`)

@@ -10,6 +10,8 @@ import DailySales from './pages/DailySales'
 import Accounts from './pages/Accounts'
 import Inventory from './pages/Inventory'
 import Reports from './pages/Reports'
+import WhatsAppSetup from './pages/WhatsAppSetup'
+
 
 function App() {
   return (
@@ -27,6 +29,7 @@ function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/whatsapp" element={<WhatsAppSetup />} />
         </Routes>
       </div>
     </BrowserRouter>

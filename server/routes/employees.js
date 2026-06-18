@@ -306,5 +306,27 @@ router.post('/generate-salary', (req, res) => {
     });
   });
 });
+// ─────────────────────────────────────────
+// DELETE /api/employees/:id
+// Employee + saara related data delete karta hai
+// ─────────────────────────────────────────
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.get(`SELECT * FROM employees WHERE id = ?`, [id], (err, employee) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    db.serialize(() => {
+      db.run(`DELETE FROM attendance WHERE employee_id = ?`, [id]);
+      db.run(`DELETE FROM employee_salary_credits WHERE employee_id = ?`, [id]);
+      db.run(`DELETE FROM expenses WHERE paid_to_type = 'employee' AND paid_to_id = ?`, [id]);
+      db.run(`DELETE FROM employees WHERE id = ?`, [id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: `${employee.name} aur unka saara data delete ho gaya.` });
+      });
+    });
+  });
+});
 
 module.exports = router;

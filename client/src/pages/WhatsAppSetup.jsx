@@ -1,0 +1,104 @@
+import { useState, useEffect } from 'react'
+import { getWhatsAppStatus } from '../services/api'
+import axios from 'axios'
+
+function WhatsAppSetup() {
+  const [status, setStatus] = useState('checking')
+  const [qr, setQr] = useState(null)
+  function checkStatus() {
+    getWhatsAppStatus()
+      .then(res => {
+        setStatus(res.data.status)
+        if (res.data.status === 'qr_pending') {
+          axios.get('http://localhost:5000/api/whatsapp/qr')
+            .then(r => setQr(r.data.qr))
+        } else {
+          setQr(null)
+        }
+      })
+      .catch(() => setStatus('error'))
+  }
+
+  useEffect(() => {
+    checkStatus()
+    const interval = setInterval(checkStatus, 3000) // check every 3 seconds
+    return () => clearInterval(interval)
+  }, [])
+
+  
+
+  return (
+    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+      <h2 style={{ marginBottom: '20px' }}>📱 WhatsApp Setup</h2>
+
+      {/* Status badge */}
+      <div style={{
+        padding: '16px 20px',
+        borderRadius: '8px',
+        marginBottom: '24px',
+        backgroundColor: status === 'ready' ? '#f0fff4' : status === 'qr_pending' ? '#fff9e6' : '#f8f8f8',
+        border: `1px solid ${status === 'ready' ? '#27ae60' : status === 'qr_pending' ? '#f39c12' : '#ddd'}`
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '12px', height: '12px', borderRadius: '50%',
+            backgroundColor: status === 'ready' ? '#27ae60' : status === 'qr_pending' ? '#f39c12' : '#ccc'
+          }} />
+          <strong>
+            {status === 'ready' ? '✅ WhatsApp Connected — Ready to send bills'
+              : status === 'qr_pending' ? '⏳ Scan QR Code to connect'
+              : status === 'initializing' ? '⏳ Starting WhatsApp...'
+              : status === 'authenticated' ? '⏳ Authenticating...'
+              : '❌ WhatsApp Disconnected'}
+          </strong>
+        </div>
+        {status === 'ready' && (
+          <p style={{ fontSize: '13px', color: '#888', marginTop: '8px', marginLeft: '22px' }}>
+            You can now send bills directly from the Orders page using the 📱 WA button.
+          </p>
+        )}
+      </div>
+
+      {/* QR Code display */}
+      {status === 'qr_pending' && qr && (
+        <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center' }}>
+          <h3 style={{ marginBottom: '16px' }}>Scan with WhatsApp</h3>
+          <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+            Open WhatsApp on your phone → Settings → Linked Devices → Link a Device → Scan this code
+          </p>
+          <img
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`}
+            alt="WhatsApp QR Code"
+            style={{ width: '250px', height: '250px', border: '1px solid #eee', borderRadius: '8px' }}
+          />
+          <p style={{ color: '#aaa', fontSize: '12px', marginTop: '16px' }}>
+            QR code refreshes automatically every 3 seconds
+          </p>
+        </div>
+      )}
+
+      {status === 'ready' && (
+        <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <h3 style={{ marginBottom: '12px' }}>How to send a bill</h3>
+          <ol style={{ color: '#555', lineHeight: '2', fontSize: '14px', paddingLeft: '20px' }}>
+            <li>Go to <strong>Orders</strong> page</li>
+            <li>Find the order you want to bill</li>
+            <li>Click the <strong style={{ color: '#25D366' }}>📱 WA</strong> button</li>
+            <li>Bill is automatically sent to customer's WhatsApp</li>
+          </ol>
+        </div>
+      )}
+
+      {(status === 'disconnected' || status === 'error') && (
+        <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <p style={{ color: '#888' }}>
+            WhatsApp is initializing. Please wait a moment and the QR code will appear.
+            Make sure the server is running.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default WhatsAppSetup

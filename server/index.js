@@ -23,6 +23,12 @@ const chequeRoutes = require('./routes/cheques');
 const upiRoutes = require('./routes/upi');
 const vendorRoutes = require('./routes/vendors');
 const pdfRoutes = require('./routes/pdf')
+const { initWhatsApp } = require('./whatsapp')
+const whatsappRoutes = require('./routes/whatsapp')
+app.use('/api/whatsapp', whatsappRoutes)
+
+// Start WhatsApp client (non-blocking)
+initWhatsApp()
 app.use('/api/pdf', pdfRoutes)
 
 app.use('/api/cheques', chequeRoutes);

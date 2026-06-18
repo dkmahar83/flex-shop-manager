@@ -86,17 +86,16 @@ function DailySales() {
     setMessageType(type)
   }
   function fmtDT(dateStr) {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (isNaN(d)) return dateStr
-  const dd = String(d.getDate()).padStart(2,'0')
-  const mm = String(d.getMonth()+1).padStart(2,'0')
-  const yyyy = d.getFullYear()
-  const hh = String(d.getHours()).padStart(2,'0')
-  const min = String(d.getMinutes()).padStart(2,'0')
-  const ss = String(d.getSeconds()).padStart(2,'0')
-  return `${hh}:${min}:${ss}  ${dd}.${mm}.${yyyy}`
-}
+    if (!dateStr) return '—'
+    const clean = String(dateStr).replace('T', ' ').substring(0, 19)
+    const parts = clean.split(' ')
+    if (parts.length === 2) {
+      const [datePart, timePart] = parts
+      const [yyyy, mm, dd] = datePart.split('-')
+      return `${timePart}  ${dd}.${mm}.${yyyy}`
+    }
+    return clean
+  }
   
   function fetchAll() {
     fetchExpenses()
@@ -342,7 +341,7 @@ function DailySales() {
                         <div key={p.id} style={styles.paymentLine}>
                       <div>
                         <span style={{ color: '#555' }}>{p.firm_name}</span>
-                        <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(p.payment_date || p.created_at)}</div>
+                        <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(p.created_at || p.payment_date)}</div>
                       </div>
                       <span style={{ fontWeight: 'bold', color: '#27ae60' }}>₹{p.amount}</span>
                     </div>
@@ -1112,9 +1111,9 @@ function DailySales() {
                             ₹{item.amount}
                           </div>
                           <div style={{ fontSize: '12px', color: '#888' }}>
-                            {item.payment_mode === 'upi' || item.type === 'UPI Payment'
-                              ? `📱 ${item.upi_account || item.payment_mode}`
-                              : '💵 Cash'}
+                            {item.payment_mode === 'cash' || item.payment_mode === null
+                              ? '💵 Cash'
+                              : `📱 ${item.payment_mode}`}
                           </div>
                         </div>
                       </div>

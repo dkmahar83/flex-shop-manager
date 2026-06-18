@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 
-// GET all vendors
+// ─────────────────────────────────────────────
+// GET all vendors (with running totals)
+// ─────────────────────────────────────────────
 router.get('/', (req, res) => {
   db.all(`SELECT * FROM vendors ORDER BY name ASC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -10,81 +12,218 @@ router.get('/', (req, res) => {
   });
 });
 
+// ─────────────────────────────────────────────
 // GET single vendor with transactions
+// ─────────────────────────────────────────────
 router.get('/:id', (req, res) => {
   const { id } = req.params;
   db.get(`SELECT * FROM vendors WHERE id = ?`, [id], (err, vendor) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
 
-    db.all(`SELECT * FROM vendor_transactions WHERE vendor_id = ? ORDER BY transaction_date DESC`,
-    [id], (err, transactions) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ ...vendor, transactions });
-    });
+    db.all(
+      `SELECT * FROM vendor_transactions WHERE vendor_id = ? ORDER BY transaction_date DESC, created_at DESC`,
+      [id],
+      (err, transactions) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        // Parse items JSON for each transaction
+        const parsed = transactions.map(t => ({
+          ...t,
+          items: t.items_json ? JSON.parse(t.items_json) : []
+        }));
+
+        res.json({ ...vendor, transactions: parsed });
+      }
+    );
   });
 });
 
+// ─────────────────────────────────────────────
 // POST add vendor
+// ─────────────────────────────────────────────
 router.post('/', (req, res) => {
   const { name, phone, shop_type, city, notes } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
 
-  db.run(`INSERT INTO vendors (name, phone, shop_type, city, notes) VALUES (?, ?, ?, ?, ?)`,
-  [name, phone, shop_type, city, notes], function(err) {
+  db.run(
+    `INSERT INTO vendors (name, phone, shop_type, city, notes) VALUES (?, ?, ?, ?, ?)`,
+    [name, phone, shop_type, city, notes],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.status(201).json({ id: this.lastID, message: 'Vendor added' });
+    }
+  );
+});
+
+// ─────────────────────────────────────────────
+// PUT edit vendor details
+// ─────────────────────────────────────────────
+router.put('/:id', (req, res) => {
+  const { id } = req.params;
+  const { name, phone, shop_type, city, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+
+  db.run(
+    `UPDATE vendors SET name = ?, phone = ?, shop_type = ?, city = ?, notes = ? WHERE id = ?`,
+    [name, phone, shop_type, city, notes, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Vendor not found' });
+      res.json({ message: 'Vendor updated' });
+    }
+  );
+});
+
+// ─────────────────────────────────────────────
+// DELETE vendor (and all their transactions)
+// ─────────────────────────────────────────────
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  db.run(`DELETE FROM vendor_transactions WHERE vendor_id = ?`, [id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: this.lastID, message: 'Vendor added' });
+    db.run(`DELETE FROM vendors WHERE id = ?`, [id], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Vendor not found' });
+      res.json({ message: 'Vendor deleted' });
+    });
   });
 });
 
-// POST vendor purchase (we bought something from vendor)
+// ─────────────────────────────────────────────
+// POST vendor purchase
+// Body: { amount, description, transaction_date, items: [...] }
+// items: [{ name, qty, unit, rate, amount }]
+// ─────────────────────────────────────────────
 router.post('/:id/purchase', (req, res) => {
   const { id } = req.params;
-  const { amount, description, transaction_date } = req.body;
+  const { amount, description, transaction_date, items = [] } = req.body;
   if (!amount) return res.status(400).json({ error: 'amount required' });
 
-  db.run(`
-    INSERT INTO vendor_transactions (vendor_id, type, amount, transaction_date, description)
-    VALUES (?, 'purchase', ?, ?, ?)
-  `, [id, amount, transaction_date || new Date().toISOString().split('T')[0], description],
-  function(err) {
-    if (err) return res.status(500).json({ error: err.message });
+  const txDate = transaction_date || new Date().toISOString().split('T')[0];
+  const itemsJson = JSON.stringify(items);
 
-    // Update vendor totals
-    db.run(`
-      UPDATE vendors SET
-        total_purchased = total_purchased + ?,
-        balance_due = balance_due + ?
-      WHERE id = ?
-    `, [amount, amount, id], (err) => {
+  db.run(
+    `INSERT INTO vendor_transactions (vendor_id, type, amount, transaction_date, description, items_json)
+     VALUES (?, 'purchase', ?, ?, ?, ?)`,
+    [id, amount, txDate, description, itemsJson],
+    function (err) {
       if (err) return res.status(500).json({ error: err.message });
-      res.status(201).json({ message: 'Purchase recorded' });
-    });
-  });
+
+      // Update vendor running totals
+      db.run(
+        `UPDATE vendors SET
+           total_purchased = total_purchased + ?,
+           balance_due     = balance_due     + ?
+         WHERE id = ?`,
+        [amount, amount, id],
+        (err) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.status(201).json({ message: 'Purchase recorded' });
+        }
+      );
+    }
+  );
 });
 
-// POST vendor payment (we paid the vendor)
+// ─────────────────────────────────────────────
+// POST vendor payment
+// Body: { amount, description, transaction_date,
+//         payment_method: 'cash'|'upi'|'bank',
+//         upi_account,          // if upi
+//         bank_transfer_type }  // if bank: NEFT / RTGS / IMPS / NACH
+//
+// Side-effects:
+//   → Always:  INSERT into expenses
+//   → Always:  INSERT into daily_ledger
+//   → If cash: INSERT into cash_drawer_entries  (debit — cash going out)
+// ─────────────────────────────────────────────
 router.post('/:id/payment', (req, res) => {
   const { id } = req.params;
-  const { amount, description, transaction_date } = req.body;
+  const {
+    amount,
+    description,
+    transaction_date,
+    payment_method = 'cash',
+    upi_account = null,
+    bank_transfer_type = null
+  } = req.body;
+
   if (!amount) return res.status(400).json({ error: 'amount required' });
 
-  db.run(`
-    INSERT INTO vendor_transactions (vendor_id, type, amount, transaction_date, description)
-    VALUES (?, 'payment', ?, ?, ?)
-  `, [id, amount, transaction_date || new Date().toISOString().split('T')[0], description],
-  function(err) {
-    if (err) return res.status(500).json({ error: err.message });
+  const txDate = transaction_date || new Date().toISOString().split('T')[0];
 
-    db.run(`
-      UPDATE vendors SET
-        total_paid = total_paid + ?,
-        balance_due = balance_due - ?
-      WHERE id = ?
-    `, [amount, amount, id], (err) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.status(201).json({ message: 'Payment to vendor recorded' });
-    });
+  // Build a readable payment label
+  let paymentLabel = 'Cash';
+  if (payment_method === 'upi')  paymentLabel = `UPI (${upi_account || 'UPI'})`;
+  if (payment_method === 'bank') paymentLabel = `Bank Transfer - ${bank_transfer_type || 'NEFT'}`;
+
+  // First: get vendor name for ledger descriptions
+  db.get(`SELECT name FROM vendors WHERE id = ?`, [id], (err, vendor) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const vendorName = vendor.name;
+    const txDesc = description || `Payment to ${vendorName}`;
+    const fullDesc = `${txDesc} [${paymentLabel}]`;
+
+    // ── Step 1: Record vendor_transaction ──
+    db.run(
+      `INSERT INTO vendor_transactions
+         (vendor_id, type, amount, transaction_date, description, payment_method, upi_account, bank_transfer_type)
+       VALUES (?, 'payment', ?, ?, ?, ?, ?, ?)`,
+      [id, amount, txDate, txDesc, payment_method, upi_account, bank_transfer_type],
+      function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+
+        // ── Step 2: Update vendor totals ──
+        db.run(
+          `UPDATE vendors SET
+             total_paid  = total_paid  + ?,
+             balance_due = balance_due - ?
+           WHERE id = ?`,
+          [amount, amount, id],
+          (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            // ── Step 3: Record expense ──
+            db.run(
+              `INSERT INTO expenses (category, amount, expense_date, description, payment_method, reference)
+               VALUES ('Vendor Payment', ?, ?, ?, ?, ?)`,
+              [amount, txDate, fullDesc, payment_method, `vendor_${id}`],
+              (err) => {
+                if (err) console.error('Expense insert error:', err.message);
+
+                // ── Step 4: Record daily ledger entry ──
+                db.run(
+                  `INSERT INTO daily_ledger (entry_date, type, amount, description, payment_method, reference_type, reference_id)
+                   VALUES (?, 'expense', ?, ?, ?, 'vendor', ?)`,
+                  [txDate, amount, fullDesc, payment_method, id],
+                  (err) => {
+                    if (err) console.error('Ledger insert error:', err.message);
+
+                    // ── Step 5 (only for cash): Debit cash drawer ──
+                    if (payment_method === 'cash') {
+                      db.run(
+                        `INSERT INTO cash_drawer_entries (entry_date, type, amount, description, reference_type, reference_id)
+                         VALUES (?, 'debit', ?, ?, 'vendor_payment', ?)`,
+                        [txDate, amount, `Vendor payment — ${vendorName}: ${txDesc}`, id],
+                        (err) => {
+                          if (err) console.error('Cash drawer insert error:', err.message);
+                          res.status(201).json({ message: 'Payment recorded (cash drawer updated)' });
+                        }
+                      );
+                    } else {
+                      res.status(201).json({ message: 'Payment recorded' });
+                    }
+                  }
+                );
+              }
+            );
+          }
+        );
+      }
+    );
   });
 });
 
