@@ -15,6 +15,8 @@ export const createCustomer = (data) => api.post('/customers', data)
 export const updateCustomer = (id, data) => api.put(`/customers/${id}`, data)
 export const deleteCustomer = (id) => api.delete(`/customers/${id}`)
 export const getCustomerProfile = (id) => api.get(`/customers/${id}`)
+export const addOpeningBalance = (customerId, data) =>
+  api.post(`/customers/${customerId}/opening-balance`, data)
 
 // ORDERS
 export const getOrders = (filters = {}) => {
@@ -25,6 +27,7 @@ export const getOrder = (id) => api.get(`/orders/${id}`)
 export const createOrder = (data) => api.post('/orders', data)
 export const updateOrderStatus = (id, status) => 
   api.put(`/orders/${id}/status`, { status })
+export const deleteOrder = (id) => axios.delete(`http://localhost:5000/api/orders/${id}`)
 
 // PAYMENTS
 export const createPayment = (data) => api.post('/payments', data)
@@ -40,7 +43,8 @@ export const getAttendance = (employeeId, month, year) =>
   api.get(`/employees/attendance/${employeeId}?month=${month}&year=${year}`)
 export const getSalary = (id, month, year) => 
   api.get(`/employees/salary/${id}?month=${month}&year=${year}`)
-export const getEmployeeProfile = (id) => api.get(`/employees/profile/${id}`)
+export const getEmployeeProfile = (id, month, year) => 
+  api.get(`/employees/profile/${id}?month=${month}&year=${year}`)
 export const generateSalary = (data) => api.post('/employees/generate-salary', data)
 
 // DASHBOARD

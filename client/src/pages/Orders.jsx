@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
-import { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment } from '../services/api'
+import { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder } from '../services/api'
 import axios from 'axios'
+
+const UPI_ACCOUNTS = [
+  'BOI Shop Account',
+  'Google Pay - Rampratap Painter',
+  'PhonePe - Bhavya Printers',
+  'Amazon Pay - Deepak'
+]
 
 function Orders() {
   const [orders, setOrders] = useState([])
@@ -12,10 +19,18 @@ function Orders() {
   const [editingOrder, setEditingOrder] = useState(null)
   const [expandedOrder, setExpandedOrder] = useState(null)
   const [orderDetail, setOrderDetail] = useState(null)
+  const [editingFollowUp, setEditingFollowUp] = useState(null) // order id
+  const [followUpValue, setFollowUpValue]     = useState('')
   const [paymentForm, setPaymentForm] = useState({ amount: '', note: '', payment_date: '' })
 
   const [form, setForm] = useState({
-    customer_id: '', description: '', advance_paid: '', follow_up_date: '', notes: ''
+    customer_id: '',
+    description: '',
+    advance_paid: '',
+    advance_payment_mode: 'cash',   // 'cash' | 'upi'
+    advance_upi_account: '',
+    follow_up_date: '',
+    notes: ''
   })
 
   const [items, setItems] = useState([
@@ -36,7 +51,15 @@ function Orders() {
   }
 
   function handleFormChange(e) {
-    setForm({ ...form, [e.target.name]: e.target.value })
+    const { name, value } = e.target
+    setForm(prev => {
+      const updated = { ...prev, [name]: value }
+      // Reset UPI account if switching away from UPI
+      if (name === 'advance_payment_mode' && value !== 'upi') {
+        updated.advance_upi_account = ''
+      }
+      return updated
+    })
   }
 
   function handleItemChange(index, field, value) {
@@ -80,15 +103,34 @@ function Orders() {
       customer_id: order.customer_id,
       description: order.description || '',
       advance_paid: order.advance_paid,
+      advance_payment_mode: order.advance_payment_mode || 'cash',
+      advance_upi_account: order.advance_upi_account || '',
       follow_up_date: order.follow_up_date || '',
       notes: order.notes || ''
     })
+    axios.get(`http://localhost:5000/api/orders/${order.id}`)
+      .then(res => {
+        if (res.data.items && res.data.items.length > 0) {
+          setItems(res.data.items.map(i => ({
+            item_name: i.item_name,
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            length: '', breadth: '', useSize: false
+          })))
+        } else {
+          setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
+        }
+      })
     setShowForm(true)
     window.scrollTo(0, 0)
   }
 
   function resetForm() {
-    setForm({ customer_id: '', description: '', advance_paid: '', follow_up_date: '', notes: '' })
+    setForm({
+      customer_id: '', description: '', advance_paid: '',
+      advance_payment_mode: 'cash', advance_upi_account: '',
+      follow_up_date: '', notes: ''
+    })
     setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
     setEditingOrder(null)
     setShowForm(false)
@@ -98,19 +140,38 @@ function Orders() {
     e.preventDefault()
     if (!form.customer_id) return setMessage('Please select a customer.')
 
+    const advanceAmt = parseFloat(form.advance_paid) || 0
+
+    // Validate payment mode when advance > 0
+    if (advanceAmt > 0 && form.advance_payment_mode === 'upi' && !form.advance_upi_account) {
+      return setMessage('Please select a UPI account for the advance payment.')
+    }
+
     if (editingOrder) {
-      axios.put(`http://localhost:5000/api/orders/${editingOrder.id}`, {
-        description: form.description,
-        notes: form.notes,
-        follow_up_date: form.follow_up_date,
-        advance_paid: parseFloat(form.advance_paid) || 0
-      })
-        .then(() => {
-          setMessage('Order updated successfully!')
-          resetForm()
-          fetchOrders()
+      const validItems = items.filter(i => i.item_name && (parseFloat(i.quantity) > 0))
+      if (validItems.length === 0) return setMessage('Add at least one valid item.')
+
+      axios.put(`http://localhost:5000/api/orders/${editingOrder.id}/items`, {
+        items: validItems.map(i => ({
+          item_name: i.item_name,
+          quantity: parseFloat(i.quantity) || 1,
+          unit_price: parseFloat(i.unit_price) || 0
+        }))
+      }).then(() => {
+        return axios.put(`http://localhost:5000/api/orders/${editingOrder.id}`, {
+          description: form.description,
+          notes: form.notes,
+          follow_up_date: form.follow_up_date,
+          advance_paid: advanceAmt,
+          advance_payment_mode: advanceAmt > 0 ? form.advance_payment_mode : null,
+          advance_upi_account: advanceAmt > 0 && form.advance_payment_mode === 'upi'
+            ? form.advance_upi_account : null
         })
-        .catch(() => setMessage('Error updating order.'))
+      }).then(() => {
+        setMessage('Order updated successfully!')
+        resetForm()
+        fetchOrders()
+      }).catch(() => setMessage('Error updating order.'))
       return
     }
 
@@ -118,7 +179,10 @@ function Orders() {
 
     const payload = {
       ...form,
-      advance_paid: parseFloat(form.advance_paid) || 0,
+      advance_paid: advanceAmt,
+      advance_payment_mode: advanceAmt > 0 ? form.advance_payment_mode : null,
+      advance_upi_account: advanceAmt > 0 && form.advance_payment_mode === 'upi'
+        ? form.advance_upi_account : null,
       items: items.map(i => ({
         item_name: i.item_name,
         quantity: parseFloat(i.quantity) || 1,
@@ -141,6 +205,16 @@ function Orders() {
       .catch(() => setMessage('Error updating status.'))
   }
 
+  function handleDeleteOrder(order) {
+    if (!window.confirm(`"${order.description || 'This order'}" delete karna chahte ho?\n(24 ghante tak restore ho sakta hai Bin se)`)) return
+    deleteOrder(order.id)
+      .then(() => {
+        setMessage('Order deleted. Bin se restore ho sakta hai 24 ghante mein.')
+        fetchOrders()
+      })
+      .catch(() => setMessage('Error deleting order.'))
+  }
+
   function toggleExpand(order) {
     if (expandedOrder === order.id) {
       setExpandedOrder(null)
@@ -153,6 +227,8 @@ function Orders() {
       .catch(() => setMessage('Could not load order detail.'))
   }
 
+
+
   function handleAddPayment(e) {
     e.preventDefault()
     if (!paymentForm.amount) return setMessage('Enter payment amount.')
@@ -162,9 +238,19 @@ function Orders() {
       customer_id: orderDetail.customer_id,
       amount: parseFloat(paymentForm.amount),
       note: paymentForm.note,
-      payment_date: paymentForm.payment_date || new Date().toISOString().split('T')[0]
+      payment_date: paymentForm.payment_date
+        ? paymentForm.payment_date + ' ' + new Date().toLocaleTimeString('en-GB', { hour12: false })
+        : new Date().toLocaleString('en-GB', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+          }).replace(',', '')
     })
       .then(() => {
+        if (paymentForm.follow_up_date) {
+          axios.put(`http://localhost:5000/api/orders/${orderDetail.id}`, {
+            follow_up_date: paymentForm.follow_up_date
+          }).catch(() => {})
+        }
         setMessage('Payment recorded!')
         setPaymentForm({ amount: '', note: '', payment_date: '' })
         getOrderDetail(orderDetail.id).then(res => {
@@ -174,8 +260,22 @@ function Orders() {
       })
       .catch(() => setMessage('Error recording payment.'))
   }
+  function handleFollowUpSave(orderId) {
+    axios.put(`http://localhost:5000/api/orders/${orderId}`, {
+      follow_up_date: followUpValue
+    })
+      .then(() => {
+        setEditingFollowUp(null)
+        fetchOrders()
+        // Agar ye order expand hai to detail bhi refresh karo
+        if (expandedOrder === orderId) {
+          getOrderDetail(orderId).then(res => setOrderDetail(res.data))
+        }
+      })
+      .catch(() => setMessage('Error updating follow-up date.'))
+  }
 
-  const total = calculateTotal()
+  const total   = calculateTotal()
   const advance = parseFloat(form.advance_paid) || 0
   const balance = total - advance
 
@@ -223,86 +323,86 @@ function Orders() {
               />
             </div>
 
-            {!editingOrder && (
-              <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '13px', color: '#555', marginBottom: '8px', fontWeight: 'bold' }}>
-                  Line Items
-                </p>
-                {items.map((item, index) => (
-                  <div key={index} style={{ marginBottom: '10px', backgroundColor: '#f9f9f9', padding: '12px', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                      <input
-                        style={{ ...styles.input, flex: 3 }}
-                        placeholder="Item name (e.g. Flex 180GSM, Pipe 3kg, Labour)"
-                        value={item.item_name}
-                        onChange={e => handleItemChange(index, 'item_name', e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleSizeMode(index)}
-                        style={{
-                          ...styles.toggleBtn,
-                          backgroundColor: item.useSize ? '#1a1a2e' : '#fff',
-                          color: item.useSize ? '#fff' : '#333'
-                        }}
-                      >
-                        {item.useSize ? '📐 Size ON' : '📐 L×B'}
-                      </button>
-                      <button type="button" onClick={() => removeItemRow(index)} style={styles.removeBtn}>✕</button>
-                    </div>
+            <div style={{ marginBottom: '12px' }}>
+              <p style={{ fontSize: '13px', color: '#555', marginBottom: '8px', fontWeight: 'bold' }}>
+                Line Items {editingOrder && (
+                  <span style={{ fontSize: '11px', color: '#e74c3c' }}>(editing will recalculate total)</span>
+                )}
+              </p>
+              {items.map((item, index) => (
+                <div key={index} style={{ marginBottom: '10px', backgroundColor: '#f9f9f9', padding: '12px', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                    <input
+                      style={{ ...styles.input, flex: 3 }}
+                      placeholder="Item name (e.g. Flex 180GSM, Pipe 3kg, Labour)"
+                      value={item.item_name}
+                      onChange={e => handleItemChange(index, 'item_name', e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleSizeMode(index)}
+                      style={{
+                        ...styles.toggleBtn,
+                        backgroundColor: item.useSize ? '#1a1a2e' : '#fff',
+                        color: item.useSize ? '#fff' : '#333'
+                      }}
+                    >
+                      {item.useSize ? '📐 Size ON' : '📐 L×B'}
+                    </button>
+                    <button type="button" onClick={() => removeItemRow(index)} style={styles.removeBtn}>✕</button>
+                  </div>
 
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      {item.useSize ? (
-                        <>
-                          <div style={{ flex: 1 }}>
-                            <label style={styles.label}>Length (ft)</label>
-                            <input style={styles.input} type="number" placeholder="e.g. 10"
-                              value={item.length} onChange={e => handleItemChange(index, 'length', e.target.value)} />
-                          </div>
-                          <div style={{ paddingTop: '16px', fontSize: '18px' }}>×</div>
-                          <div style={{ flex: 1 }}>
-                            <label style={styles.label}>Breadth (ft)</label>
-                            <input style={styles.input} type="number" placeholder="e.g. 4"
-                              value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
-                          </div>
-                          <div style={{ paddingTop: '16px', fontSize: '18px' }}>=</div>
-                          <div style={{ flex: 1 }}>
-                            <label style={styles.label}>Sq.ft (auto)</label>
-                            <input style={{ ...styles.input, backgroundColor: '#e8f5e9' }} value={item.quantity} readOnly />
-                          </div>
-                        </>
-                      ) : (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {item.useSize ? (
+                      <>
                         <div style={{ flex: 1 }}>
-                          <label style={styles.label}>Quantity / Sq.ft</label>
-                          <input style={styles.input} type="number" placeholder="0"
-                            value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} />
+                          <label style={styles.label}>Length (ft)</label>
+                          <input style={styles.input} type="number" placeholder="e.g. 10"
+                            value={item.length} onChange={e => handleItemChange(index, 'length', e.target.value)} />
                         </div>
-                      )}
+                        <div style={{ paddingTop: '16px', fontSize: '18px' }}>×</div>
+                        <div style={{ flex: 1 }}>
+                          <label style={styles.label}>Breadth (ft)</label>
+                          <input style={styles.input} type="number" placeholder="e.g. 4"
+                            value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
+                        </div>
+                        <div style={{ paddingTop: '16px', fontSize: '18px' }}>=</div>
+                        <div style={{ flex: 1 }}>
+                          <label style={styles.label}>Sq.ft (auto)</label>
+                          <input style={{ ...styles.input, backgroundColor: '#e8f5e9' }} value={item.quantity} readOnly />
+                        </div>
+                      </>
+                    ) : (
                       <div style={{ flex: 1 }}>
-                        <label style={styles.label}>Rate (₹)</label>
+                        <label style={styles.label}>Quantity / Sq.ft</label>
                         <input style={styles.input} type="number" placeholder="0"
-                          value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', e.target.value)} />
+                          value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} />
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <label style={styles.label}>Subtotal</label>
-                        <div style={{ padding: '10px', fontWeight: 'bold', fontSize: '16px' }}>
-                          ₹{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
-                        </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <label style={styles.label}>Rate (₹)</label>
+                      <input style={styles.input} type="number" placeholder="0"
+                        value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', e.target.value)} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={styles.label}>Subtotal</label>
+                      <div style={{ padding: '10px', fontWeight: 'bold', fontSize: '16px' }}>
+                        ₹{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
                       </div>
                     </div>
                   </div>
-                ))}
-                <button type="button" onClick={addItemRow} style={styles.addItemBtn}>+ Add Item</button>
-              </div>
-            )}
-
-            <div style={styles.totalsBox}>
-              {!editingOrder && (
-                <div style={styles.totalRow}>
-                  <span>Total Amount:</span>
-                  <strong>₹{total.toFixed(2)}</strong>
                 </div>
-              )}
+              ))}
+              <button type="button" onClick={addItemRow} style={styles.addItemBtn}>+ Add Item</button>
+            </div>
+
+            {/* ── Totals + Advance Section ── */}
+            <div style={styles.totalsBox}>
+              <div style={styles.totalRow}>
+                <span>Total Amount:</span>
+                <strong>₹{total.toFixed(2)}</strong>
+              </div>
+
               <div style={styles.totalRow}>
                 <span>Advance Paid:</span>
                 <input
@@ -311,6 +411,63 @@ function Orders() {
                   value={form.advance_paid} onChange={handleFormChange}
                 />
               </div>
+
+              {/* ── Payment Mode — shown only when advance > 0 ── */}
+              {advance > 0 && (
+                <>
+                  <div style={styles.totalRow}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Payment Mode
+                      <span style={styles.requiredDot}>*</span>
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, advance_payment_mode: 'cash', advance_upi_account: '' }))}
+                        style={{
+                          ...styles.modeBtn,
+                          ...(form.advance_payment_mode === 'cash' ? styles.modeBtnActive : {})
+                        }}
+                      >
+                        💵 Cash
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, advance_payment_mode: 'upi' }))}
+                        style={{
+                          ...styles.modeBtn,
+                          ...(form.advance_payment_mode === 'upi' ? styles.modeBtnActive : {})
+                        }}
+                      >
+                        📱 UPI
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* UPI account selector */}
+                  {form.advance_payment_mode === 'upi' && (
+                    <div style={styles.totalRow}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        UPI Account
+                        <span style={styles.requiredDot}>*</span>
+                      </span>
+                      <select
+                        name="advance_upi_account"
+                        value={form.advance_upi_account}
+                        onChange={handleFormChange}
+                        style={{ ...styles.input, width: '220px', flex: 'none' }}
+                        required
+                      >
+                        <option value="">Select UPI Account</option>
+                        {UPI_ACCOUNTS.map(acc => (
+                          <option key={acc} value={acc}>{acc}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
               {!editingOrder && (
                 <div style={styles.totalRow}>
                   <span>Balance Due:</span>
@@ -400,11 +557,44 @@ function Orders() {
                     </select>
                   </td>
                   <td style={styles.td}>
-                    {o.follow_up_date
-                      ? <span style={{ color: o.follow_up_date <= new Date().toISOString().split('T')[0] ? '#e74c3c' : '#333' }}>
-                          {o.follow_up_date}
+                    {editingFollowUp === o.id ? (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          type="date"
+                          value={followUpValue}
+                          onChange={e => setFollowUpValue(e.target.value)}
+                          style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #3498db', fontSize: '13px' }}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleFollowUpSave(o.id)}
+                          style={{ backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => setEditingFollowUp(null)}
+                          style={{ backgroundColor: '#fff', color: '#888', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          style={{ color: o.follow_up_date && o.follow_up_date <= new Date().toLocaleDateString('en-CA') ? '#e74c3c' : '#333', cursor: 'pointer' }}
+                          onClick={() => { setEditingFollowUp(o.id); setFollowUpValue(o.follow_up_date || '') }}
+                        >
+                          {o.follow_up_date || '—'}
                         </span>
-                      : '—'}
+                        <button
+                          onClick={() => { setEditingFollowUp(o.id); setFollowUpValue(o.follow_up_date || '') }}
+                          style={{ backgroundColor: '#f0f0f0', border: '1px solid #ddd', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', color: '#555' }}
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td style={styles.td}>
                     <button onClick={() => toggleExpand(o)} style={styles.detailBtn}>
@@ -412,6 +602,26 @@ function Orders() {
                     </button>
                     <button onClick={() => openEditForm(o)} style={{ ...styles.editBtn, marginLeft: '6px' }}>
                       Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        window.open(`http://localhost:5000/api/pdf/bill/${o.id}`, '_blank')
+                      }}
+                      style={{
+                        backgroundColor: '#fff',
+                        color: '#8e44ad',
+                        border: '1px solid #8e44ad',
+                        padding: '5px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        marginLeft: '6px'
+                      }}
+                    >
+                      📄 Bill
+                    </button>
+                    <button onClick={() => handleDeleteOrder(o)} style={{ ...styles.deleteBtn, marginLeft: '6px' }}>
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -441,11 +651,8 @@ function Orders() {
                                   <td style={styles.innerTd}>₹{item.subtotal}</td>
                                 </tr>
                               ))}
-                              {/* TOTAL ROW */}
                               <tr style={{ backgroundColor: '#f0f7ff' }}>
-                                <td colSpan="3" style={{ ...styles.innerTd, fontWeight: 'bold', textAlign: 'right' }}>
-                                  Total:
-                                </td>
+                                <td colSpan="3" style={{ ...styles.innerTd, fontWeight: 'bold', textAlign: 'right' }}>Total:</td>
                                 <td style={{ ...styles.innerTd, fontWeight: 'bold', fontSize: '16px', color: '#1a1a2e' }}>
                                   ₹{orderDetail.total_amount}
                                 </td>
@@ -466,26 +673,51 @@ function Orders() {
                               </tr>
                             </thead>
                             <tbody>
-                              <tr style={{ backgroundColor: '#fff9e6' }}>
-                                <td style={styles.innerTd}>1</td>
-                                <td style={styles.innerTd}>{orderDetail.created_at?.split('T')[0]}</td>
-                                <td style={styles.innerTd}><strong>₹{orderDetail.advance_paid}</strong></td>
-                                <td style={styles.innerTd}>
-                                  <span style={styles.advanceBadge}>Advance</span>
-                                </td>
-                              </tr>
+                              {orderDetail.advance_paid > 0 && (
+                                <tr style={{ backgroundColor: '#fff9e6' }}>
+                                  <td style={styles.innerTd}>1</td>
+                                  <td style={styles.innerTd}>
+                                    {orderDetail.created_at ? (() => {
+                                      const d = new Date(orderDetail.created_at)
+                                      const date = d.toLocaleDateString('en-GB').replace(/\//g, '.')
+                                      const time = d.toLocaleTimeString('en-GB', { hour12: false })
+                                      return <span>{time}<br /><span style={{ fontSize: '11px', color: '#888' }}>{date}</span></span>
+                                    })() : '—'}
+                                  </td>
+                                  <td style={styles.innerTd}><strong>₹{orderDetail.advance_paid}</strong></td>
+                                  <td style={styles.innerTd}>
+                                    <span style={styles.advanceBadge}>Advance</span>
+                                    {orderDetail.advance_payment_mode && (
+                                      <span style={{
+                                        ...styles.advanceBadge,
+                                        marginLeft: '6px',
+                                        backgroundColor: orderDetail.advance_payment_mode === 'upi' ? '#e3f2fd' : '#e8f5e9',
+                                        color: orderDetail.advance_payment_mode === 'upi' ? '#1565c0' : '#2e7d32'
+                                      }}>
+                                        {orderDetail.advance_payment_mode === 'upi' ? '📱 UPI' : '💵 Cash'}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
                               {orderDetail.payments && orderDetail.payments.map((p, i) => (
                                 <tr key={p.id}>
-                                  <td style={styles.innerTd}>{i + 2}</td>
-                                  <td style={styles.innerTd}>{p.payment_date}</td>
+                                  <td style={styles.innerTd}>{(orderDetail.advance_paid > 0 ? 2 : 1) + i}</td>
+                                  <td style={styles.innerTd}>
+                                    {p.payment_date ? (() => {
+                                      const d = new Date(p.payment_date)
+                                      if (isNaN(d)) return p.payment_date
+                                      const date = d.toLocaleDateString('en-GB').replace(/\//g, '.')
+                                      const time = d.toLocaleTimeString('en-GB', { hour12: false })
+                                      return <span>{time}<br /><span style={{ fontSize: '11px', color: '#888' }}>{date}</span></span>
+                                    })() : '—'}
+                                  </td>
                                   <td style={styles.innerTd}><strong>₹{p.amount}</strong></td>
                                   <td style={styles.innerTd}>{p.note || '—'}</td>
                                 </tr>
                               ))}
                               <tr style={{ backgroundColor: '#f0fff4' }}>
-                                <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold' }}>
-                                  Balance Due
-                                </td>
+                                <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold' }}>Balance Due</td>
                                 <td colSpan="2" style={{
                                   ...styles.innerTd, fontWeight: 'bold', fontSize: '16px',
                                   color: orderDetail.balance_due > 0 ? '#e74c3c' : '#27ae60'
@@ -504,7 +736,7 @@ function Orders() {
                           {orderDetail.balance_due > 0 && (
                             <form onSubmit={handleAddPayment} style={styles.paymentForm}>
                               <h5 style={{ marginBottom: '8px', color: '#555' }}>+ Record New Payment</h5>
-                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                                 <input
                                   style={{ ...styles.input, maxWidth: '150px' }}
                                   type="number" placeholder="Amount ₹"
@@ -523,6 +755,15 @@ function Orders() {
                                   value={paymentForm.note}
                                   onChange={e => setPaymentForm({ ...paymentForm, note: e.target.value })}
                                 />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <label style={{ fontSize: '11px', color: '#888' }}>Next Follow-up</label>
+                                  <input
+                                    style={{ ...styles.input, maxWidth: '160px' }}
+                                    type="date"
+                                    value={paymentForm.follow_up_date || ''}
+                                    onChange={e => setPaymentForm({ ...paymentForm, follow_up_date: e.target.value })}
+                                  />
+                                </div>
                                 <button type="submit" style={styles.submitBtn}>Save Payment</button>
                               </div>
                             </form>
@@ -563,8 +804,9 @@ const styles = {
   label: { fontSize: '12px', color: '#888', display: 'block', marginBottom: '4px' },
   toggleBtn: { padding: '8px 12px', borderRadius: '6px', border: '1px solid #ddd', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' },
   removeBtn: { width: '32px', height: '32px', backgroundColor: '#fee', color: '#e74c3c', border: '1px solid #e74c3c', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' },
+  deleteBtn: { backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   addItemBtn: { backgroundColor: '#f0f0f0', border: '1px solid #ddd', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', marginTop: '4px' },
-  totalsBox: { backgroundColor: '#f8f8f8', padding: '16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '400px' },
+  totalsBox: { backgroundColor: '#f8f8f8', padding: '16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '460px' },
   totalRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '15px' },
   submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   filterRow: { display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' },
@@ -585,7 +827,10 @@ const styles = {
   innerTh: { padding: '8px 12px', backgroundColor: '#f8f8f8', textAlign: 'left', borderBottom: '1px solid #eee', color: '#666' },
   innerTd: { padding: '8px 12px', borderBottom: '1px solid #f0f0f0' },
   advanceBadge: { backgroundColor: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontSize: '11px' },
-  paymentForm: { marginTop: '12px', padding: '12px', backgroundColor: '#f9f9f9', borderRadius: '8px' }
+  paymentForm: { marginTop: '12px', padding: '12px', backgroundColor: '#f9f9f9', borderRadius: '8px' },
+  modeBtn: { padding: '8px 16px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: '500' },
+  modeBtnActive: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
+  requiredDot: { color: '#e74c3c', fontSize: '16px', lineHeight: 1 }
 }
 
 export default Orders

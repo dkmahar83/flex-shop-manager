@@ -3,16 +3,22 @@ const router = express.Router();
 const db = require('../db/database');
 
 // ─────────────────────────────────────────
+// HELPER: IST timestamp (consistent with orders.js)
+// ─────────────────────────────────────────
+function nowIST() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+}
+
+// ─────────────────────────────────────────
 // GET /api/employees
 // ─────────────────────────────────────────
 router.get('/', (req, res) => {
-  db.all(`SELECT * FROM employees WHERE is_active = 1 ORDER BY name ASC`, 
+  db.all(`SELECT * FROM employees WHERE is_active = 1 ORDER BY name ASC`,
   [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
 });
-
 
 // ─────────────────────────────────────────
 // POST /api/employees
@@ -56,39 +62,40 @@ router.put('/:id', (req, res) => {
 
 // ─────────────────────────────────────────
 // POST /api/employees/attendance
-// Mark attendance for one or multiple employees
 // ─────────────────────────────────────────
 router.post('/attendance', (req, res) => {
   const { date, records } = req.body;
-  // records = [{ employee_id: 1, status: 'present' }, ...]
 
   if (!date || !records || records.length === 0) {
     return res.status(400).json({ error: 'date and records are required' });
   }
 
   db.serialize(() => {
-  records.forEach(record => {
-    db.run(
-      `INSERT OR IGNORE INTO attendance (employee_id, date, status) VALUES (?, ?, ?)`,
-      [record.employee_id, date, record.status]
-    );
-    db.run(
-      `UPDATE attendance SET status = ? WHERE employee_id = ? AND date = ?`,
-      [record.status, record.employee_id, date]
-    );
+    records.forEach(record => {
+      db.run(
+        `INSERT OR IGNORE INTO attendance (employee_id, date, status) VALUES (?, ?, ?)`,
+        [record.employee_id, date, record.status]
+      );
+      db.run(
+        `UPDATE attendance SET status = ? WHERE employee_id = ? AND date = ?`,
+        [record.status, record.employee_id, date]
+      );
+    });
   });
-});
   res.status(201).json({ message: 'Attendance marked successfully' });
 });
 
 // ─────────────────────────────────────────
-// GET /api/employees/attendance/:employee_id
-// Get attendance for an employee by month
+// ⚠️  IMPORTANT: Named routes (non-:param) MUST come before /:param routes
+// in Express. If /attendance/:id or /salary/:id appear before /profile/:id,
+// Express will never match /profile/:id correctly.
+// Order is: POST/GET on static paths first, then /:param last.
 // ─────────────────────────────────────────
+
+// GET /api/employees/attendance/:employee_id
 router.get('/attendance/:employee_id', (req, res) => {
   const { employee_id } = req.params;
   const { month, year } = req.query;
-  // e.g. /api/employees/attendance/1?month=06&year=2026
 
   let query = `SELECT * FROM attendance WHERE employee_id = ?`;
   let params = [employee_id];
@@ -106,38 +113,29 @@ router.get('/attendance/:employee_id', (req, res) => {
   });
 });
 
-// ─────────────────────────────────────────
 // GET /api/employees/salary/:employee_id
-// Calculate salary for a given month
-// ─────────────────────────────────────────
 router.get('/salary/:employee_id', (req, res) => {
   const { employee_id } = req.params;
   const { month, year } = req.query;
 
-  // Get employee details
   db.get(`SELECT * FROM employees WHERE id = ?`, [employee_id], (err, employee) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-    // Get attendance for this month
     db.all(`
-      SELECT * FROM attendance 
-      WHERE employee_id = ? 
-      AND strftime('%m', date) = ? 
+      SELECT * FROM attendance
+      WHERE employee_id = ?
+      AND strftime('%m', date) = ?
       AND strftime('%Y', date) = ?
       GROUP BY date
     `, [employee_id, month, year], (err, attendance) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      // Count days
-      const total_days = attendance.length;
-      const present_days = attendance.filter(a => a.status === 'present').length;
-      const half_days = attendance.filter(a => a.status === 'half_day').length;
-      const absent_days = attendance.filter(a => a.status === 'absent').length;
-
-      // Salary calculation (your business logic)
-      // Full month salary ÷ total working days marked × days present
-      const per_day_salary = employee.monthly_salary / 30; // 30 working days assumed
+      const total_days     = attendance.length;
+      const present_days   = attendance.filter(a => a.status === 'present').length;
+      const half_days      = attendance.filter(a => a.status === 'half_day').length;
+      const absent_days    = attendance.filter(a => a.status === 'absent').length;
+      const per_day_salary = employee.monthly_salary / 30;
       const effective_days = present_days + (half_days * 0.5);
       const calculated_salary = Math.round(per_day_salary * effective_days);
       const deduction = employee.monthly_salary - calculated_salary;
@@ -163,36 +161,41 @@ router.get('/salary/:employee_id', (req, res) => {
 // ─────────────────────────────────────────
 // GET /api/employees/profile/:id
 // Employee profile + payment history
+//
+// FIX: This route was previously shadowed by /attendance/:employee_id
+// and /salary/:employee_id if registered after them. Now declared here
+// in the correct order — static-segment routes always before /:param.
 // ─────────────────────────────────────────
 router.get('/profile/:id', (req, res) => {
-  const { id } = req.params
-  const month = req.query.month || String(new Date().getMonth() + 1).padStart(2, '0')
-  const year = req.query.year || String(new Date().getFullYear())
+  const { id } = req.params;
+  const month = req.query.month || String(new Date().getMonth() + 1).padStart(2, '0');
+  const year  = req.query.year  || String(new Date().getFullYear());
 
   db.get(`SELECT * FROM employees WHERE id = ?`, [id], (err, employee) => {
-    if (err) return res.status(500).json({ error: err.message })
-    if (!employee) return res.status(404).json({ error: 'Employee not found' })
+    if (err) return res.status(500).json({ error: err.message });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
     // Get advances paid from expenses
     db.all(`
-      SELECT id, expense_date as date, amount, description, payment_mode, upi_account, 'advance' as type
+      SELECT id, expense_date as date, amount, description, payment_mode, upi_account,
+             'advance' as type, created_at
       FROM expenses
       WHERE paid_to_type = 'employee' AND paid_to_id = ?
       ORDER BY expense_date DESC
     `, [id], (err, advances) => {
-      if (err) return res.status(500).json({ error: err.message })
+      if (err) return res.status(500).json({ error: err.message });
 
       // Get salary credits
       db.all(`
         SELECT id, credited_date as date, salary_amount as amount, notes as description,
-               payment_mode, upi_account, 'salary' as type
+              payment_mode, upi_account, 'salary' as type, NULL as created_at
         FROM employee_salary_credits
         WHERE employee_id = ?
         ORDER BY credited_date DESC
       `, [id], (err, salaries) => {
-        if (err) return res.status(500).json({ error: err.message })
+        if (err) return res.status(500).json({ error: err.message });
 
-        // Get attendance for selected month to calculate earned salary
+        // Attendance for selected month
         db.all(`
           SELECT * FROM attendance
           WHERE employee_id = ?
@@ -200,174 +203,108 @@ router.get('/profile/:id', (req, res) => {
           AND strftime('%Y', date) = ?
           GROUP BY date
         `, [id, month, year], (err, attendance) => {
-          if (err) return res.status(500).json({ error: err.message })
+          if (err) return res.status(500).json({ error: err.message });
 
-          const presentDays = attendance.filter(a => a.status === 'present').length
-          const halfDays = attendance.filter(a => a.status === 'half_day').length
-          const effectiveDays = presentDays + (halfDays * 0.5)
-          const perDay = employee.monthly_salary / 30
-          const salaryEarned = Math.round(perDay * effectiveDays)
+          const presentDays  = attendance.filter(a => a.status === 'present').length;
+          const halfDays     = attendance.filter(a => a.status === 'half_day').length;
+          const effectiveDays = presentDays + (halfDays * 0.5);
+          const perDay        = employee.monthly_salary / 30;
+          const salaryEarned  = Math.round(perDay * effectiveDays);
 
-          const totalAdvancePaid = advances.reduce((s, a) => s + a.amount, 0)
-          const totalSalaryCredited = salaries.reduce((s, s2) => s + s2.amount, 0)
-          const totalPaid = totalAdvancePaid + totalSalaryCredited
-          const netPayable = salaryEarned - totalAdvancePaid
+          const totalAdvancePaid     = advances.reduce((s, a) => s + a.amount, 0);
+          const totalSalaryCredited  = salaries.reduce((s, s2) => s + s2.amount, 0);
+          const totalPaid            = totalAdvancePaid + totalSalaryCredited;
+          const netPayable           = salaryEarned - totalAdvancePaid;
 
-          // Combined history sorted by date
           const payment_history = [...advances, ...salaries]
-            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
           res.json({
             employee,
             payment_history,
-            total_advance_paid: totalAdvancePaid,
+            total_advance_paid:    totalAdvancePaid,
             total_salary_credited: totalSalaryCredited,
-            total_paid: totalPaid,
-            salary_earned: salaryEarned,
-            effective_days: effectiveDays,
-            present_days: presentDays,
-            half_days: halfDays,
-            net_payable: netPayable,
+            total_paid:            totalPaid,
+            salary_earned:         salaryEarned,
+            effective_days:        effectiveDays,
+            present_days:          presentDays,
+            half_days:             halfDays,
+            net_payable:           netPayable,
             month,
             year
-          })
-        })
-      })
-    })
-  })
-})
-
+          });
+        });
+      });
+    });
+  });
+});
 
 // ─────────────────────────────────────────
 // POST /api/employees/generate-salary
-// Generate salary + create expense
 // ─────────────────────────────────────────
 router.post('/generate-salary', (req, res) => {
-  const {
-    employee_id,
-    month,
-    year,
-    payment_mode,
-    upi_account,
-    notes
-  } = req.body
+  const { employee_id, month, year, payment_mode, upi_account, notes } = req.body;
+  const createdAt = nowIST();
 
-  // Check duplicate
   db.get(`
-    SELECT *
-    FROM employee_salary_credits
-    WHERE employee_id = ?
-    AND month = ?
-    AND year = ?
+    SELECT * FROM employee_salary_credits
+    WHERE employee_id = ? AND month = ? AND year = ?
   `, [employee_id, month, year], (err, existing) => {
-    if (err) return res.status(500).json({ error: err.message })
-
+    if (err) return res.status(500).json({ error: err.message });
     if (existing) {
-      return res.status(400).json({
-        error: `Salary already generated for ${month}/${year}`
-      })
+      return res.status(400).json({ error: `Salary already generated for ${month}/${year}` });
     }
 
-    // Get employee
-    db.get(`
-      SELECT *
-      FROM employees
-      WHERE id = ?
-    `, [employee_id], (err, employee) => {
-      if (err) return res.status(500).json({ error: err.message })
-      if (!employee)
-        return res.status(404).json({ error: 'Employee not found' })
+    db.get(`SELECT * FROM employees WHERE id = ?`, [employee_id], (err, employee) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-      // Attendance for month
       db.all(`
-        SELECT *
-        FROM attendance
+        SELECT * FROM attendance
         WHERE employee_id = ?
         AND strftime('%m', date) = ?
         AND strftime('%Y', date) = ?
         GROUP BY date
       `, [employee_id, month, year], (err, attendance) => {
-        if (err) return res.status(500).json({ error: err.message })
+        if (err) return res.status(500).json({ error: err.message });
 
-        const presentDays =
-          attendance.filter(a => a.status === 'present').length
+        const presentDays = attendance.filter(a => a.status === 'present').length;
+        const halfDays    = attendance.filter(a => a.status === 'half_day').length;
+        const effectiveDays = presentDays + (halfDays * 0.5);
+        const calculatedSalary = Math.round((employee.monthly_salary / 30) * effectiveDays);
 
-        const halfDays =
-          attendance.filter(a => a.status === 'half_day').length
+        // Use IST date, not UTC
+        const today = nowIST().split(' ')[0];
 
-        const effectiveDays =
-          presentDays + (halfDays * 0.5)
-
-        const perDaySalary =
-          employee.monthly_salary / 30
-
-        const calculatedSalary =
-          Math.round(perDaySalary * effectiveDays)
-
-        const today =
-          new Date().toISOString().split('T')[0]
-
-        // Save salary credit
         db.run(`
-          INSERT INTO employee_salary_credits (
-            employee_id,
-            month,
-            year,
-            salary_amount,
-            credited_date,
-            notes,
-            payment_mode,
-            upi_account
-          )
+          INSERT INTO employee_salary_credits
+            (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, [
-          employee_id,
-          month,
-          year,
-          calculatedSalary,
-          today,
+          employee_id, month, year, calculatedSalary, today,
           notes || `${month}/${year} salary`,
-          payment_mode || 'cash',
-          upi_account || null
+          payment_mode || 'cash', upi_account || null
         ], function(err) {
-          if (err)
-            return res.status(500).json({ error: err.message })
+          if (err) return res.status(500).json({ error: err.message });
 
-          // Create expense entry automatically
           db.run(`
-            INSERT INTO expenses (
-              category,
-              amount,
-              expense_date,
-              description,
-              paid_to_type,
-              paid_to_id,
-              payment_mode,
-              upi_account
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO expenses
+              (category, amount, expense_date, description, paid_to_type, paid_to_id,
+               payment_mode, upi_account, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, [
-            'Employee Salary',
-            calculatedSalary,
-            today,
+            'Employee Salary', calculatedSalary, today,
             `${employee.name} salary (${month}/${year})`,
-            'employee',
-            employee_id,
-            payment_mode || 'cash',
-            upi_account || null
+            'employee', employee_id,
+            payment_mode || 'cash', upi_account || null, createdAt
           ], (err) => {
-            if (err)
-              return res.status(500).json({ error: err.message })
-
-            res.json({
-              message: 'Salary generated successfully',
-              salary_amount: calculatedSalary
-            })
-          })
-        })
-      })
-    })
-  })
-})
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ message: 'Salary generated successfully', salary_amount: calculatedSalary });
+          });
+        });
+      });
+    });
+  });
+});
 
 module.exports = router;

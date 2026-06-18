@@ -34,10 +34,10 @@ router.get('/:id', (req, res) => {
     db.all(`SELECT * FROM orders WHERE customer_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [id], (err, orders) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      db.all(`SELECT id, amount, payment_date as date, note as source, 'Order Payment' as payment_type FROM payments WHERE customer_id = ?`, [id], (err, orderPayments) => {
+      db.all(`SELECT id, amount, payment_date as date, note as source, 'Order Payment' as payment_type, created_at FROM payments WHERE customer_id = ?`, [id], (err, orderPayments) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type FROM upi_transactions WHERE customer_id = ?`, [id], (err, upiPayments) => {
+        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type, created_at FROM upi_transactions WHERE customer_id = ?`, [id], (err, upiPayments) => {
           if (err) return res.status(500).json({ error: err.message });
 
           db.all(`SELECT id, amount, received_date as date, bank_name as source, status, cheque_number, 'Cheque' as payment_type FROM cheques WHERE customer_id = ?`, [id], (err, chequePayments) => {
@@ -45,22 +45,24 @@ router.get('/:id', (req, res) => {
 
             // NEW: cash income entries linked to this customer
             db.all(`
-  SELECT 
-    id, 
-    amount, 
-    income_date as date, 
-    CASE 
-      WHEN payment_mode = 'upi' AND upi_account IS NOT NULL 
-      THEN upi_account 
-      ELSE COALESCE(notes, 'Cash') 
-    END as source,
-    CASE 
-      WHEN payment_mode = 'upi' THEN 'UPI'
-      ELSE 'Cash Income'
-    END as payment_type
-  FROM cash_income 
-  WHERE customer_id = ?
-`, [id], (err, cashIncomePayments) => {
+              SELECT 
+                id, 
+                amount, 
+                income_date as date, 
+                CASE 
+                  WHEN payment_mode = 'upi' AND upi_account IS NOT NULL 
+                  THEN upi_account 
+                  ELSE COALESCE(notes, 'Cash') 
+                END as source,
+                CASE 
+                  WHEN payment_mode = 'upi' THEN 'UPI'
+                  ELSE 'Cash Income'
+                END as payment_type,
+                created_at
+              FROM cash_income 
+              WHERE customer_id = ?
+              AND (notes NOT IN ('Order Advance Payment', 'Order Payment') OR notes IS NULL)
+            `, [id], (err, cashIncomePayments) => {
               if (err) return res.status(500).json({ error: err.message });
 
               const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
@@ -169,4 +171,28 @@ router.get('/deleted/recent', (req, res) => {
   });
 });
 
+// POST /api/customers/:id/opening-balance
+router.post('/:id/opening-balance', (req, res) => {
+  const { id } = req.params;
+  const { amount, date, notes } = req.body;
+
+  if (!amount || isNaN(amount) || Number(amount) <= 0) {
+    return res.status(400).json({ error: 'Valid amount required' });
+  }
+
+  const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+  const entryDate = date || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+
+  db.run(`
+    INSERT INTO orders
+      (customer_id, description, status, total_amount, advance_paid, balance_due,
+       advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id, created_at)
+    VALUES (?, 'Opening Balance', 'pending', ?, 0, ?, NULL, NULL, ?, NULL, NULL, ?)
+  `,
+  [id, Number(amount), Number(amount), notes || 'Pichle saal ka bakaya', createdAt],
+  function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.status(201).json({ id: this.lastID, message: 'Opening balance added successfully' });
+  });
+});
 module.exports = router;

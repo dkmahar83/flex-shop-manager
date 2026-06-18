@@ -24,67 +24,110 @@ router.get('/', (req, res) => {
 
 // GET /api/daily/today
 router.get('/today', (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+
   db.get(`SELECT * FROM daily_records WHERE record_date = ?`, [today], (err, record) => {
     if (err) return res.status(500).json({ error: err.message });
+
+    // 1. Follow-up payments from orders (payments table)
     db.all(`
-      SELECT payments.*, orders.description, customers.firm_name
+      SELECT payments.amount, payments.payment_mode, orders.description, customers.firm_name
       FROM payments
       JOIN orders ON payments.order_id = orders.id
       JOIN customers ON payments.customer_id = customers.id
       WHERE payments.payment_date = ?
-    `, [today], (err, orderPayments) => {
+    `, [today], (err, followupPayments) => {
       if (err) return res.status(500).json({ error: err.message });
+
+      // 2. Cash advance payments from orders (cash_income table)
       db.all(`
-        SELECT upi_account, SUM(amount) as total, COUNT(*) as count
-        FROM upi_transactions
-        WHERE transaction_date = ?
-        GROUP BY upi_account
-      `, [today], (err, upiToday) => {
+        SELECT cash_income.amount, customers.firm_name, 'cash' as payment_mode,
+               cash_income.notes as description
+        FROM cash_income
+        LEFT JOIN customers ON cash_income.customer_id = customers.id
+        WHERE cash_income.income_date = ? AND cash_income.notes = 'Order Advance Payment'
+      `, [today], (err, cashAdvances) => {
         if (err) return res.status(500).json({ error: err.message });
+
+        // 3. UPI advance payments from orders (upi_transactions table)
         db.all(`
-          SELECT upi_transactions.*, customers.firm_name as customer_firm
+          SELECT upi_transactions.amount,
+                 COALESCE(customers.firm_name, upi_transactions.customer_name) as firm_name,
+                 upi_transactions.upi_account as payment_mode,
+                 upi_transactions.notes as description
           FROM upi_transactions
           LEFT JOIN customers ON upi_transactions.customer_id = customers.id
-          WHERE transaction_date = ?
-          ORDER BY id DESC
-        `, [today], (err, upiDetail) => {
+          WHERE upi_transactions.transaction_date = ? AND upi_transactions.notes = 'Order Advance Payment'
+        `, [today], (err, upiAdvances) => {
           if (err) return res.status(500).json({ error: err.message });
+
+          // Merge all order-related payments
+          const orderPayments = [...followupPayments, ...cashAdvances, ...upiAdvances];
+          const orderPaymentsTotal = orderPayments.reduce((s, p) => s + p.amount, 0);
+
+          // 4. UPI summary by account
           db.all(`
-            SELECT cheques.*, customers.firm_name as customer_firm
-            FROM cheques
-            LEFT JOIN customers ON cheques.customer_id = customers.id
-            WHERE received_date = ?
-          `, [today], (err, chequesToday) => {
+            SELECT upi_account, SUM(amount) as total, COUNT(*) as count
+            FROM upi_transactions
+            WHERE transaction_date = ?
+            AND (notes != 'Order Advance Payment' OR notes IS NULL)
+            GROUP BY upi_account
+          `, [today], (err, upiToday) => {
             if (err) return res.status(500).json({ error: err.message });
+
+            // 5. UPI detail
             db.all(`
-              SELECT cash_income.*, customers.firm_name
-              FROM cash_income
-              LEFT JOIN customers ON cash_income.customer_id = customers.id
-              WHERE income_date = ?
+              SELECT upi_transactions.*, customers.firm_name as customer_firm
+              FROM upi_transactions
+              LEFT JOIN customers ON upi_transactions.customer_id = customers.id
+              WHERE transaction_date = ?
+              AND (upi_transactions.notes != 'Order Advance Payment' OR upi_transactions.notes IS NULL)
               ORDER BY id DESC
-            `, [today], (err, cashIncomeToday) => {
+            `, [today], (err, upiDetail) => {
               if (err) return res.status(500).json({ error: err.message });
-              const cashIncomeTotal = cashIncomeToday.reduce((s, c) => s + c.amount, 0);
-              const orderPaymentsTotal = orderPayments.reduce((s, p) => s + p.amount, 0);
-              const upiTotal = upiToday.reduce((s, u) => s + u.total, 0);
-              const chequeTotal = chequesToday.reduce((s, c) => s + c.amount, 0);
-              const manualSales = record ? record.total_sales : 0;
-              const totalCashIn = orderPaymentsTotal + cashIncomeTotal + upiTotal;
-              res.json({
-                record_date: today,
-                manual_sales: manualSales,
-                total_expenses: record ? record.total_expenses : 0,
-                order_payments: orderPayments,
-                order_payments_total: orderPaymentsTotal,
-                cash_income_today: cashIncomeToday,
-                cash_income_total: cashIncomeTotal,
-                upi_by_account: upiToday,
-                upi_detail: upiDetail,
-                upi_total: upiTotal,
-                cheques_today: chequesToday,
-                cheque_total: chequeTotal,
-                total_cash_in: totalCashIn
+
+              // 6. Cheques
+              db.all(`
+                SELECT cheques.*, customers.firm_name as customer_firm
+                FROM cheques
+                LEFT JOIN customers ON cheques.customer_id = customers.id
+                WHERE received_date = ?
+              `, [today], (err, chequesToday) => {
+                if (err) return res.status(500).json({ error: err.message });
+
+                // 7. Other cash income (non-advance)
+                db.all(`
+                  SELECT cash_income.*, customers.firm_name
+                  FROM cash_income
+                  LEFT JOIN customers ON cash_income.customer_id = customers.id
+                  WHERE income_date = ? AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment') OR cash_income.notes IS NULL)
+                  ORDER BY id DESC
+                `, [today], (err, cashIncomeToday) => {
+                  if (err) return res.status(500).json({ error: err.message });
+
+                  const cashIncomeTotal  = cashIncomeToday.reduce((s, c) => s + c.amount, 0);
+                  const upiTotal         = upiToday.reduce((s, u) => s + u.total, 0);
+                  const chequeTotal      = chequesToday.reduce((s, c) => s + c.amount, 0);
+                  const manualSales      = record ? record.total_sales : 0;
+                  const totalCashIn      = orderPaymentsTotal + cashIncomeTotal + upiTotal;
+
+                  res.json({
+                    record_date:          today,
+                    manual_sales:         manualSales,
+                    total_expenses:       record ? record.total_expenses : 0,
+                    order_payments:       orderPayments,
+                    order_payments_total: orderPaymentsTotal,
+                    payments_total:       orderPaymentsTotal,
+                    cash_income_today:    cashIncomeToday,
+                    cash_income_total:    cashIncomeTotal,
+                    upi_by_account:       upiToday,
+                    upi_detail:           upiDetail,
+                    upi_total:            upiTotal,
+                    cheques_today:        chequesToday,
+                    cheque_total:         chequeTotal,
+                    total_cash_in:        totalCashIn
+                  });
+                });
               });
             });
           });
@@ -93,7 +136,6 @@ router.get('/today', (req, res) => {
     });
   });
 });
-
 // GET /api/daily/report?month=06&year=2026
 router.get('/report', (req, res) => {
   const { month, year } = req.query;
@@ -292,20 +334,62 @@ router.post('/cash-income', (req, res) => {
   if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
   if (!amount || isNaN(amount) || parseInt(Number(amount), 10) <= 0)
     return res.status(400).json({ error: 'Valid amount is required' });
-  const date = income_date || new Date().toISOString().split('T')[0];
+
+  const parsedAmount = parseInt(Number(amount), 10);
+  const date = income_date || new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).split(' ')[0];
+  const createdAt = new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).replace('T', ' ');
+
   db.run(`
-    INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, upi_account)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `, [
-    customer_id,
-    parseInt(Number(amount), 10),
-    date,
+    customer_id, parsedAmount, date,
     notes || null,
     payment_mode || 'cash',
-    payment_mode === 'upi' ? upi_account : null
+    payment_mode === 'upi' ? upi_account : null,
+    createdAt
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: this.lastID, message: 'Income saved' });
+    const cash_income_id = this.lastID;
+
+    // Auto-update pending orders balance_due for this customer
+    // Oldest pending order pehle update hoga (FIFO)
+    db.all(`
+      SELECT id, balance_due FROM orders
+      WHERE customer_id = ? AND balance_due > 0 AND deleted_at IS NULL
+      ORDER BY created_at ASC
+    `, [customer_id], (err, pendingOrders) => {
+      if (err || !pendingOrders.length) {
+        return res.status(201).json({ id: cash_income_id, message: 'Income saved' });
+      }
+
+      let remaining = parsedAmount;
+      const updates = []
+
+      for (const order of pendingOrders) {
+        if (remaining <= 0) break;
+        const deduct = Math.min(remaining, order.balance_due);
+        updates.push({ id: order.id, new_balance: order.balance_due - deduct });
+        remaining -= deduct;
+      }
+
+      // Apply all updates
+      let done = 0;
+      if (updates.length === 0) {
+        return res.status(201).json({ id: cash_income_id, message: 'Income saved' });
+      }
+
+      updates.forEach(u => {
+        db.run(`UPDATE orders SET balance_due = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [u.new_balance, u.id], (err) => {
+          if (err) console.error('balance_due update failed:', err.message);
+          done++;
+          if (done === updates.length) {
+            res.status(201).json({ id: cash_income_id, message: 'Income saved' });
+          }
+        });
+      });
+    });
   });
 });
 
@@ -392,7 +476,7 @@ router.get('/ledger/date', (req, res) => {
 
   db.all(`
     SELECT payments.amount, payments.payment_mode,
-      customers.firm_name as party_name, 'Order Payment' as type
+      customers.firm_name as party_name, 'Order Payment' as type, NULL as created_at
     FROM payments
     JOIN orders ON payments.order_id = orders.id
     JOIN customers ON payments.customer_id = customers.id
@@ -402,7 +486,10 @@ router.get('/ledger/date', (req, res) => {
 
     db.all(`
       SELECT cash_income.amount, cash_income.payment_mode,
-        cash_income.upi_account, customers.firm_name as party_name, 'Cash Income' as type
+        cash_income.upi_account, cash_income.created_at,
+        cash_income.notes,    
+        customers.firm_name as party_name,
+        'Cash Income' as type
       FROM cash_income
       LEFT JOIN customers ON cash_income.customer_id = customers.id
       WHERE cash_income.income_date = ?
@@ -411,10 +498,10 @@ router.get('/ledger/date', (req, res) => {
 
       db.all(`
         SELECT amount, upi_account as payment_mode,
-          COALESCE(customer_name, customers.firm_name, 'Unknown') as party_name, 'UPI Payment' as type
+          COALESCE(customers.firm_name, 'Unknown') as party_name, 'UPI Payment' as type
         FROM upi_transactions
         LEFT JOIN customers ON upi_transactions.customer_id = customers.id
-        WHERE transaction_date = ? AND notes NOT LIKE 'EXPENSE:%'
+        WHERE transaction_date = ? AND (notes NOT LIKE 'EXPENSE:%' OR notes IS NULL)
       `, [date], (err, upiPayments) => {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -425,7 +512,7 @@ router.get('/ledger/date', (req, res) => {
               WHEN paid_to_type = 'employee' THEN employees.name
               WHEN paid_to_type = 'vendor' THEN vendors.name
               ELSE expenses.category
-            END as party_name, expenses.description
+            END as party_name, expenses.description, expenses.created_at
           FROM expenses
           LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
           LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id
@@ -521,18 +608,18 @@ router.get('/cash-drawer', (req, res) => {
     const openingBalance = openingRow?.opening_balance || 0;
 
     db.all(`
-      SELECT amount, 'Order Payment' as type, customers.firm_name as party_name, payment_date as txn_date
-      FROM payments
-      JOIN orders ON payments.order_id = orders.id
-      JOIN customers ON payments.customer_id = customers.id
-      WHERE payments.payment_mode = 'cash' AND payments.payment_date = ?
-      UNION ALL
-      SELECT cash_income.amount, 'Cash Income' as type, customers.firm_name as party_name, income_date as txn_date
-      FROM cash_income
-      LEFT JOIN customers ON cash_income.customer_id = customers.id
-      WHERE (cash_income.payment_mode = 'cash' OR cash_income.payment_mode IS NULL)
-      AND cash_income.income_date = ?
-    `, [date, date], (err, cashInRows) => {
+        SELECT amount, 'Order Payment' as type, customers.firm_name as party_name, payment_date as txn_date, payments.created_at
+        FROM payments
+        JOIN orders ON payments.order_id = orders.id
+        JOIN customers ON payments.customer_id = customers.id
+        WHERE payments.payment_mode = 'cash' AND payments.payment_date = ?
+        UNION ALL
+        SELECT cash_income.amount, 'Cash Income' as type, customers.firm_name as party_name, income_date as txn_date, cash_income.created_at
+        FROM cash_income
+        LEFT JOIN customers ON cash_income.customer_id = customers.id
+        WHERE (cash_income.payment_mode = 'cash' OR cash_income.payment_mode IS NULL)
+        AND cash_income.income_date = ?
+      `, [date, date], (err, cashInRows) => {
       if (err) return res.status(500).json({ error: err.message });
 
       db.all(`
@@ -541,7 +628,7 @@ router.get('/cash-drawer', (req, res) => {
             WHEN paid_to_type = 'employee' THEN employees.name
             WHEN paid_to_type = 'vendor' THEN vendors.name
             ELSE expenses.category
-          END as party_name, expenses.description, expense_date as txn_date
+          END as party_name, expenses.description, expense_date as txn_date, expenses.created_at
         FROM expenses
         LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
         LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id

@@ -82,15 +82,17 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'category and amount are required' });
 
   const date = expense_date || new Date().toISOString().split('T')[0];
+  const createdAt = new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).replace('T', ' ');
 
   db.run(`
     INSERT INTO expenses 
-      (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     category, parseInt(parseFloat(amount), 10), date, description || null,
     paid_to_type || null, paid_to_id ? parseInt(paid_to_id) : null,
-    payment_mode || 'cash', upi_account || null, utr_number || null
+    payment_mode || 'cash', upi_account || null, utr_number || null,
+    createdAt
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     const expenseId = this.lastID;

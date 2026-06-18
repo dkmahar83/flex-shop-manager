@@ -14,6 +14,7 @@ function Employees() {
   const [salaryData, setSalaryData] = useState(null)
   const [attendanceCalendar, setAttendanceCalendar] = useState([])
   const [employeeProfile, setEmployeeProfile] = useState(null)
+  const [profileError, setProfileError] = useState('')
 
   const [form, setForm] = useState({
     name: '', phone: '', monthly_salary: '', join_date: ''
@@ -37,7 +38,6 @@ function Employees() {
     String(new Date().getFullYear())
   )
 
-  // ✅ FIX: declare genMonth and genYear state (were used but never declared)
   const [genMonth, setGenMonth] = useState(
     String(new Date().getMonth() + 1).padStart(2, '0')
   )
@@ -112,13 +112,44 @@ function Employees() {
     fetchCalendar(calendarEmployee.id, calendarMonth, calendarYear)
   }
 
-  // ✅ FIX: was appending query string to emp.id — now passes proper args
-  function loadEmployeeProfile(emp) {
+  // ── FIX: loadEmployeeProfile now shows real error instead of generic message ──
+  function loadEmployeeProfile(emp, month, year) {
     setSelectedEmployee(emp)
     setEmployeeProfile(null)
-    getEmployeeProfile(emp.id, genMonth, genYear)
-      .then(res => setEmployeeProfile(res.data))
-      .catch(() => setMessage('Error loading profile.'))
+    setProfileError('')
+
+    const m = month || genMonth
+    const y = year  || genYear
+
+    getEmployeeProfile(emp.id, m, y)
+      .then(res => {
+        setEmployeeProfile(res.data)
+      })
+      .catch(err => {
+        // Show the actual server error so we can debug it
+        const msg = err?.response?.data?.error || err?.message || 'Unknown error'
+        setProfileError(`Error loading profile: ${msg}`)
+        console.error('Profile load failed:', err)
+      })
+  }
+
+  // ── FIX: fmtDT — display stored timestamp as-is, no Date() re-parsing
+  // The DB stores "2026-06-17 14:52:58" (IST). Passing this through new Date()
+  // re-interprets it as UTC and adds +5:30 offset, showing the wrong time.
+  // Instead we just format the stored string directly.
+  function fmtDT(dateStr) {
+    if (!dateStr) return '—'
+    // Try to parse YYYY-MM-DD HH:MM:SS or ISO format
+    // We display as-is without timezone conversion
+    const clean = dateStr.replace('T', ' ').substring(0, 19)
+    // clean = "2026-06-17 14:52:58"
+    const parts = clean.split(' ')
+    if (parts.length === 2) {
+      const [datePart, timePart] = parts
+      const [yyyy, mm, dd] = datePart.split('-')
+      return `${timePart}  ${dd}.${mm}.${yyyy}`
+    }
+    return clean
   }
 
   function buildCalendar(month, year) {
@@ -137,11 +168,11 @@ function Employees() {
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   const TABS = [
-    { key: 'list', label: '👥 Employees' },
+    { key: 'list',       label: '👥 Employees' },
     { key: 'attendance', label: '📅 Mark Attendance' },
-    { key: 'calendar', label: '🗓️ Calendar' },
-    { key: 'salary', label: '💰 Salary' },
-    { key: 'profile', label: '👤 Profile' }
+    { key: 'calendar',  label: '🗓️ Calendar' },
+    { key: 'salary',    label: '💰 Salary' },
+    { key: 'profile',   label: '👤 Profile' }
   ]
 
   return (
@@ -536,7 +567,7 @@ function Employees() {
       {/* ── TAB: PROFILE ── */}
       {activeTab === 'profile' && (
         <div>
-          {/* Employee selector */}
+          {/* Employee selector buttons */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
             {employees.map(emp => (
               <button key={emp.id}
@@ -553,7 +584,14 @@ function Employees() {
             ))}
           </div>
 
-          {!employeeProfile && selectedEmployee && (
+          {/* FIX: Show real error message instead of generic "Error loading profile" */}
+          {profileError && (
+            <p style={{ color: '#c0392b', backgroundColor: '#fdf2f2', padding: '10px 16px', borderRadius: '6px', marginBottom: '12px' }}>
+              {profileError}
+            </p>
+          )}
+
+          {!employeeProfile && selectedEmployee && !profileError && (
             <p style={{ color: '#888' }}>Loading profile...</p>
           )}
 
@@ -573,7 +611,7 @@ function Employees() {
                 </p>
               </div>
 
-              {/* Month/Year selector — ✅ FIX: now correctly calls getEmployeeProfile(id, month, year) */}
+              {/* Month/Year selector */}
               <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                 <div>
                   <label style={styles.label}>Month</label>
@@ -582,9 +620,7 @@ function Employees() {
                     onChange={e => {
                       const newMonth = e.target.value
                       setGenMonth(newMonth)
-                      getEmployeeProfile(selectedEmployee.id, newMonth, genYear)
-                        .then(res => setEmployeeProfile(res.data))
-                        .catch(() => setMessage('Error loading profile.'))
+                      loadEmployeeProfile(selectedEmployee, newMonth, genYear)
                     }}>
                     {['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => (
                       <option key={m} value={m}>{new Date(2000, i).toLocaleString('en-IN', { month: 'long' })}</option>
@@ -598,23 +634,15 @@ function Employees() {
                     onChange={e => {
                       const newYear = e.target.value
                       setGenYear(newYear)
-                      getEmployeeProfile(selectedEmployee.id, genMonth, newYear)
-                        .then(res => setEmployeeProfile(res.data))
-                        .catch(() => setMessage('Error loading profile.'))
+                      loadEmployeeProfile(selectedEmployee, genMonth, newYear)
                     }}>
                     {['2024','2025','2026','2027'].map(y => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* 
-                ✅ FINANCIAL LOGIC (as you described):
-                  - salary_earned   → always +ve  (generated by attendance)
-                  - total_advance_paid → always shown as -ve (money given out)
-                  - net_payable     → can be +ve (we owe employee) or -ve (employee owes us)
-              */}
+              {/* Stats */}
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
-                {/* Salary earned — always positive */}
                 <div style={styles.statBox}>
                   <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
                     💰 Salary Earned ({employeeProfile.effective_days} days)
@@ -624,26 +652,22 @@ function Employees() {
                   </div>
                 </div>
 
-                {/* Advance given — always shown as negative outflow */}
                 <div style={styles.statBox}>
                   <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                    📤 Advance Given (from expenses)
+                    📤 Advance Given
                   </div>
                   <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#e74c3c' }}>
                     - ₹{Math.abs(employeeProfile.total_advance_paid)}
                   </div>
                 </div>
 
-                {/* Net balance — +ve means we owe employee, -ve means employee owes us */}
                 <div style={{
                   ...styles.statBox,
                   backgroundColor: employeeProfile.net_payable >= 0 ? '#f0fff4' : '#fff5f5',
                   border: `1px solid ${employeeProfile.net_payable >= 0 ? '#c3e6cb' : '#fdd'}`
                 }}>
                   <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                    {employeeProfile.net_payable >= 0
-                      ? '✅ Net Payable to Employee'
-                      : '⚠️ Employee Owes Back'}
+                    {employeeProfile.net_payable >= 0 ? '✅ Net Payable to Employee' : '⚠️ Employee Owes Back'}
                   </div>
                   <div style={{
                     fontSize: '26px', fontWeight: 'bold',
@@ -654,7 +678,7 @@ function Employees() {
                 </div>
               </div>
 
-              {/* Payment history table */}
+              {/* Payment history */}
               <h4 style={{ marginBottom: '12px' }}>Payment History</h4>
               {employeeProfile.payment_history.length === 0 ? (
                 <p style={{ color: '#888' }}>No payments recorded yet.</p>
@@ -675,7 +699,15 @@ function Employees() {
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
                         onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
                       >
-                        <td style={styles.td}>{p.date || '—'}</td>
+                        <td style={styles.td}>
+                          {/* FIX: display stored timestamp directly without re-parsing through Date() */}
+                          <div>{p.date || '—'}</div>
+                          {p.created_at && (
+                            <div style={{ fontSize: '11px', color: '#aaa' }}>
+                              🕐 {fmtDT(p.created_at)}
+                            </div>
+                          )}
+                        </td>
                         <td style={styles.td}>
                           <span style={{
                             ...styles.badge,
@@ -693,7 +725,6 @@ function Employees() {
                           </span>
                         </td>
                         <td style={styles.td}>
-                          {/* ✅ Show advance as -ve, salary as +ve in history */}
                           <strong style={{ color: p.type === 'advance' ? '#e74c3c' : '#27ae60' }}>
                             {p.type === 'advance' ? '- ' : '+ '}₹{p.amount}
                           </strong>

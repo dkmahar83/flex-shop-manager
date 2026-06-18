@@ -4,30 +4,20 @@ const db = require('../db/database');
 
 // ─────────────────────────────────────────
 // GET /api/orders
-// Get all orders, with optional filters
 // ─────────────────────────────────────────
 router.get('/', (req, res) => {
   const { status, customer_id, search } = req.query;
 
   let query = `
-  SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
-  FROM orders
-  JOIN customers ON orders.customer_id = customers.id
-  WHERE 1=1 AND orders.deleted_at IS NULL
-`;
+    SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
+    FROM orders
+    JOIN customers ON orders.customer_id = customers.id
+    WHERE 1=1 AND orders.deleted_at IS NULL
+  `;
   let params = [];
 
-  // Add filters dynamically
-  if (status) {
-    query += ` AND orders.status = ?`;
-    params.push(status);
-  }
-
-  if (customer_id) {
-    query += ` AND orders.customer_id = ?`;
-    params.push(customer_id);
-  }
-
+  if (status) { query += ` AND orders.status = ?`; params.push(status); }
+  if (customer_id) { query += ` AND orders.customer_id = ?`; params.push(customer_id); }
   if (search) {
     query += ` AND (customers.firm_name LIKE ? OR orders.description LIKE ?)`;
     params.push(`%${search}%`, `%${search}%`);
@@ -43,12 +33,10 @@ router.get('/', (req, res) => {
 
 // ─────────────────────────────────────────
 // GET /api/orders/:id
-// Get single order with its items and payments
 // ─────────────────────────────────────────
 router.get('/:id', (req, res) => {
   const { id } = req.params;
 
-  // Step 1: Get the order
   db.get(`
     SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
     FROM orders
@@ -58,15 +46,11 @@ router.get('/:id', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Step 2: Get its line items
     db.all(`SELECT * FROM order_items WHERE order_id = ?`, [id], (err, items) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      // Step 3: Get its payments
       db.all(`SELECT * FROM payments WHERE order_id = ?`, [id], (err, payments) => {
         if (err) return res.status(500).json({ error: err.message });
-
-        // Combine everything into one response
         res.json({ ...order, items, payments });
       });
     });
@@ -74,75 +58,192 @@ router.get('/:id', (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// POST /api/orders
-// Create a new order with line items
+// HELPER: Get IST timestamp string for consistent storage
+// Use this everywhere — never new Date().toISOString() (gives UTC)
+// ─────────────────────────────────────────
+function nowIST() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+}
+
+function todayIST() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+}
+
+// ─────────────────────────────────────────
+// HELPER: Record advance payment into ALL financial tables
+//
+// Single source of truth for order advance payments.
+// Every advance must appear in:
+//   1. customer_payments   → Customer Profile payment history
+//   2. cash_income         → Daily Sales "Payments from Orders", Cash Drawer, Daily Ledger
+//      OR upi_transactions → Daily Sales "Payments from Orders", UPI Accounts, Daily Ledger
+//
+// Called on order create and when advance is edited.
+// ─────────────────────────────────────────
+function recordAdvancePayment({ customer_id, firm_name, advance, payment_mode, upi_account, order_id, date }, callback) {
+  const createdAt = nowIST();
+  const notes = `Order Advance Payment`;
+
+  // ── Step 1: Always write to customer_payments (feeds Customer Profile) ──
+  db.run(`
+    INSERT INTO customer_payments
+      (customer_id, amount, payment_mode, payment_date, source, source_id, notes, created_at)
+    VALUES (?, ?, ?, ?, 'order_advance', ?, ?, ?)
+  `,
+  [customer_id, advance, payment_mode, date, order_id, notes, createdAt],
+  function(cpErr) {
+    // Log but don't abort if customer_payments insert fails — table may not exist yet
+    if (cpErr) console.warn('customer_payments insert skipped:', cpErr.message);
+
+    // ── Step 2: Write to cash_income or upi_transactions ──
+    // These are what Daily Sales / Ledger / Cash Drawer / UPI Accounts read.
+    if (payment_mode === 'upi') {
+      db.run(`
+        INSERT INTO upi_transactions
+          (upi_account, customer_name, customer_id, amount, transaction_date, notes, order_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [upi_account, firm_name, customer_id, advance, date, notes, order_id, createdAt],
+      function(err) {
+        if (err) return callback(err);
+        callback(null, { table: 'upi_transactions', id: this.lastID });
+      });
+
+    } else {
+      // Cash payment
+      db.run(`
+        INSERT INTO cash_income
+          (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
+        VALUES (?, ?, ?, ?, 'cash', NULL, ?)
+      `,
+      [customer_id, advance, date, notes, createdAt],
+      function(err) {
+        if (err) return callback(err);
+        callback(null, { table: 'cash_income', id: this.lastID });
+      });
+    }
+  });
+}
+
+// ─────────────────────────────────────────
+// HELPER: Delete a previously recorded advance entry
+// Used when advance is edited — remove old entry, insert fresh one.
+// Deletes from BOTH customer_payments and the financial table.
+// ─────────────────────────────────────────
+function deleteAdvanceEntry({ advance_entry_table, advance_entry_id, order_id }, callback) {
+  // Delete from customer_payments by order_id + source
+  if (order_id) {
+    db.run(
+      `DELETE FROM customer_payments WHERE source = 'order_advance' AND source_id = ?`,
+      [order_id],
+      (err) => { if (err) console.warn('customer_payments delete skipped:', err.message); }
+    );
+  }
+
+  if (!advance_entry_table || !advance_entry_id) return callback(null);
+
+  const table = advance_entry_table === 'upi_transactions' ? 'upi_transactions' : 'cash_income';
+  db.run(`DELETE FROM ${table} WHERE id = ?`, [advance_entry_id], callback);
+}
+
+// ─────────────────────────────────────────
+// POST /api/orders — Create a new order
 // ─────────────────────────────────────────
 router.post('/', (req, res) => {
   const {
     customer_id,
     description,
     advance_paid,
+    advance_payment_mode,  // 'cash' | 'upi'
+    advance_upi_account,   // required if mode = 'upi'
     follow_up_date,
     notes,
-    items   // array of line items
+    items
   } = req.body;
 
-  // Validation
-  if (!customer_id) {
-    return res.status(400).json({ error: 'customer_id is required' });
+  if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
+  if (!items || items.length === 0) return res.status(400).json({ error: 'At least one item is required' });
+
+  const advance = parseFloat(advance_paid) || 0;
+
+  if (advance > 0 && !advance_payment_mode) {
+    return res.status(400).json({ error: 'advance_payment_mode is required when advance_paid > 0' });
   }
-  if (!items || items.length === 0) {
-    return res.status(400).json({ error: 'At least one item is required' });
+  if (advance > 0 && advance_payment_mode === 'upi' && !advance_upi_account) {
+    return res.status(400).json({ error: 'advance_upi_account is required when payment mode is UPI' });
   }
 
-  // Calculate total from items
-  const total_amount = items.reduce((sum, item) => {
-    return sum + (item.quantity * item.unit_price);
-  }, 0);
+  const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+  const balance_due  = total_amount - advance;
+  const today        = todayIST();
+  const createdAt    = nowIST();
 
-  const advance = advance_paid || 0;
-  const balance_due = total_amount - advance;
-
-  // Insert the order first
-  db.run(`
-    INSERT INTO orders 
-    (customer_id, description, status, total_amount, advance_paid, balance_due, follow_up_date, notes)
-    VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)
-  `,
-  [customer_id, description, total_amount, advance, balance_due, follow_up_date, notes],
-  function(err) {
+  db.get(`SELECT firm_name FROM customers WHERE id = ?`, [customer_id], (err, customer) => {
     if (err) return res.status(500).json({ error: err.message });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const order_id = this.lastID;
+    db.run(`
+      INSERT INTO orders
+        (customer_id, description, status, total_amount, advance_paid, balance_due,
+         advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id, created_at)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+    `,
+    [customer_id, description, total_amount, advance, balance_due,
+     advance > 0 ? advance_payment_mode : null,
+     follow_up_date, notes, createdAt],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
 
-    // Now insert each line item
-    const insertItem = db.prepare(`
-      INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+      const order_id = this.lastID;
 
-    items.forEach(item => {
-      const subtotal = item.quantity * item.unit_price;
-      insertItem.run([order_id, item.item_name, item.quantity, item.unit_price, subtotal]);
-    });
+      const insertItem = db.prepare(`
+        INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      items.forEach(item => {
+        insertItem.run([order_id, item.item_name, item.quantity, item.unit_price,
+                        item.quantity * item.unit_price]);
+      });
+      insertItem.finalize();
 
-    insertItem.finalize();
+      if (advance > 0) {
+        recordAdvancePayment({
+          customer_id,
+          firm_name: customer.firm_name,
+          advance,
+          payment_mode: advance_payment_mode,
+          upi_account: advance_upi_account,
+          order_id,
+          date: today
+        }, (err, entry) => {
+          if (err) return res.status(500).json({ error: 'Order created but advance entry failed: ' + err.message });
 
-    res.status(201).json({
-      id: order_id,
-      customer_id,
-      total_amount,
-      advance_paid: advance,
-      balance_due,
-      status: 'pending',
-      message: 'Order created successfully'
+          db.run(`
+            UPDATE orders SET advance_entry_table = ?, advance_entry_id = ? WHERE id = ?
+          `, [entry.table, entry.id, order_id], (err) => {
+            if (err) console.error('Could not save advance_entry ref:', err.message);
+          });
+
+          res.status(201).json({
+            id: order_id, customer_id, total_amount,
+            advance_paid: advance, balance_due, status: 'pending',
+            advance_payment_mode,
+            message: 'Order created and advance recorded in financial ledger'
+          });
+        });
+      } else {
+        res.status(201).json({
+          id: order_id, customer_id, total_amount,
+          advance_paid: 0, balance_due, status: 'pending',
+          message: 'Order created successfully'
+        });
+      }
     });
   });
 });
 
 // ─────────────────────────────────────────
 // PUT /api/orders/:id/status
-// Update order status only
 // ─────────────────────────────────────────
 router.put('/:id/status', (req, res) => {
   const { id } = req.params;
@@ -153,78 +254,173 @@ router.put('/:id/status', (req, res) => {
     return res.status(400).json({ error: 'Invalid status value' });
   }
 
-  db.run(`
-    UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `, [status, id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
-    res.json({ message: `Order status updated to ${status}` });
-  });
+  db.run(`UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [status, id], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
+      res.json({ message: `Order status updated to ${status}` });
+    });
 });
 
 // ─────────────────────────────────────────
-// PUT /api/orders/:id
-// Update order details (description, notes, follow_up_date)
+// PUT /api/orders/:id — Update order details
 // ─────────────────────────────────────────
 router.put('/:id', (req, res) => {
   const { id } = req.params;
-  const { description, notes, follow_up_date, advance_paid } = req.body;
+  const {
+    description,
+    notes,
+    follow_up_date,
+    advance_paid,
+    advance_payment_mode,
+    advance_upi_account
+  } = req.body;
 
-  // First get current order to recalculate balance
-  db.get(`SELECT * FROM orders WHERE id = ?`, [id], (err, order) => {
+  db.get(`
+    SELECT orders.*, customers.firm_name
+    FROM orders
+    JOIN customers ON orders.customer_id = customers.id
+    WHERE orders.id = ?
+  `, [id], (err, order) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const new_advance = advance_paid !== undefined ? advance_paid : order.advance_paid;
-    const new_balance = order.total_amount - new_advance;
+    const new_advance     = advance_paid !== undefined ? parseFloat(advance_paid) || 0 : order.advance_paid;
+    const new_balance     = order.total_amount - new_advance;
+    const advance_changed = new_advance !== order.advance_paid;
+    const today           = todayIST();
 
-    db.run(`
-      UPDATE orders 
-      SET description = ?, notes = ?, follow_up_date = ?, 
-          advance_paid = ?, balance_due = ?,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    [
-      description || order.description,
-      notes || order.notes,
-      follow_up_date || order.follow_up_date,
-      new_advance,
-      new_balance,
-      id
-    ],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ message: 'Order updated successfully', balance_due: new_balance });
+    if (advance_changed && new_advance > 0 && !advance_payment_mode) {
+      return res.status(400).json({ error: 'advance_payment_mode is required when advance_paid > 0' });
+    }
+    if (advance_changed && new_advance > 0 && advance_payment_mode === 'upi' && !advance_upi_account) {
+      return res.status(400).json({ error: 'advance_upi_account is required for UPI mode' });
+    }
+
+    const doUpdate = (entryTable, entryId) => {
+      db.run(`
+        UPDATE orders
+        SET description = ?, notes = ?, follow_up_date = ?,
+            advance_paid = ?, balance_due = ?,
+            advance_payment_mode = ?,
+            advance_entry_table = ?, advance_entry_id = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      [
+        description  || order.description,
+        notes        || order.notes,
+        follow_up_date || order.follow_up_date,
+        new_advance,
+        new_balance,
+        new_advance > 0 ? (advance_payment_mode || order.advance_payment_mode) : null,
+        entryTable   || order.advance_entry_table,
+        entryId      || order.advance_entry_id,
+        id
+      ],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Order updated successfully', balance_due: new_balance });
+      });
+    };
+
+    if (!advance_changed) {
+      return doUpdate(order.advance_entry_table, order.advance_entry_id);
+    }
+
+    deleteAdvanceEntry({
+      advance_entry_table: order.advance_entry_table,
+      advance_entry_id:    order.advance_entry_id,
+      order_id:            parseInt(id)
+    }, (err) => {
+      if (err) console.error('Could not delete old advance entry:', err.message);
+
+      if (new_advance <= 0) {
+        return doUpdate(null, null);
+      }
+
+      recordAdvancePayment({
+        customer_id:  order.customer_id,
+        firm_name:    order.firm_name,
+        advance:      new_advance,
+        payment_mode: advance_payment_mode,
+        upi_account:  advance_upi_account,
+        order_id:     parseInt(id),
+        date:         today
+      }, (err, entry) => {
+        if (err) {
+          console.error('Advance re-record failed:', err.message);
+          return doUpdate(null, null);
+        }
+        doUpdate(entry.table, entry.id);
+      });
     });
   });
 });
 
-// Soft delete order
+// ─────────────────────────────────────────
+// DELETE /api/orders/:id — Soft delete
+// ─────────────────────────────────────────
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  db.run(`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`,
-  [id], function(err) {
+
+  db.get(`SELECT advance_entry_table, advance_entry_id FROM orders WHERE id = ?`, [id], (err, order) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
-    res.json({ message: 'Order deleted (recoverable for 24 hours)' });
+
+    db.run(`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
+
+      // Delete follow-up payments from payments table
+      db.run(`DELETE FROM payments WHERE order_id = ?`, [id], (err) => {
+        if (err) console.error('Could not delete payments:', err.message);
+      });
+
+      // Delete follow-up payments from cash_income (notes = 'Order Payment')
+      db.run(`DELETE FROM cash_income WHERE notes = 'Order Payment' AND customer_id = (
+        SELECT customer_id FROM orders WHERE id = ?
+      )`, [id], (err) => {
+        if (err) console.error('Could not delete cash_income payments:', err.message);
+      });
+
+      // Delete follow-up UPI payments from upi_transactions (order_id linked)
+      db.run(`DELETE FROM upi_transactions WHERE order_id = ? AND notes != 'Order Advance Payment'`, [id], (err) => {
+        if (err) console.error('Could not delete upi payments:', err.message);
+      });
+
+      // Delete advance entry (cash_income or upi_transactions)
+      if (order && order.advance_entry_table && order.advance_entry_id) {
+        deleteAdvanceEntry({
+          advance_entry_table: order.advance_entry_table,
+          advance_entry_id:    order.advance_entry_id,
+          order_id:            parseInt(id)
+        }, (err) => {
+          if (err) console.error('Could not remove advance entry on delete:', err.message);
+        });
+      }
+
+      res.json({ message: 'Order deleted (recoverable for 24 hours)' });
+    });
   });
 });
 
-// Restore deleted order
+// ─────────────────────────────────────────
+// PUT /api/orders/:id/restore
+// ─────────────────────────────────────────
 router.put('/:id/restore', (req, res) => {
   const { id } = req.params;
-  db.run(`UPDATE orders SET deleted_at = NULL WHERE id = ?`,
-  [id], function(err) {
+  db.run(`UPDATE orders SET deleted_at = NULL WHERE id = ?`, [id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ message: 'Order restored successfully' });
   });
 });
 
-// Get recently deleted orders
+// ─────────────────────────────────────────
+// GET /api/orders/deleted/recent
+// ─────────────────────────────────────────
 router.get('/deleted/recent', (req, res) => {
   db.all(`
-    SELECT orders.*, customers.firm_name 
+    SELECT orders.*, customers.firm_name
     FROM orders
     JOIN customers ON orders.customer_id = customers.id
     WHERE orders.deleted_at IS NOT NULL
@@ -235,4 +431,47 @@ router.get('/deleted/recent', (req, res) => {
     res.json(rows);
   });
 });
+
+// ─────────────────────────────────────────
+// PUT /api/orders/:id/items — replace all items
+// ─────────────────────────────────────────
+router.put('/:id/items', (req, res) => {
+  const { id } = req.params;
+  const { items } = req.body;
+  if (!items || items.length === 0)
+    return res.status(400).json({ error: 'At least one item required' });
+
+  const total_amount = items.reduce((sum, item) =>
+    sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0), 0);
+
+  db.get(`SELECT * FROM orders WHERE id = ?`, [id], (err, order) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const new_balance = total_amount - (order.advance_paid || 0);
+
+    db.run(`DELETE FROM order_items WHERE order_id = ?`, [id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      const stmt = db.prepare(`
+        INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      items.forEach(item => {
+        const subtotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0);
+        stmt.run([id, item.item_name, item.quantity, item.unit_price, subtotal]);
+      });
+      stmt.finalize();
+
+      db.run(`
+        UPDATE orders SET total_amount = ?, balance_due = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [total_amount, new_balance, id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Items updated', total_amount, balance_due: new_balance });
+      });
+    });
+  });
+});
+
 module.exports = router;

@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getCustomerProfile } from '../services/api'
+import { getCustomerProfile, addOpeningBalance } from '../services/api'
 
 function CustomerProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [customer, setCustomer] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showObForm, setShowObForm] = useState(false)
+  const [obAmount, setObAmount]     = useState('')
+  const [obDate, setObDate]         = useState(new Date().toLocaleDateString('en-CA'))
+  const [obNotes, setObNotes]       = useState('Pichle saal ka bakaya')
+  const [obMsg, setObMsg]           = useState('')
 
   useEffect(() => {
     getCustomerProfile(id)
@@ -33,7 +38,33 @@ function CustomerProfile() {
     }
     return colors[type] || '#888'
   }
+  function fmtDT(dateStr) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d)) return dateStr
+  const dd = String(d.getDate()).padStart(2,'0')
+  const mm = String(d.getMonth()+1).padStart(2,'0')
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2,'0')
+  const min = String(d.getMinutes()).padStart(2,'0')
+  const ss = String(d.getSeconds()).padStart(2,'0')
+  return `${hh}:${min}:${ss}  ${dd}.${mm}.${yyyy}`
+}
+function handleOpeningBalance(e) {
+  e.preventDefault()
+  if (!obAmount || isNaN(obAmount) || Number(obAmount) <= 0)
+    return setObMsg('Valid amount required')
 
+  addOpeningBalance(id, { amount: Number(obAmount), date: obDate, notes: obNotes })
+    .then(() => {
+      setObMsg('Opening balance added successfully!')
+      setObAmount('')
+      setShowObForm(false)
+      // Reload profile
+      getCustomerProfile(id).then(res => setCustomer(res.data))
+    })
+    .catch(err => setObMsg('Error: ' + (err.response?.data?.error || 'Failed')))
+}
   function chequeStatusBadge(status) {
     const colors = {
       received: '#f39c12',
@@ -80,7 +111,114 @@ function CustomerProfile() {
           </div>
         </div>
       </div>
+      {/* OPENING BALANCE BUTTON */}
+      <div style={{ marginBottom: '16px' }}>
+        <button
+          onClick={() => setShowObForm(f => !f)}
+          style={{
+            backgroundColor: '#8e44ad', color: '#fff', border: 'none',
+            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+            fontSize: '14px', fontWeight: 'bold'
+          }}
+        >
+          📒 Add Opening Balance (Purana Bakaya)
+        </button>
+      </div>
 
+      {showObForm && (
+        <div style={{
+          backgroundColor: '#fff', border: '2px solid #8e44ad',
+          borderRadius: '10px', padding: '20px', marginBottom: '20px'
+        }}>
+          <h3 style={{ color: '#8e44ad', marginBottom: '12px' }}>
+            📒 Opening Balance — {customer.firm_name}
+          </h3>
+          <p style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+            Pichle financial year ka jo bhi bakaya hai wo yahan add karo.
+            Ye ek pending order ki tarah save hoga.
+          </p>
+          <form onSubmit={handleOpeningBalance}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '150px' }}>
+                <label style={{ fontSize: '12px', color: '#888', display: 'block', marginBottom: '6px' }}>
+                  Bakaya Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 5000"
+                  value={obAmount}
+                  onChange={e => setObAmount(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px', borderRadius: '6px',
+                    border: '1px solid #ddd', fontSize: '16px', fontWeight: 'bold',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: '150px' }}>
+                <label style={{ fontSize: '12px', color: '#888', display: 'block', marginBottom: '6px' }}>
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={obDate}
+                  onChange={e => setObDate(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px', borderRadius: '6px',
+                    border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div style={{ flex: 2, minWidth: '200px' }}>
+                <label style={{ fontSize: '12px', color: '#888', display: 'block', marginBottom: '6px' }}>
+                  Notes
+                </label>
+                <input
+                  type="text"
+                  value={obNotes}
+                  onChange={e => setObNotes(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px', borderRadius: '6px',
+                    border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            </div>
+            {obMsg && (
+              <p style={{
+                marginTop: '10px', padding: '8px 12px', borderRadius: '6px',
+                backgroundColor: obMsg.includes('Error') ? '#fff3f3' : '#e8f5e9',
+                color: obMsg.includes('Error') ? '#c0392b' : '#2e7d32',
+                fontSize: '13px'
+              }}>
+                {obMsg}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+              <button
+                type="submit"
+                style={{
+                  backgroundColor: '#8e44ad', color: '#fff', border: 'none',
+                  padding: '10px 24px', borderRadius: '6px', cursor: 'pointer',
+                  fontSize: '14px', fontWeight: 'bold'
+                }}
+              >
+                Save Opening Balance
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowObForm(false); setObMsg('') }}
+                style={{
+                  backgroundColor: '#fff', color: '#888', border: '1px solid #ddd',
+                  padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {/* DUE ALERT */}
       {totalDue > 0 && (
         <div style={styles.dueAlert}>
@@ -149,7 +287,10 @@ function CustomerProfile() {
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
                 >
-                  <td style={styles.td}>{p.date || '—'}</td>
+                  <td style={styles.td}>
+                    <div>{p.date || '—'}</div>
+                    {p.created_at && <div style={{ fontSize: '11px', color: '#aaa' }}>🕐 {fmtDT(p.created_at)}</div>}
+                  </td>
                   <td style={styles.td}>
                     <span style={{ ...styles.badge, backgroundColor: paymentTypeColor(p.payment_type) }}>
                       {p.payment_type}

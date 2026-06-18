@@ -85,6 +85,18 @@ function DailySales() {
     setMessage(text)
     setMessageType(type)
   }
+  function fmtDT(dateStr) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d)) return dateStr
+  const dd = String(d.getDate()).padStart(2,'0')
+  const mm = String(d.getMonth()+1).padStart(2,'0')
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2,'0')
+  const min = String(d.getMinutes()).padStart(2,'0')
+  const ss = String(d.getSeconds()).padStart(2,'0')
+  return `${hh}:${min}:${ss}  ${dd}.${mm}.${yyyy}`
+}
   
   function fetchAll() {
     fetchExpenses()
@@ -119,7 +131,10 @@ function DailySales() {
     setLedgerLoading(true)
     getDailyLedgerByDate(date)
       .then(res => { setLedgerByDate(res.data); setLedgerLoading(false) })
-      .catch(() => setLedgerLoading(false))
+      .catch(() => {
+        setLedgerLoading(false)
+        showMsg('Failed to load ledger. Check console for details.', 'error')
+      })
   }
 
   function fetchCashDrawer(date) {
@@ -325,9 +340,12 @@ function DailySales() {
                     <div style={{ marginTop: '10px' }}>
                       {todayData.payments_received.map(p => (
                         <div key={p.id} style={styles.paymentLine}>
-                          <span style={{ color: '#555' }}>{p.firm_name}</span>
-                          <span style={{ fontWeight: 'bold', color: '#27ae60' }}>₹{p.amount}</span>
-                        </div>
+                      <div>
+                        <span style={{ color: '#555' }}>{p.firm_name}</span>
+                        <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(p.payment_date || p.created_at)}</div>
+                      </div>
+                      <span style={{ fontWeight: 'bold', color: '#27ae60' }}>₹{p.amount}</span>
+                    </div>
                       ))}
                     </div>
                   ) : (
@@ -345,9 +363,12 @@ function DailySales() {
                     <div style={{ marginTop: '10px' }}>
                       {todayData.cash_income_today.map(c => (
                         <div key={c.id} style={styles.paymentLine}>
+                        <div>
                           <span style={{ color: '#555' }}>{c.firm_name}</span>
-                          <span style={{ fontWeight: 'bold', color: '#3498db' }}>₹{c.amount}</span>
+                          <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(c.income_date || c.created_at)}</div>
                         </div>
+                        <span style={{ fontWeight: 'bold', color: '#3498db' }}>₹{c.amount}</span>
+                      </div>
                       ))}
                     </div>
                   ) : (
@@ -820,11 +841,15 @@ function DailySales() {
                             {item.type}
                           </span>
                         </div>
+                        <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                          🕐 {fmtDT(item.created_at || item.payment_date)}
+                        </div>
                       </div>
                       <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
                         +₹{item.amount}
                       </div>
                     </div>
+                    
                   ))
                 )}
                 {cashDrawer.cash_in.length > 0 && (
@@ -962,6 +987,11 @@ function DailySales() {
                           {exp.description}
                         </div>
                       )}
+                      {exp.created_at && (
+                        <div style={{ fontSize: '11px', color: '#bbb', marginTop: '3px' }}>
+                          🕐 {fmtDT(exp.created_at)}
+                        </div>
+                      )}
                     </div>
                     <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px', marginRight: '16px' }}>
                       ₹{exp.amount}
@@ -1071,6 +1101,12 @@ function DailySales() {
                             </span>
                           </div>
                         </div>
+                        {/* ADD THIS */}
+                          {item.notes && (
+                            <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
+                              📝 {item.notes}
+                            </div>
+                          )}
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
                             ₹{item.amount}
@@ -1128,6 +1164,12 @@ function DailySales() {
                               {exp.description}
                             </div>
                           )}
+                          {/* ADD THIS */}
+                            {exp.notes && (
+                              <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
+                                📝 {exp.notes}
+                              </div>
+                            )}
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px' }}>

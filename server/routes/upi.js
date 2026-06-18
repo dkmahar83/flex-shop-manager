@@ -27,17 +27,17 @@ router.get('/', (req, res) => {
 
   const query = `
     SELECT id, upi_account, customer_name, customer_id, amount, transaction_date,
-           utr_number, notes, 'credit' as direction
+          utr_number, notes, 'credit' as direction, created_at
     FROM upi_transactions
     WHERE 1=1 ${dateFilter} ${accountFilter}
 
     UNION ALL
 
     SELECT cash_income.id, cash_income.upi_account, 
-           customers.firm_name as customer_name,
-           cash_income.customer_id, cash_income.amount, 
-           cash_income.income_date as transaction_date,
-           NULL as utr_number, cash_income.notes, 'credit' as direction
+       customers.firm_name as customer_name,
+       cash_income.customer_id, cash_income.amount, 
+       cash_income.income_date as transaction_date,
+       NULL as utr_number, cash_income.notes, 'credit' as direction, cash_income.created_at
     FROM cash_income
     LEFT JOIN customers ON cash_income.customer_id = customers.id
     WHERE cash_income.payment_mode = 'upi' AND cash_income.upi_account IS NOT NULL
@@ -47,9 +47,9 @@ router.get('/', (req, res) => {
 
     SELECT expenses.id, expenses.upi_account, 
            COALESCE(vendors.name, employees.name, expenses.category) as customer_name,
-           NULL as customer_id, expenses.amount * -1 as amount,
-           expenses.expense_date as transaction_date,
-           NULL as utr_number, expenses.description as notes, 'debit' as direction
+          NULL as customer_id, expenses.amount * -1 as amount,
+          expenses.expense_date as transaction_date,
+          NULL as utr_number, expenses.description as notes, 'debit' as direction, expenses.created_at
     FROM expenses
     LEFT JOIN vendors ON expenses.paid_to_type = 'vendor' AND expenses.paid_to_id = vendors.id
     LEFT JOIN employees ON expenses.paid_to_type = 'employee' AND expenses.paid_to_id = employees.id
@@ -121,13 +121,14 @@ router.post('/', (req, res) => {
     formattedDate = `${year}-${month}-${day}`;
   } else {
     formattedDate = new Date().toISOString().split('T')[0];
+    const createdAt = new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).replace('T', ' ');
   }
 
   db.run(
     `
     INSERT INTO upi_transactions 
-    (upi_account, customer_name, customer_id, amount, transaction_date, utr_number, order_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    (upi_account, customer_name, customer_id, amount, transaction_date, utr_number, order_id, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       upi_account,
@@ -137,7 +138,8 @@ router.post('/', (req, res) => {
       formattedDate,
       utr_number || null,
       order_id || null,
-      notes || null
+      notes || null,
+      createdAt
     ],
     function (err) {
       if (err) {

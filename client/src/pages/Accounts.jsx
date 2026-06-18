@@ -153,7 +153,18 @@ const [chequeEditForm, setChequeEditForm] = useState({})
       })
       .catch(() => setMessage('Error adding vendor.'))
   }
-
+  function fmtDT(dateStr) {
+    if (!dateStr) return '—'
+    const d = new Date(dateStr)
+    if (isNaN(d)) return dateStr
+    const dd = String(d.getDate()).padStart(2,'0')
+    const mm = String(d.getMonth()+1).padStart(2,'0')
+    const yyyy = d.getFullYear()
+    const hh = String(d.getHours()).padStart(2,'0')
+    const min = String(d.getMinutes()).padStart(2,'0')
+    const ss = String(d.getSeconds()).padStart(2,'0')
+    return `${hh}:${min}:${ss}  ${dd}.${mm}.${yyyy}`
+  }
   function handleVendorTxn(e) {
     e.preventDefault()
     if (!txnForm.amount) return setMessage('Amount required.')
@@ -785,7 +796,10 @@ const [chequeEditForm, setChequeEditForm] = useState({})
                     <tbody>
                       {vendorDetail.transactions && vendorDetail.transactions.map(t => (
                         <tr key={t.id} style={styles.tr}>
-                          <td style={styles.td}>{t.transaction_date}</td>
+                          <td style={styles.td}>
+                            <div>{t.transaction_date}</div>
+                            {t.created_at && <div style={{ fontSize: '11px', color: '#aaa' }}>🕐 {fmtDT(t.created_at)}</div>}
+                          </td>
                           <td style={styles.td}>
                             <span style={{ ...styles.badge, backgroundColor: t.type === 'purchase' ? '#e74c3c' : '#27ae60' }}>
                               {t.type === 'purchase' ? '📦 Purchase' : '💵 Payment'}

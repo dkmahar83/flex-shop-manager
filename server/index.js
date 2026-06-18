@@ -22,6 +22,8 @@ const expenseRoutes = require('./routes/expenses');
 const chequeRoutes = require('./routes/cheques');
 const upiRoutes = require('./routes/upi');
 const vendorRoutes = require('./routes/vendors');
+const pdfRoutes = require('./routes/pdf')
+app.use('/api/pdf', pdfRoutes)
 
 app.use('/api/cheques', chequeRoutes);
 app.use('/api/upi', upiRoutes);
