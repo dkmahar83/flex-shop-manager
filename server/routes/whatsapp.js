@@ -83,7 +83,7 @@ function buildPDF(doc, order, items, payments) {
 
   // Header
   doc.rect(0, 0, doc.page.width, 80).fill(PRIMARY)
-  doc.fill('#ffffff').fontSize(22).font('Helvetica-Bold').text('FlexShop Manager', 50, 20)
+  doc.fill('#ffffff').fontSize(22).font('Helvetica-Bold').text('VijayFlex Pro', 50, 20)
   doc.fill('#aaaaaa').fontSize(10).font('Helvetica').text('Pilibangan, Rajasthan', 50, 46).text('Professional Flex Printing Services', 50, 60)
   doc.fill('#ffffff').fontSize(12).font('Helvetica-Bold').text(`BILL #${order.id}`, 0, 28, { align: 'right', width: doc.page.width - 50 })
   doc.fill('#aaaaaa').fontSize(9).font('Helvetica').text(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }), 0, 46, { align: 'right', width: doc.page.width - 50 })
@@ -149,7 +149,7 @@ function buildPDF(doc, order, items, payments) {
   const footerY = doc.page.height - 80
   doc.rect(0, footerY, doc.page.width, 80).fill(PRIMARY)
   doc.fill('#ffffff').fontSize(12).font('Helvetica-Bold').text('Thank you for your business!', 50, footerY + 18)
-  doc.fill('#aaaaaa').fontSize(9).font('Helvetica').text('FlexShop Manager — Pilibangan, Rajasthan', 50, footerY + 38)
+  doc.fill('#aaaaaa').fontSize(9).font('Helvetica').text('VijayFlex Pro — Pilibangan, Rajasthan', 50, footerY + 38)
 }
 
 module.exports = router

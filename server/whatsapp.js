@@ -107,7 +107,7 @@ async function sendBillToCustomer({ phone, customerName, orderId, totalAmount, a
 
   // Compose message
   const paidSoFar = advancePaid + (totalAmount - advancePaid - balanceDue)
-  const message = `🖨️ *FlexShop Manager — Bill #${orderId}*
+  const message = `🖨️ *VijayFlex Pro — Bill #${orderId}*
 
 Dear *${customerName}*,
 
@@ -118,7 +118,7 @@ Your order bill is attached below.
 ${balanceDue > 0 ? `⚠️ Balance Due: ₹${balanceDue}` : '✅ Fully Paid'}
 
 Thank you for choosing us!
-_FlexShop Manager, Pilibangan_`
+_VijayFlex Pro, Pilibangan_`
 
   // Send text message first
   await client.sendMessage(chatId, message)

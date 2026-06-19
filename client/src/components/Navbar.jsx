@@ -19,7 +19,7 @@ function Navbar() {
   return (
     <nav style={styles.nav}>
       <div style={styles.brand}>
-        🖨️ FlexShop Manager
+        🖨️ VijayFlex Pro
       </div>
       <div style={styles.links}>
         {links.map(link => (
