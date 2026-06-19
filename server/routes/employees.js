@@ -243,8 +243,11 @@ router.get('/profile/:id', (req, res) => {
 // POST /api/employees/generate-salary
 // ─────────────────────────────────────────
 router.post('/generate-salary', (req, res) => {
-  const { employee_id, month, year, payment_mode, upi_account, notes } = req.body;
+  const { employee_id, month, year, payment_mode, upi_account, notes, denomination_breakdown } = req.body;
   const createdAt = nowIST();
+  const breakdownToSave = ((payment_mode || 'cash') === 'cash' && denomination_breakdown && Object.keys(denomination_breakdown).length > 0)
+    ? JSON.stringify(denomination_breakdown)
+    : null;
 
   db.get(`
     SELECT * FROM employee_salary_credits
@@ -278,12 +281,12 @@ router.post('/generate-salary', (req, res) => {
 
         db.run(`
           INSERT INTO employee_salary_credits
-            (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account, denomination_breakdown)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           employee_id, month, year, calculatedSalary, today,
           notes || `${month}/${year} salary`,
-          payment_mode || 'cash', upi_account || null
+          payment_mode || 'cash', upi_account || null, breakdownToSave
         ], function(err) {
           if (err) return res.status(500).json({ error: err.message });
 

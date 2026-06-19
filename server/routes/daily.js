@@ -396,7 +396,7 @@ router.get('/report/yearly', (req, res) => {
 
 // POST /api/daily/cash-income
 router.post('/cash-income', (req, res) => {
-  const { customer_id, amount, income_date, notes, payment_mode, upi_account } = req.body;
+  const { customer_id, amount, income_date, notes, payment_mode, upi_account, denomination_breakdown } = req.body;
   if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
   if (!amount || isNaN(amount) || parseInt(Number(amount), 10) <= 0)
     return res.status(400).json({ error: 'Valid amount is required' });
@@ -405,14 +405,20 @@ router.post('/cash-income', (req, res) => {
   const date = income_date || new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).split(' ')[0];
   const createdAt = new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).replace('T', ' ');
 
+  // Only store denomination breakdown for cash payments, and only if it has actual counts
+  const breakdownToSave = (payment_mode !== 'upi' && denomination_breakdown && Object.keys(denomination_breakdown).length > 0)
+    ? JSON.stringify(denomination_breakdown)
+    : null;
+
   db.run(`
-    INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at, denomination_breakdown)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     customer_id, parsedAmount, date, notes || null,
     payment_mode || 'cash',
     payment_mode === 'upi' ? upi_account : null,
-    createdAt
+    createdAt,
+    breakdownToSave
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
 
@@ -754,6 +760,97 @@ router.get('/cash-drawer', (req, res) => {
         });
       });
     });
+  });
+});
+
+const DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+
+// GET /api/daily/denomination-drawer — live cumulative drawer count
+router.get('/denomination-drawer', (req, res) => {
+  db.get(`SELECT * FROM cash_drawer_baseline ORDER BY set_at DESC LIMIT 1`, [], (err, baseline) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const drawer = {};
+    DENOMS.forEach(d => { drawer[d] = 0; });
+
+    if (baseline) {
+      try {
+        const baseCounts = JSON.parse(baseline.denomination_counts);
+        DENOMS.forEach(d => { drawer[d] += Number(baseCounts[d]) || 0; });
+      } catch (e) {}
+    }
+
+    const baselineAt = baseline ? baseline.set_at : '1970-01-01 00:00:00';
+    const baselineDate = baselineAt.split(' ')[0];
+
+    function applyIn(raw) {
+      if (!raw) return;
+      try {
+        const b = JSON.parse(raw);
+        DENOMS.forEach(d => {
+          drawer[d] += (Number(b.received?.[d]) || 0) - (Number(b.returned?.[d]) || 0);
+        });
+      } catch (e) {}
+    }
+    function applyOut(raw) {
+      if (!raw) return;
+      try {
+        const b = JSON.parse(raw);
+        DENOMS.forEach(d => {
+          drawer[d] -= (Number(b.received?.[d]) || 0) - (Number(b.returned?.[d]) || 0);
+        });
+      } catch (e) {}
+    }
+
+    db.all(`SELECT denomination_breakdown FROM cash_income WHERE created_at > ? AND denomination_breakdown IS NOT NULL`, [baselineAt], (err, ci) => {
+      if (err) return res.status(500).json({ error: err.message });
+      ci.forEach(r => applyIn(r.denomination_breakdown));
+
+      db.all(`SELECT denomination_breakdown FROM payments WHERE created_at > ? AND denomination_breakdown IS NOT NULL`, [baselineAt], (err, py) => {
+        if (err) return res.status(500).json({ error: err.message });
+        py.forEach(r => applyIn(r.denomination_breakdown));
+
+        db.all(`SELECT advance_denomination_breakdown FROM orders WHERE created_at > ? AND advance_denomination_breakdown IS NOT NULL`, [baselineAt], (err, ord) => {
+          if (err) return res.status(500).json({ error: err.message });
+          ord.forEach(r => applyIn(r.advance_denomination_breakdown));
+
+          db.all(`SELECT denomination_breakdown FROM expenses WHERE created_at > ? AND denomination_breakdown IS NOT NULL`, [baselineAt], (err, exp) => {
+            if (err) return res.status(500).json({ error: err.message });
+            exp.forEach(r => applyOut(r.denomination_breakdown));
+
+            db.all(`SELECT denomination_breakdown FROM employee_salary_credits WHERE credited_date > ? AND denomination_breakdown IS NOT NULL`, [baselineDate], (err, sal) => {
+              if (err) return res.status(500).json({ error: err.message });
+              sal.forEach(r => applyOut(r.denomination_breakdown));
+
+              const totalValue = DENOMS.reduce((s, d) => s + drawer[d] * d, 0);
+
+              res.json({
+                denominations: drawer,
+                total_value: totalValue,
+                baseline_set_at: baseline ? baseline.set_at : null,
+                baseline_notes: baseline ? baseline.notes : null
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+});
+
+// POST /api/daily/denomination-drawer/set-baseline — galla count reset/set karo
+router.post('/denomination-drawer/set-baseline', (req, res) => {
+  const { denomination_counts, notes } = req.body;
+  if (!denomination_counts) return res.status(400).json({ error: 'denomination_counts required' });
+
+  const setAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+
+  db.run(`
+    INSERT INTO cash_drawer_baseline (denomination_counts, set_at, notes)
+    VALUES (?, ?, ?)
+  `, [JSON.stringify(denomination_counts), setAt, notes || null], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
   });
 });
 

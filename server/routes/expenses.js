@@ -75,7 +75,7 @@ router.post('/', (req, res) => {
   const {
     category, amount, expense_date, description,
     paid_to_type, paid_to_id,
-    payment_mode, upi_account, utr_number
+    payment_mode, upi_account, utr_number, denomination_breakdown
   } = req.body;
 
   if (!category || !amount)
@@ -84,15 +84,20 @@ router.post('/', (req, res) => {
   const date = expense_date || new Date().toISOString().split('T')[0];
   const createdAt = new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).replace('T', ' ');
 
+  // Only store denomination breakdown for cash payments, and only if it has actual counts
+  const breakdownToSave = ((payment_mode || 'cash') !== 'upi' && denomination_breakdown && Object.keys(denomination_breakdown).length > 0)
+    ? JSON.stringify(denomination_breakdown)
+    : null;
+
   db.run(`
     INSERT INTO expenses 
-      (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number, created_at, denomination_breakdown)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     category, parseInt(parseFloat(amount), 10), date, description || null,
     paid_to_type || null, paid_to_id ? parseInt(paid_to_id) : null,
     payment_mode || 'cash', upi_account || null, utr_number || null,
-    createdAt
+    createdAt, breakdownToSave
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     const expenseId = this.lastID;

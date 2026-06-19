@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const fs = require('fs');
+const path = require('path');
+const { upload } = require('../middleware/upload');
 
 // GET /api/customers
 router.get('/', (req, res) => {
@@ -198,4 +201,57 @@ router.post('/:id/opening-balance', (req, res) => {
     res.status(201).json({ id: this.lastID, message: 'Opening balance added successfully' });
   });
 });
+
+// POST /api/customers/:id/photo — upload/replace customer photo
+router.post('/:id/photo', upload.single('photo'), (req, res) => {
+  const { id } = req.params;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No photo file received' });
+  }
+
+  // Check customer exists, and get old photo path to delete it
+  db.get(`SELECT photo_path FROM customers WHERE id = ? AND deleted_at IS NULL`, [id], (err, customer) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!customer) {
+      // clean up uploaded file since customer doesn't exist
+      fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const newPhotoPath = `uploads/customers/${req.file.filename}`;
+
+    db.run(`UPDATE customers SET photo_path = ? WHERE id = ?`, [newPhotoPath, id], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+
+      // delete old photo file if one existed
+      if (customer.photo_path) {
+        const oldFullPath = path.join(__dirname, '..', customer.photo_path);
+        fs.unlink(oldFullPath, () => {}); // ignore errors (file may already be gone)
+      }
+
+      res.json({ message: 'Photo uploaded successfully', photo_path: newPhotoPath });
+    });
+  });
+});
+
+// DELETE /api/customers/:id/photo — remove customer photo
+router.delete('/:id/photo', (req, res) => {
+  const { id } = req.params;
+
+  db.get(`SELECT photo_path FROM customers WHERE id = ? AND deleted_at IS NULL`, [id], (err, customer) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    if (!customer.photo_path) return res.status(400).json({ error: 'No photo to delete' });
+
+    const fullPath = path.join(__dirname, '..', customer.photo_path);
+
+    db.run(`UPDATE customers SET photo_path = NULL WHERE id = ?`, [id], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      fs.unlink(fullPath, () => {});
+      res.json({ message: 'Photo removed successfully' });
+    });
+  });
+});
+
 module.exports = router;

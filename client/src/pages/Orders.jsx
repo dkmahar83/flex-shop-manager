@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF } from '../services/api'
+import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF, getOrderPhotos, uploadOrderPhoto, deleteOrderPhoto } from '../services/api'
+import DenominationCounter from '../components/DenominationCounter'
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -19,6 +20,10 @@ function Orders() {
   const [expandedOrder, setExpandedOrder] = useState(null)
   const [orderDetail, setOrderDetail] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null) // order id
+  const [orderPhotos, setOrderPhotos] = useState([])
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoCaption, setPhotoCaption] = useState('')
+  const [lightboxPhoto, setLightboxPhoto] = useState(null)
   const [followUpValue, setFollowUpValue]     = useState('')
   const [paymentForm, setPaymentForm] = useState({
       amount: '',
@@ -34,6 +39,8 @@ function Orders() {
       discount_note: ''
     })
   const [waStatus, setWaStatus] = useState('disconnected')
+  const [advanceDenomination, setAdvanceDenomination] = useState({})
+  const [paymentDenomination, setPaymentDenomination] = useState({})
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -158,6 +165,7 @@ function Orders() {
     setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
     setEditingOrder(null)
     setShowForm(false)
+    setAdvanceDenomination({})
   }
 
   function handleSubmit(e) {
@@ -209,6 +217,8 @@ function Orders() {
       advance_payment_mode: advanceAmt > 0 ? form.advance_payment_mode : null,
       advance_upi_account: advanceAmt > 0 && form.advance_payment_mode === 'upi'
         ? form.advance_upi_account : null,
+      advance_denomination_breakdown: advanceAmt > 0 && form.advance_payment_mode === 'cash' && Object.keys(advanceDenomination).length > 0
+        ? advanceDenomination : null,
       discount_amount: parseFloat(form.discount_amount) || 0,
       discount_note: form.discount_note || null,
       items: items.map(i => ({
@@ -247,15 +257,17 @@ function Orders() {
     if (expandedOrder === order.id) {
       setExpandedOrder(null)
       setOrderDetail(null)
+      setOrderPhotos([])
       return
     }
     setExpandedOrder(order.id)
     getOrderDetail(order.id)
-      .then(res => setOrderDetail(res.data))
+      .then(res => {
+        setOrderDetail(res.data)
+        fetchOrderPhotos(res.data.id)
+      })
       .catch(() => setMessage('Could not load order detail.'))
   }
-
-
 
   function handleAddPayment(e) {
     e.preventDefault()
@@ -282,6 +294,8 @@ function Orders() {
       upi_account:  paymentForm.upi_account || null,
       cheque_number: paymentForm.payment_mode === 'cheque' ? (paymentForm.cheque_number || null) : null,
       bank_name:     paymentForm.payment_mode === 'cheque' ? (paymentForm.bank_name || null) : null,
+      denomination_breakdown: paymentForm.payment_mode === 'cash' && Object.keys(paymentDenomination).length > 0
+        ? paymentDenomination : null,
       payment_date: paymentForm.payment_date
         ? paymentForm.payment_date + ' ' + new Date().toLocaleTimeString('en-GB', { hour12: false })
         : new Date().toLocaleString('en-GB', {
@@ -301,6 +315,7 @@ function Orders() {
             : 'Payment recorded!'
         )
         setPaymentForm({ amount: '', note: '', payment_date: '', follow_up_date: '', payment_mode: 'cash', upi_account: '', cheque_number: '', bank_name: '', showDiscount: false, discount_amount: '', discount_note: '' })
+        setPaymentDenomination({})
         getOrderDetail(orderDetail.id).then(res => {
           setOrderDetail(res.data)
           fetchOrders()
@@ -308,19 +323,47 @@ function Orders() {
       })
       .catch(() => setMessage('Error recording payment.'))
   }
-  function handleFollowUpSave(orderId) {
-  api.put(`/orders/${orderId}/follow-up`, {
-    follow_up_date: followUpValue
-  })
-    .then(() => {
-      setEditingFollowUp(null)
-      fetchOrders()
-      if (expandedOrder === orderId) {
-        getOrderDetail(orderId).then(res => setOrderDetail(res.data))
-      }
-    })
-    .catch(() => setMessage('Error updating follow-up date.'))
+
+  function fetchOrderPhotos(id) {
+  getOrderPhotos(id).then(res => setOrderPhotos(res.data)).catch(() => {})
 }
+
+function handlePhotoUpload(e) {
+  const file = e.target.files[0]
+  if (!file || !orderDetail) return
+  setPhotoUploading(true)
+  uploadOrderPhoto(orderDetail.id, file, photoCaption)
+    .then(() => {
+      setPhotoCaption('')
+      fetchOrderPhotos(orderDetail.id)
+    })
+    .catch(() => setMessage('Photo upload failed.'))
+    .finally(() => setPhotoUploading(false))
+}
+
+function handlePhotoDelete(photoId) {
+  if (!window.confirm('Is photo ko delete karna chahte ho?')) return
+  deleteOrderPhoto(orderDetail.id, photoId)
+    .then(() => fetchOrderPhotos(orderDetail.id))
+    .catch(() => setMessage('Delete failed.'))
+}
+
+  function handleFollowUpSave(orderId) {
+    api.put(`/orders/${orderId}/follow-up`, {
+      follow_up_date: followUpValue
+    })
+      .then(() => {
+        setEditingFollowUp(null)
+        fetchOrders()
+        if (expandedOrder === orderId) {
+          getOrderDetail(orderId).then(res => {
+            setOrderDetail(res.data)
+            fetchOrderPhotos(res.data.id)
+          })
+        }
+      })
+      .catch(() => setMessage('Error updating follow-up date.'))
+  }
 
   const total    = calculateTotal()
   const advance  = parseFloat(form.advance_paid) || 0
@@ -491,6 +534,15 @@ function Orders() {
                       </button>
                     </div>
                   </div>
+
+                  {form.advance_payment_mode === 'cash' && (
+                    <DenominationCounter
+                      onApply={(total, counts) => {
+                        setForm(f => ({ ...f, advance_paid: String(total) }))
+                        setAdvanceDenomination(counts)
+                      }}
+                    />
+                  )}
 
                   {/* UPI account selector */}
                   {form.advance_payment_mode === 'upi' && (
@@ -997,6 +1049,17 @@ function Orders() {
                                   </div>
                                 </div>
 
+                                {paymentForm.payment_mode === 'cash' && (
+                                  <div style={{ flexBasis: '100%' }}>
+                                    <DenominationCounter
+                                      onApply={(total, counts) => {
+                                        setPaymentForm(f => ({ ...f, amount: String(total) }))
+                                        setPaymentDenomination(counts)
+                                      }}
+                                    />
+                                  </div>
+                                )}
+
                                 {/* ✅ NEW: UPI account selector — sirf jab UPI select ho */}
                                 {paymentForm.payment_mode === 'upi' && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1062,6 +1125,67 @@ function Orders() {
                             <p style={{ fontSize: '14px', color: '#555' }}>{orderDetail.notes}</p>
                           </div>
                         )}
+
+                        {/* ORDER PHOTOS */}
+                        <div style={styles.detailSection}>
+                          <h4 style={styles.detailTitle}>📷 Order Photos</h4>
+
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
+                            <input
+                              type="text"
+                              placeholder="Caption (optional)"
+                              value={photoCaption}
+                              onChange={e => setPhotoCaption(e.target.value)}
+                              style={{ ...styles.input, maxWidth: '200px' }}
+                            />
+                            <label style={{
+                              backgroundColor: '#1a1a2e', color: '#fff', padding: '8px 16px',
+                              borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500',
+                              opacity: photoUploading ? 0.6 : 1, whiteSpace: 'nowrap'
+                            }}>
+                              {photoUploading ? 'Uploading...' : '📎 Add Photo'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                onChange={handlePhotoUpload}
+                                disabled={photoUploading}
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+                          </div>
+
+                          {orderPhotos.length === 0 ? (
+                            <p style={{ color: '#aaa', fontSize: '13px' }}>Koi photo nahi — upar se add karo.</p>
+                          ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px' }}>
+                              {orderPhotos.map(p => (
+                                <div key={p.id} style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid #eee' }}>
+                                  <img
+                                    src={`http://localhost:5000/${p.photo_path}`}
+                                    alt={p.caption || 'Order photo'}
+                                    style={{ width: '100%', height: '100px', objectFit: 'cover', cursor: 'pointer', display: 'block' }}
+                                    onClick={() => setLightboxPhoto(p)}
+                                  />
+                                  {p.caption && (
+                                    <div style={{ fontSize: '11px', color: '#555', padding: '4px 6px', backgroundColor: '#f9f9f9' }}>
+                                      {p.caption}
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={() => handlePhotoDelete(p.id)}
+                                    style={{
+                                      position: 'absolute', top: '4px', right: '4px',
+                                      backgroundColor: 'rgba(0,0,0,0.55)', color: '#fff',
+                                      border: 'none', borderRadius: '50%', width: '22px', height: '22px',
+                                      fontSize: '12px', cursor: 'pointer', lineHeight: 1
+                                    }}
+                                  >✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1070,6 +1194,27 @@ function Orders() {
             ))}
           </tbody>
         </table>
+      )}
+    {/* LIGHTBOX */}
+      {lightboxPhoto && (
+        <div
+          onClick={() => setLightboxPhoto(null)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.88)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'pointer' }}
+        >
+          <img
+            src={`http://localhost:5000/${lightboxPhoto.photo_path}`}
+            alt={lightboxPhoto.caption || 'Order photo'}
+            style={{ maxWidth: '92%', maxHeight: '82%', borderRadius: '8px', cursor: 'default' }}
+            onClick={e => e.stopPropagation()}
+          />
+          {lightboxPhoto.caption && (
+            <p style={{ color: '#ddd', fontSize: '14px', marginTop: '12px' }}>{lightboxPhoto.caption}</p>
+          )}
+          <button
+            onClick={() => setLightboxPhoto(null)}
+            style={{ position: 'absolute', top: '20px', right: '28px', background: 'transparent', border: 'none', color: '#fff', fontSize: '32px', cursor: 'pointer' }}
+          >✕</button>
+        </div>
       )}
     </div>
   )

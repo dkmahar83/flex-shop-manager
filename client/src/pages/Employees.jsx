@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react'
 import {
   getEmployees, createEmployee, markAttendance,
-  getSalary, getAttendance, getEmployeeProfile, deleteEmployee
+  getSalary, getAttendance, getEmployeeProfile, deleteEmployee, generateSalary
 } from '../services/api'
+import DenominationCounter from '../components/DenominationCounter'
+
+const UPI_ACCOUNTS = [
+  'BOI Shop Account',
+  'Google Pay - Rampratap Painter',
+  'PhonePe - Bhavya Printers',
+  'Amazon Pay - Deepak'
+]
 
 function Employees() {
   const [employees, setEmployees] = useState([])
@@ -13,6 +21,10 @@ function Employees() {
   const [selectedEmployee, setSelectedEmployee] = useState(null)
   const [salaryData, setSalaryData] = useState(null)
   const [attendanceCalendar, setAttendanceCalendar] = useState([])
+  const [salaryPaymentMode, setSalaryPaymentMode] = useState('cash')
+  const [salaryUpiAccount, setSalaryUpiAccount] = useState('')
+  const [salaryDenomination, setSalaryDenomination] = useState({})
+  const [crediting, setCrediting] = useState(false)
   const [employeeProfile, setEmployeeProfile] = useState(null)
   const [profileError, setProfileError] = useState('')
 
@@ -103,6 +115,31 @@ function Employees() {
         setMessage('Error fetching salary: ' + (err?.response?.data?.error || err.message))
       })
   }
+
+  function handleCreditSalary() {
+  if (!selectedEmployee || !salaryData) return
+  if (salaryPaymentMode === 'upi' && !salaryUpiAccount) {
+    return setMessage('UPI ke liye account select karo.')
+  }
+  setCrediting(true)
+  generateSalary({
+    employee_id: selectedEmployee.id,
+    month: salaryMonth,
+    year: salaryYear,
+    payment_mode: salaryPaymentMode,
+    upi_account: salaryPaymentMode === 'upi' ? salaryUpiAccount : null,
+    notes: `${salaryMonth}/${salaryYear} salary`,
+    denomination_breakdown: salaryPaymentMode === 'cash' && Object.keys(salaryDenomination).length > 0
+      ? salaryDenomination : null
+  })
+    .then(() => {
+      setMessage(`✅ ₹${salaryData.calculated_salary} salary credited to ${selectedEmployee.name}`)
+      setSalaryDenomination({})
+      fetchSalary(selectedEmployee.id, salaryMonth, salaryYear)
+    })
+    .catch(err => setMessage('Error: ' + (err.response?.data?.error || 'Could not credit salary')))
+    .finally(() => setCrediting(false))
+}
 
   function fetchCalendar(empId, month, year) {
     getAttendance(empId, { month, year })
@@ -577,6 +614,65 @@ function Employees() {
                 <strong style={{ fontSize: '24px', color: '#27ae60' }}>
                   ₹{salaryData.calculated_salary}
                 </strong>
+              </div>
+
+              {/* CREDIT SALARY */}
+              <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginTop: '16px' }}>
+                <h4 style={{ marginBottom: '12px' }}>💸 Credit This Salary</h4>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={styles.label}>Payment Mode</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button"
+                      onClick={() => { setSalaryPaymentMode('cash'); setSalaryUpiAccount('') }}
+                      style={{
+                        padding: '8px 16px', borderRadius: '6px', border: '1px solid #ddd', cursor: 'pointer', fontSize: '13px',
+                        backgroundColor: salaryPaymentMode === 'cash' ? '#27ae60' : '#fff',
+                        color: salaryPaymentMode === 'cash' ? '#fff' : '#333'
+                      }}
+                    >💵 Cash</button>
+                    <button type="button"
+                      onClick={() => setSalaryPaymentMode('upi')}
+                      style={{
+                        padding: '8px 16px', borderRadius: '6px', border: '1px solid #ddd', cursor: 'pointer', fontSize: '13px',
+                        backgroundColor: salaryPaymentMode === 'upi' ? '#1565c0' : '#fff',
+                        color: salaryPaymentMode === 'upi' ? '#fff' : '#333'
+                      }}
+                    >📱 UPI</button>
+                  </div>
+                </div>
+
+                {salaryPaymentMode === 'upi' && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={styles.label}>UPI Account *</label>
+                    <select style={{ ...styles.input, maxWidth: '260px' }}
+                      value={salaryUpiAccount}
+                      onChange={e => setSalaryUpiAccount(e.target.value)}
+                    >
+                      <option value="">Select UPI Account</option>
+                      {UPI_ACCOUNTS.map(acc => (
+                        <option key={acc} value={acc}>{acc}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {salaryPaymentMode === 'cash' && (
+                  <DenominationCounter
+                    onApply={(total, counts) => setSalaryDenomination(counts)}
+                  />
+                )}
+
+                <button
+                  onClick={handleCreditSalary}
+                  disabled={crediting}
+                  style={{
+                    ...styles.submitBtn, marginTop: '12px',
+                    opacity: crediting ? 0.6 : 1, cursor: crediting ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {crediting ? 'Crediting...' : `✅ Credit ₹${salaryData.calculated_salary} to ${selectedEmployee?.name}`}
+                </button>
               </div>
             </div>
           )}

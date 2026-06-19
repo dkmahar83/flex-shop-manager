@@ -3,8 +3,11 @@ import {
   getDailySummary,
   getExpenses, addExpense, deleteExpense, getTodaySales,
   getEmployees, getVendors, getDailyLedgerByDate, saveCashIncome, getCustomers,
-  getCashDrawer
+  getCashDrawer, getDenominationDrawer, setDrawerBaseline
 } from '../services/api'
+import DenominationCounter from '../components/DenominationCounter'
+
+const ALL_DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1]
 
 const CATEGORIES = [
   'Raw Material (Pipe/Flex)',
@@ -26,7 +29,7 @@ const UPI_ACCOUNTS = [
 ]
 
 function DailySales() {
-  const today = new Date().toLocaleDateString('en-CA') // gives YYYY-MM-DD in local timezone
+  const today = new Date().toLocaleDateString('en-CA')
   const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0')
   const currentYear = String(new Date().getFullYear())
 
@@ -42,31 +45,37 @@ function DailySales() {
   const [cashDrawer, setCashDrawer] = useState(null)
   const [cashDrawerDate, setCashDrawerDate] = useState(today)
   const [cashDrawerLoading, setCashDrawerLoading] = useState(false)
+  const [drawerData, setDrawerData] = useState(null)
+  const [drawerLoading, setDrawerLoading] = useState(false)
+  const [showBaselineForm, setShowBaselineForm] = useState(false)
+  const [baselineCounts, setBaselineCounts] = useState({})
+  const [baselineSaving, setBaselineSaving] = useState(false)
 
-  // Cash income form
   const [cashForm, setCashForm] = useState({
-  customer_id: '',
-  amount: '',
-  income_date: today,
-  notes: '',
-  payment_mode: 'cash',
-  upi_account: ''
-})
+    customer_id: '',
+    amount: '',
+    income_date: today,
+    notes: '',
+    payment_mode: 'cash',
+    upi_account: ''
+  })
   const [customers, setCustomers] = useState([])
   const [customerSearch, setCustomerSearch] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [cashDenomination, setCashDenomination] = useState({})
+  const [expenseDenomination, setExpenseDenomination] = useState({})
 
   const [expenseForm, setExpenseForm] = useState({
-  category: '',
-  amount: '',
-  description: '',
-  expense_date: today,
-  payment_mode: 'cash',
-  upi_account: '', 
-  paid_to_type: null, 
-  paid_to_id: ''
-})
+    category: '',
+    amount: '',
+    description: '',
+    expense_date: today,
+    payment_mode: 'cash',
+    upi_account: '',
+    paid_to_type: null,
+    paid_to_id: ''
+  })
 
   const [expenses, setExpenses] = useState([])
   const [summary, setSummary] = useState(null)
@@ -80,11 +89,11 @@ function DailySales() {
     getVendors().then(res => setVendors(res.data)).catch(() => {})
   }, [filterMonth, filterYear]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // BUG 3 FIX: showMsg was not being used in handleAddExpense — now all message calls go through showMsg
   function showMsg(text, type = 'success') {
     setMessage(text)
     setMessageType(type)
   }
+
   function fmtDT(dateStr) {
     if (!dateStr) return '—'
     const clean = String(dateStr).replace('T', ' ').substring(0, 19)
@@ -96,7 +105,7 @@ function DailySales() {
     }
     return clean
   }
-  
+
   function fetchAll() {
     fetchExpenses()
     fetchSummary()
@@ -126,6 +135,7 @@ function DailySales() {
       .then(res => setSummary(res.data))
       .catch(() => {})
   }
+
   function fetchLedgerByDate(date) {
     setLedgerLoading(true)
     getDailyLedgerByDate(date)
@@ -143,7 +153,33 @@ function DailySales() {
       .catch(() => setCashDrawerLoading(false))
   }
 
-  // Customer search filter
+  function fetchDrawer() {
+    setDrawerLoading(true)
+    getDenominationDrawer()
+      .then(res => { setDrawerData(res.data); setDrawerLoading(false) })
+      .catch(() => setDrawerLoading(false))
+  }
+
+  function bumpBaseline(value, delta) {
+    setBaselineCounts(prev => {
+      const current = Number(prev[value]) || 0
+      return { ...prev, [value]: Math.max(0, current + delta) }
+    })
+  }
+
+  function handleSetBaseline() {
+    setBaselineSaving(true)
+    setDrawerBaseline({ denomination_counts: baselineCounts, notes: 'Manual galla count' })
+      .then(() => {
+        showMsg('Galla count set ho gaya!')
+        setShowBaselineForm(false)
+        setBaselineCounts({})
+        fetchDrawer()
+      })
+      .catch(() => showMsg('Error setting galla count.', 'error'))
+      .finally(() => setBaselineSaving(false))
+  }
+
   const filteredCustomers = customers.filter(c =>
     c.firm_name.toLowerCase().includes(customerSearch.toLowerCase()) ||
     (c.contact_name || '').toLowerCase().includes(customerSearch.toLowerCase())
@@ -159,68 +195,70 @@ function DailySales() {
   function handleSaveCashIncome(e) {
     e.preventDefault()
     if (!cashForm.customer_id) return showMsg('Please select a customer.', 'error')
-    if ( cashForm.payment_mode === 'upi' && !cashForm.upi_account )
+    if (cashForm.payment_mode === 'upi' && !cashForm.upi_account)
       return showMsg('Please select UPI account.', 'error')
     if (!cashForm.amount || isNaN(cashForm.amount) || Number(cashForm.amount) <= 0)
       return showMsg('Enter a valid amount.', 'error')
 
     const cleanForm = {
       ...cashForm,
-      amount: parseInt(cashForm.amount, 10)
+      amount: parseInt(cashForm.amount, 10),
+      denomination_breakdown: cashForm.payment_mode === 'cash' && Object.keys(cashDenomination).length > 0
+        ? cashDenomination
+        : null
     }
     saveCashIncome(cleanForm)
       .then(() => {
         showMsg(`₹${cashForm.amount} cash income saved for ${selectedCustomer?.firm_name}`)
-        // BUG 1 FIX: was missing payment_mode and upi_account in reset — they would persist to next entry
         setCashForm({ customer_id: '', amount: '', income_date: today, notes: '', payment_mode: 'cash', upi_account: '' })
         setSelectedCustomer(null)
         setCustomerSearch('')
+        setCashDenomination({})
         fetchAll()
       })
       .catch(() => showMsg('Error saving cash income.', 'error'))
   }
 
   function handleAddExpense(e) {
-  e.preventDefault()
-  if (!expenseForm.category || !expenseForm.amount) {
-    // BUG 3 FIX: was calling setMessage() directly — error styling (messageError) never applied
-    return showMsg('Category and amount are required.', 'error')
-  }
-  // Validate employee selection
-  if (expenseForm.category === 'Employee Advance' && !expenseForm.paid_to_id) {
-    // BUG 3 FIX: same — was setMessage(), now showMsg() with error type
-    return showMsg('Please select an employee for the advance.', 'error')
-  }
-  // Validate vendor selection
-  if (expenseForm.category === 'Vendor Payment' && !expenseForm.paid_to_id) {
-    // BUG 3 FIX: same
-    return showMsg('Please select a vendor for the payment.', 'error')
-  }
+    e.preventDefault()
+    if (!expenseForm.category || !expenseForm.amount) {
+      return showMsg('Category and amount are required.', 'error')
+    }
+    if (expenseForm.category === 'Employee Advance' && !expenseForm.paid_to_id) {
+      return showMsg('Please select an employee for the advance.', 'error')
+    }
+    if (expenseForm.category === 'Vendor Payment' && !expenseForm.paid_to_id) {
+      return showMsg('Please select a vendor for the payment.', 'error')
+    }
 
-  const payload = {
-    category: expenseForm.category,
-    amount: parseInt(expenseForm.amount, 10),
-    expense_date: expenseForm.expense_date,
-    description: expenseForm.description,
-    payment_mode: expenseForm.payment_mode || 'cash',
-    upi_account: expenseForm.upi_account || null,
-    paid_to_type: expenseForm.paid_to_type || null,
-    paid_to_id: expenseForm.paid_to_id || null
-  }
+    const payload = {
+      category: expenseForm.category,
+      amount: parseInt(expenseForm.amount, 10),
+      expense_date: expenseForm.expense_date,
+      description: expenseForm.description,
+      payment_mode: expenseForm.payment_mode || 'cash',
+      upi_account: expenseForm.upi_account || null,
+      paid_to_type: expenseForm.paid_to_type || null,
+      paid_to_id: expenseForm.paid_to_id || null,
+      denomination_breakdown: expenseForm.payment_mode === 'cash' && Object.keys(expenseDenomination).length > 0
+        ? expenseDenomination
+        : null
+    }
 
-  addExpense(payload)
-    .then(() => {
-      // BUG 3 FIX: was setMessage(), now showMsg() so success style applies correctly
-      showMsg(`Expense of ₹${expenseForm.amount} added.`)
-      setExpenseForm({
-        category: '', amount: '', description: '',
-        expense_date: today, payment_mode: 'cash',
-        upi_account: '', paid_to_type: null, paid_to_id: ''
+    addExpense(payload)
+      .then(() => {
+        showMsg(`Expense of ₹${expenseForm.amount} added.`)
+        setExpenseForm({
+          category: '', amount: '', description: '',
+          expense_date: today, payment_mode: 'cash',
+          upi_account: '', paid_to_type: null, paid_to_id: ''
+        })
+        setExpenseDenomination({})
+        fetchAll()
       })
-      fetchAll()
-    })
-    .catch(() => showMsg('Error adding expense.', 'error'))
-}
+      .catch(() => showMsg('Error adding expense.', 'error'))
+  }
+
   function handleDeleteExpense(id) {
     deleteExpense(id)
       .then(() => {
@@ -229,6 +267,7 @@ function DailySales() {
       })
       .catch(() => showMsg('Error deleting expense.', 'error'))
   }
+
   const groupedExpenses = expenses.reduce((groups, exp) => {
     const date = exp.expense_date
     if (!groups[date]) groups[date] = []
@@ -304,16 +343,20 @@ function DailySales() {
 
       {/* TABS */}
       <div style={styles.tabRow}>
-        {['today', 'history', 'expenses', 'ledger'].map(tab => (
+        {['today', 'history', 'expenses', 'ledger', 'galla'].map(tab => (
           <button
             key={tab}
             style={{ ...styles.tab, ...(activeTab === tab ? styles.activeTab : {}) }}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab)
+              if (tab === 'galla') fetchDrawer()
+            }}
           >
             {tab === 'today' ? '📝 Record Entry'
             : tab === 'history' ? '💰 Cash Drawer'
             : tab === 'expenses' ? '🧾 Expense List'
-            : '📒 Daily Ledger'}
+            : tab === 'ledger' ? '📒 Daily Ledger'
+            : '🧮 Galla Hisaab'}
           </button>
         ))}
       </div>
@@ -321,15 +364,12 @@ function DailySales() {
       {/* TAB: RECORD ENTRY */}
       {activeTab === 'today' && (
         <div>
-          {/* TODAY'S SUMMARY BOX */}
           {todayData && (
             <div style={styles.todayBox}>
               <h3 style={{ marginBottom: '16px' }}>
                 📊 Today's Summary — {new Date(today).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
               </h3>
               <div style={styles.todayRow}>
-
-                {/* Payments from orders */}
                 <div style={styles.todayCard}>
                   <div style={styles.todayCardLabel}>💳 Payments from Orders</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60' }}>
@@ -339,12 +379,12 @@ function DailySales() {
                     <div style={{ marginTop: '10px' }}>
                       {todayData.payments_received.map(p => (
                         <div key={p.id} style={styles.paymentLine}>
-                      <div>
-                        <span style={{ color: '#555' }}>{p.firm_name}</span>
-                        <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(p.created_at || p.payment_date)}</div>
-                      </div>
-                      <span style={{ fontWeight: 'bold', color: '#27ae60' }}>₹{p.amount}</span>
-                    </div>
+                          <div>
+                            <span style={{ color: '#555' }}>{p.firm_name}</span>
+                            <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(p.created_at || p.payment_date)}</div>
+                          </div>
+                          <span style={{ fontWeight: 'bold', color: '#27ae60' }}>₹{p.amount}</span>
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -352,7 +392,6 @@ function DailySales() {
                   )}
                 </div>
 
-                {/* Cash income today */}
                 <div style={styles.todayCard}>
                   <div style={styles.todayCardLabel}>💵 Other Cash Received</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#3498db' }}>
@@ -362,12 +401,12 @@ function DailySales() {
                     <div style={{ marginTop: '10px' }}>
                       {todayData.cash_income_today.map(c => (
                         <div key={c.id} style={styles.paymentLine}>
-                        <div>
-                          <span style={{ color: '#555' }}>{c.firm_name}</span>
-                          <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(c.income_date || c.created_at)}</div>
+                          <div>
+                            <span style={{ color: '#555' }}>{c.firm_name}</span>
+                            <div style={{ fontSize: '11px', color: '#aaa' }}>{fmtDT(c.income_date || c.created_at)}</div>
+                          </div>
+                          <span style={{ fontWeight: 'bold', color: '#3498db' }}>₹{c.amount}</span>
                         </div>
-                        <span style={{ fontWeight: 'bold', color: '#3498db' }}>₹{c.amount}</span>
-                      </div>
                       ))}
                     </div>
                   ) : (
@@ -375,7 +414,6 @@ function DailySales() {
                   )}
                 </div>
 
-                {/* Total cash in */}
                 <div style={{ ...styles.todayCard, backgroundColor: '#1a1a2e' }}>
                   <div style={{ ...styles.todayCardLabel, color: '#aaa' }}>Total Payment In Today</div>
                   <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>
@@ -386,7 +424,6 @@ function DailySales() {
                   </div>
                 </div>
 
-                {/* Expenses today */}
                 <div style={{ ...styles.todayCard, backgroundColor: '#fff5f5', border: '1px solid #fdd' }}>
                   <div style={styles.todayCardLabel}>🧾 Expenses Today</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#e74c3c' }}>
@@ -395,7 +432,6 @@ function DailySales() {
                 </div>
               </div>
 
-              {/* UPI breakdown */}
               {todayData.upi_by_account && todayData.upi_by_account.length > 0 && (
                 <div style={{ ...styles.todayCard, marginTop: '8px' }}>
                   <div style={styles.todayCardLabel}>📱 UPI Received Today — ₹{todayData.upi_total}</div>
@@ -421,7 +457,6 @@ function DailySales() {
                 </div>
               )}
 
-              {/* Cheques received today */}
               {todayData.cheques_today && todayData.cheques_today.length > 0 && (
                 <div style={{ ...styles.todayCard, marginTop: '8px', backgroundColor: '#f5f0ff' }}>
                   <div style={styles.todayCardLabel}>🧾 Cheques Received Today — ₹{todayData.cheque_total}</div>
@@ -437,7 +472,6 @@ function DailySales() {
                 </div>
               )}
 
-              {/* Net today */}
               <div style={styles.netToday}>
                 <span style={{ fontSize: '16px', color: '#555' }}>Net Today (Cash In - Expenses):</span>
                 <strong style={{
@@ -451,18 +485,13 @@ function DailySales() {
             </div>
           )}
 
-          {/* FORMS ROW */}
           <div style={styles.twoCol}>
-
-            {/* CASH INCOME ENTRY — mandatory customer */}
             <div style={styles.formBox}>
               <h3 style={{ marginBottom: '4px', color: '#27ae60' }}>💵 Record Other Payment</h3>
               <p style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>
                 Cash received from a customer — not linked to a specific order
               </p>
               <form onSubmit={handleSaveCashIncome}>
-
-                {/* Customer selector */}
                 <div style={{ marginBottom: '12px', position: 'relative' }}>
                   <label style={styles.label}>Customer *</label>
                   <input
@@ -526,7 +555,6 @@ function DailySales() {
                 </div>
                 <div style={{ marginBottom: '12px' }}>
                   <label style={styles.label}>Payment Mode *</label>
-
                   <select
                     style={styles.input}
                     value={cashForm.payment_mode}
@@ -534,10 +562,7 @@ function DailySales() {
                       setCashForm({
                         ...cashForm,
                         payment_mode: e.target.value,
-                        upi_account:
-                          e.target.value === 'cash'
-                            ? ''
-                            : cashForm.upi_account
+                        upi_account: e.target.value === 'cash' ? '' : cashForm.upi_account
                       })
                     }
                   >
@@ -549,16 +574,10 @@ function DailySales() {
                 {cashForm.payment_mode === 'upi' && (
                   <div style={{ marginBottom: '12px' }}>
                     <label style={styles.label}>UPI Account *</label>
-                    {/* BUG 5 FIX: was hardcoded <option> strings — now uses UPI_ACCOUNTS constant */}
                     <select
                       style={styles.input}
                       value={cashForm.upi_account}
-                      onChange={e =>
-                        setCashForm({
-                          ...cashForm,
-                          upi_account: e.target.value
-                        })
-                      }
+                      onChange={e => setCashForm({ ...cashForm, upi_account: e.target.value })}
                     >
                       <option value="">Select UPI Account</option>
                       {UPI_ACCOUNTS.map(acc => (
@@ -567,7 +586,16 @@ function DailySales() {
                     </select>
                   </div>
                 )}
-                  
+
+                {cashForm.payment_mode === 'cash' && (
+                  <DenominationCounter
+                    onApply={(total, counts) => {
+                      setCashForm(f => ({ ...f, amount: String(total) }))
+                      setCashDenomination(counts)
+                    }}
+                  />
+                )}
+
                 <div style={{ marginBottom: '12px' }}>
                   <label style={styles.label}>Amount (₹) *</label>
                   <input
@@ -602,8 +630,7 @@ function DailySales() {
               </form>
             </div>
 
-            {/* EXPENSE ENTRY */}
-              <div style={styles.formBox}>
+            <div style={styles.formBox}>
               <h3 style={{ marginBottom: '4px', color: '#e74c3c' }}>🧾 Add Expense</h3>
               <p style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>
                 Record any cash going out of shop today
@@ -638,7 +665,6 @@ function DailySales() {
                   </select>
                 </div>
 
-                {/* Show employee dropdown when Employee Advance selected */}
                 {expenseForm.category === 'Employee Advance' && (
                   <div style={{ marginBottom: '12px', backgroundColor: '#fff9e6', padding: '12px', borderRadius: '8px', border: '1px solid #ffc107' }}>
                     <label style={{ ...styles.label, color: '#856404' }}>
@@ -659,7 +685,6 @@ function DailySales() {
                   </div>
                 )}
 
-                {/* Show vendor dropdown when Vendor Payment selected */}
                 {expenseForm.category === 'Vendor Payment' && (
                   <div style={{ marginBottom: '12px', backgroundColor: '#f0f7ff', padding: '12px', borderRadius: '8px', border: '1px solid #3498db' }}>
                     <label style={{ ...styles.label, color: '#1a5276' }}>
@@ -702,6 +727,16 @@ function DailySales() {
                   </select>
                 </div>
 
+                {(expenseForm.payment_mode || 'cash') === 'cash' && (
+                  <DenominationCounter
+                    context="expense"
+                    onApply={(total, counts) => {
+                      setExpenseForm(f => ({ ...f, amount: String(total) }))
+                      setExpenseDenomination(counts)
+                    }}
+                  />
+                )}
+
                 {expenseForm.payment_mode === 'upi' && (
                   <div style={{ marginBottom: '12px' }}>
                     <label style={styles.label}>UPI Account Used</label>
@@ -737,196 +772,187 @@ function DailySales() {
 
       {/* TAB: Cash Drawer */}
       {activeTab === 'history' && (
-      <div>
-        {/* Date selector */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <div>
-            <label style={styles.label}>Select Date</label>
-            <input
-              style={{ ...styles.input, maxWidth: '200px' }}
-              type="date"
-              value={cashDrawerDate}
-              onChange={e => setCashDrawerDate(e.target.value)}
-            />
-          </div>
-          <button
-            style={{
-              backgroundColor: '#1a1a2e',
-              color: '#fff',
-              border: 'none',
-              padding: '10px 28px',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: 'bold',
-              letterSpacing: '0.3px',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
-            }}
-            onClick={() => fetchCashDrawer(cashDrawerDate)}
-          >
-            💰 Load Cash Drawer
-          </button>
-        </div>
-
-        {cashDrawerLoading && <p style={{ color: '#888' }}>Loading...</p>}
-
-        {!cashDrawer && !cashDrawerLoading && (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
-            <p style={{ fontSize: '16px' }}>Select a date and click "Load Cash Drawer"</p>
-            <p style={{ fontSize: '13px', marginTop: '8px' }}>
-              Shows only physical cash — UPI and cheques excluded
-            </p>
-          </div>
-        )}
-
-        {cashDrawer && (
-          <div>
-            {/* Header */}
-            <div style={styles.ledgerDateHeader}>
-              <h3>
-                💰 Cash Drawer — {new Date(cashDrawer.date).toLocaleDateString('en-IN', {
-                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                })}
-              </h3>
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Cash In: ₹{cashDrawer.total_cash_in}</span>
-                <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Cash Out: ₹{cashDrawer.total_cash_out}</span>
-              </div>
+        <div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <div>
+              <label style={styles.label}>Select Date</label>
+              <input
+                style={{ ...styles.input, maxWidth: '200px' }}
+                type="date"
+                value={cashDrawerDate}
+                onChange={e => setCashDrawerDate(e.target.value)}
+              />
             </div>
-
-            {/* Opening Balance */}
-            <div style={{
-              backgroundColor: '#fff',
-              padding: '16px 20px',
-              borderRadius: '8px',
-              marginBottom: '16px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderLeft: '4px solid #f39c12'
-            }}>
-              <div>
-                <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>Opening Balance (Carried Forward)</div>
-                <div style={{ fontSize: '13px', color: '#aaa' }}>Cash in drawer at start of day</div>
-              </div>
-              <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#f39c12' }}>
-                ₹{cashDrawer.opening_balance}
-              </div>
-            </div>
-
-            {/* Cash In + Cash Out grid */}
-            <div style={styles.ledgerGrid}>
-
-              {/* CASH IN */}
-              <div style={styles.ledgerSection}>
-                <div style={styles.ledgerSectionHeader}>
-                  <span>💵 Cash In</span>
-                  <span style={{ color: '#27ae60', fontWeight: 'bold' }}>₹{cashDrawer.total_cash_in}</span>
-                </div>
-                {cashDrawer.cash_in.length === 0 ? (
-                  <div style={styles.ledgerEmpty}>No cash received on this date.</div>
-                ) : (
-                  cashDrawer.cash_in.map((item, i) => (
-                    <div key={i} style={styles.ledgerRow}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{item.party_name || '—'}</div>
-                        <div style={{ marginTop: '4px' }}>
-                          <span style={{
-                            ...styles.typeBadge,
-                            backgroundColor: item.type === 'Order Payment' ? '#e8f5e9' : '#e3f2fd',
-                            color: item.type === 'Order Payment' ? '#27ae60' : '#1565c0'
-                          }}>
-                            {item.type}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
-                          🕐 {fmtDT(item.created_at || item.payment_date)}
-                        </div>
-                      </div>
-                      <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
-                        +₹{item.amount}
-                      </div>
-                    </div>
-                    
-                  ))
-                )}
-                {cashDrawer.cash_in.length > 0 && (
-                  <div style={styles.ledgerTotal}>
-                    <span>Total Cash In</span>
-                    <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '18px' }}>₹{cashDrawer.total_cash_in}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* CASH OUT */}
-              <div style={styles.ledgerSection}>
-                <div style={{ ...styles.ledgerSectionHeader, borderLeft: '4px solid #e74c3c' }}>
-                  <span>🧾 Cash Out</span>
-                  <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>₹{cashDrawer.total_cash_out}</span>
-                </div>
-                {cashDrawer.cash_out.length === 0 ? (
-                  <div style={styles.ledgerEmpty}>No cash expenses on this date.</div>
-                ) : (
-                  cashDrawer.cash_out.map((exp, i) => (
-                    <div key={i} style={styles.ledgerRow}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{exp.party_name || exp.category}</div>
-                        {exp.description && (
-                          <div style={{ fontSize: '12px', color: '#aaa', marginTop: '3px' }}>{exp.description}</div>
-                        )}
-                        <div style={{ marginTop: '4px' }}>
-                          <span style={{ ...styles.typeBadge, backgroundColor: '#fff0f0', color: '#e74c3c' }}>
-                            {exp.category}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px' }}>
-                        -₹{exp.amount}
-                      </div>
-                    </div>
-                  ))
-                )}
-                {cashDrawer.cash_out.length > 0 && (
-                  <div style={{ ...styles.ledgerTotal, borderTop: '2px solid #e74c3c' }}>
-                    <span>Total Cash Out</span>
-                    <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '18px' }}>₹{cashDrawer.total_cash_out}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Closing Balance */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              backgroundColor: cashDrawer.closing_balance >= 0 ? '#f0fff4' : '#fff5f5',
-              border: `2px solid ${cashDrawer.closing_balance >= 0 ? '#27ae60' : '#e74c3c'}`,
-              borderRadius: '10px',
-              padding: '20px 24px',
-              marginTop: '16px'
-            }}>
-              <div>
-                <div style={{ fontSize: '14px', color: '#555', marginBottom: '4px', fontWeight: 'bold' }}>
-                  💰 Closing Cash Drawer Balance
-                </div>
-                <div style={{ fontSize: '12px', color: '#888' }}>
-                  ₹{cashDrawer.opening_balance} opening + ₹{cashDrawer.total_cash_in} in − ₹{cashDrawer.total_cash_out} out
-                </div>
-              </div>
-              <div style={{
-                fontSize: '32px',
+            <button
+              style={{
+                backgroundColor: '#1a1a2e',
+                color: '#fff',
+                border: 'none',
+                padding: '10px 28px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
                 fontWeight: 'bold',
-                color: cashDrawer.closing_balance >= 0 ? '#27ae60' : '#e74c3c'
+                letterSpacing: '0.3px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+              }}
+              onClick={() => fetchCashDrawer(cashDrawerDate)}
+            >
+              💰 Load Cash Drawer
+            </button>
+          </div>
+
+          {cashDrawerLoading && <p style={{ color: '#888' }}>Loading...</p>}
+
+          {!cashDrawer && !cashDrawerLoading && (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+              <p style={{ fontSize: '16px' }}>Select a date and click "Load Cash Drawer"</p>
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Shows only physical cash — UPI and cheques excluded
+              </p>
+            </div>
+          )}
+
+          {cashDrawer && (
+            <div>
+              <div style={styles.ledgerDateHeader}>
+                <h3>
+                  💰 Cash Drawer — {new Date(cashDrawer.date).toLocaleDateString('en-IN', {
+                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+                  })}
+                </h3>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Cash In: ₹{cashDrawer.total_cash_in}</span>
+                  <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Cash Out: ₹{cashDrawer.total_cash_out}</span>
+                </div>
+              </div>
+
+              <div style={{
+                backgroundColor: '#fff',
+                padding: '16px 20px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderLeft: '4px solid #f39c12'
               }}>
-                ₹{cashDrawer.closing_balance}
+                <div>
+                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>Opening Balance (Carried Forward)</div>
+                  <div style={{ fontSize: '13px', color: '#aaa' }}>Cash in drawer at start of day</div>
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#f39c12' }}>
+                  ₹{cashDrawer.opening_balance}
+                </div>
+              </div>
+
+              <div style={styles.ledgerGrid}>
+                <div style={styles.ledgerSection}>
+                  <div style={styles.ledgerSectionHeader}>
+                    <span>💵 Cash In</span>
+                    <span style={{ color: '#27ae60', fontWeight: 'bold' }}>₹{cashDrawer.total_cash_in}</span>
+                  </div>
+                  {cashDrawer.cash_in.length === 0 ? (
+                    <div style={styles.ledgerEmpty}>No cash received on this date.</div>
+                  ) : (
+                    cashDrawer.cash_in.map((item, i) => (
+                      <div key={i} style={styles.ledgerRow}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{item.party_name || '—'}</div>
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{
+                              ...styles.typeBadge,
+                              backgroundColor: item.type === 'Order Payment' ? '#e8f5e9' : '#e3f2fd',
+                              color: item.type === 'Order Payment' ? '#27ae60' : '#1565c0'
+                            }}>
+                              {item.type}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                            🕐 {fmtDT(item.created_at || item.payment_date)}
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
+                          +₹{item.amount}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {cashDrawer.cash_in.length > 0 && (
+                    <div style={styles.ledgerTotal}>
+                      <span>Total Cash In</span>
+                      <span style={{ color: '#27ae60', fontWeight: 'bold', fontSize: '18px' }}>₹{cashDrawer.total_cash_in}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div style={styles.ledgerSection}>
+                  <div style={{ ...styles.ledgerSectionHeader, borderLeft: '4px solid #e74c3c' }}>
+                    <span>🧾 Cash Out</span>
+                    <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>₹{cashDrawer.total_cash_out}</span>
+                  </div>
+                  {cashDrawer.cash_out.length === 0 ? (
+                    <div style={styles.ledgerEmpty}>No cash expenses on this date.</div>
+                  ) : (
+                    cashDrawer.cash_out.map((exp, i) => (
+                      <div key={i} style={styles.ledgerRow}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{exp.party_name || exp.category}</div>
+                          {exp.description && (
+                            <div style={{ fontSize: '12px', color: '#aaa', marginTop: '3px' }}>{exp.description}</div>
+                          )}
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#fff0f0', color: '#e74c3c' }}>
+                              {exp.category}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px' }}>
+                          -₹{exp.amount}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {cashDrawer.cash_out.length > 0 && (
+                    <div style={{ ...styles.ledgerTotal, borderTop: '2px solid #e74c3c' }}>
+                      <span>Total Cash Out</span>
+                      <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '18px' }}>₹{cashDrawer.total_cash_out}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: cashDrawer.closing_balance >= 0 ? '#f0fff4' : '#fff5f5',
+                border: `2px solid ${cashDrawer.closing_balance >= 0 ? '#27ae60' : '#e74c3c'}`,
+                borderRadius: '10px',
+                padding: '20px 24px',
+                marginTop: '16px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '14px', color: '#555', marginBottom: '4px', fontWeight: 'bold' }}>
+                    💰 Closing Cash Drawer Balance
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#888' }}>
+                    ₹{cashDrawer.opening_balance} opening + ₹{cashDrawer.total_cash_in} in − ₹{cashDrawer.total_cash_out} out
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: '32px',
+                  fontWeight: 'bold',
+                  color: cashDrawer.closing_balance >= 0 ? '#27ae60' : '#e74c3c'
+                }}>
+                  ₹{cashDrawer.closing_balance}
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-    )}
+          )}
+        </div>
+      )}
 
       {/* TAB: EXPENSE LIST */}
       {activeTab === 'expenses' && (
@@ -953,36 +979,16 @@ function DailySales() {
                       <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
                         {exp.category}
                       </div>
-
                       {exp.paid_to_name && (
-                        <div style={{
-                          fontSize: '12px',
-                          color: '#555',
-                          marginTop: '2px'
-                        }}>
-                          {exp.paid_to_type === 'employee'
-                            ? `👤 ${exp.paid_to_name}`
-                            : `🏪 ${exp.paid_to_name}`}
+                        <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>
+                          {exp.paid_to_type === 'employee' ? `👤 ${exp.paid_to_name}` : `🏪 ${exp.paid_to_name}`}
                         </div>
                       )}
-
-                      <div style={{
-                        fontSize: '11px',
-                        color: '#888',
-                        marginTop: '3px'
-                      }}>
-                        {exp.payment_mode === 'upi'
-                          ? `📱 UPI • ${exp.upi_account || 'Unknown'}`
-                          : '💵 Cash'}
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
+                        {exp.payment_mode === 'upi' ? `📱 UPI • ${exp.upi_account || 'Unknown'}` : '💵 Cash'}
                       </div>
-
-                      {/* BUG 2 FIX: description was rendered twice — removed the duplicate below */}
                       {exp.description && (
-                        <div style={{
-                          fontSize: '12px',
-                          color: '#888',
-                          marginTop: '4px'
-                        }}>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
                           {exp.description}
                         </div>
                       )}
@@ -1003,10 +1009,10 @@ function DailySales() {
           )}
         </div>
       )}
+
       {/* TAB: DAILY LEDGER */}
-        {activeTab === 'ledger' && (
+      {activeTab === 'ledger' && (
         <div>
-          {/* Date selector */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap' }}>
             <div>
               <label style={styles.label}>Select Date</label>
@@ -1038,14 +1044,8 @@ function DailySales() {
 
           {ledgerLoading && <p style={{ color: '#888' }}>Loading...</p>}
 
-          {/* BUG 4 NOTE: ledgerRows is fetched monthly but never rendered.
-              Below is the monthly overview table using ledgerRows.
-              If this tab is only meant to show per-day detail, ledgerRows fetch
-              in fetchLedger() can be removed from fetchAll(). */}
-
           {ledgerByDate && (
             <div>
-              {/* Date header */}
               <div style={styles.ledgerDateHeader}>
                 <h3>
                   📒 Ledger — {new Date(ledgerByDate.date).toLocaleDateString('en-IN', {
@@ -1059,24 +1059,18 @@ function DailySales() {
                   <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>
                     Expenses: ₹{ledgerByDate.total_expenses}
                   </span>
-                  <span style={{
-                    fontWeight: 'bold',
-                    color: ledgerByDate.net >= 0 ? '#1a1a2e' : '#e74c3c'
-                  }}>
+                  <span style={{ fontWeight: 'bold', color: ledgerByDate.net >= 0 ? '#1a1a2e' : '#e74c3c' }}>
                     Net: ₹{ledgerByDate.net}
                   </span>
                 </div>
               </div>
 
               <div style={styles.ledgerGrid}>
-
                 {/* INCOME SECTION */}
                 <div style={styles.ledgerSection}>
                   <div style={styles.ledgerSectionHeader}>
                     <span>💵 Sales / Income</span>
-                    <span style={{ color: '#27ae60', fontWeight: 'bold' }}>
-                      ₹{ledgerByDate.total_income}
-                    </span>
+                    <span style={{ color: '#27ae60', fontWeight: 'bold' }}>₹{ledgerByDate.total_income}</span>
                   </div>
 
                   {ledgerByDate.income.length === 0 ? (
@@ -1099,28 +1093,24 @@ function DailySales() {
                               {item.type}
                             </span>
                           </div>
-                        </div>
-                        {/* ADD THIS */}
                           {item.notes && (
                             <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
                               📝 {item.notes}
                             </div>
                           )}
+                        </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
                             ₹{item.amount}
                           </div>
                           <div style={{ fontSize: '12px', color: '#888' }}>
-                            {item.payment_mode === 'cash' || item.payment_mode === null
-                              ? '💵 Cash'
-                              : `📱 ${item.payment_mode}`}
+                            {item.payment_mode === 'cash' || item.payment_mode === null ? '💵 Cash' : `📱 ${item.payment_mode}`}
                           </div>
                         </div>
                       </div>
                     ))
                   )}
 
-                  {/* Income total */}
                   {ledgerByDate.income.length > 0 && (
                     <div style={styles.ledgerTotal}>
                       <span>Total Income</span>
@@ -1135,9 +1125,7 @@ function DailySales() {
                 <div style={styles.ledgerSection}>
                   <div style={{ ...styles.ledgerSectionHeader, borderLeft: '4px solid #e74c3c' }}>
                     <span>🧾 Expenses</span>
-                    <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>
-                      ₹{ledgerByDate.total_expenses}
-                    </span>
+                    <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>₹{ledgerByDate.total_expenses}</span>
                   </div>
 
                   {ledgerByDate.expenses.length === 0 ? (
@@ -1150,11 +1138,7 @@ function DailySales() {
                             {exp.party_name || exp.category}
                           </div>
                           <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
-                            <span style={{
-                              ...styles.typeBadge,
-                              backgroundColor: '#fff0f0',
-                              color: '#e74c3c'
-                            }}>
+                            <span style={{ ...styles.typeBadge, backgroundColor: '#fff0f0', color: '#e74c3c' }}>
                               {exp.category}
                             </span>
                           </div>
@@ -1163,28 +1147,24 @@ function DailySales() {
                               {exp.description}
                             </div>
                           )}
-                          {/* ADD THIS */}
-                            {exp.notes && (
-                              <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
-                                📝 {exp.notes}
-                              </div>
-                            )}
+                          {exp.notes && (
+                            <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
+                              📝 {exp.notes}
+                            </div>
+                          )}
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px' }}>
                             ₹{exp.amount}
                           </div>
                           <div style={{ fontSize: '12px', color: '#888' }}>
-                            {exp.payment_mode === 'upi'
-                              ? `📱 ${exp.upi_account || 'UPI'}`
-                              : '💵 Cash'}
+                            {exp.payment_mode === 'upi' ? `📱 ${exp.upi_account || 'UPI'}` : '💵 Cash'}
                           </div>
                         </div>
                       </div>
                     ))
                   )}
 
-                  {/* Expense total */}
                   {ledgerByDate.expenses.length > 0 && (
                     <div style={{ ...styles.ledgerTotal, borderTop: '2px solid #e74c3c' }}>
                       <span>Total Expenses</span>
@@ -1196,7 +1176,6 @@ function DailySales() {
                 </div>
               </div>
 
-              {/* NET BOX */}
               <div style={{
                 ...styles.netToday,
                 marginTop: '16px',
@@ -1206,10 +1185,7 @@ function DailySales() {
                 <span style={{ fontSize: '16px' }}>
                   Net for {new Date(ledgerByDate.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}
                 </span>
-                <strong style={{
-                  fontSize: '24px',
-                  color: ledgerByDate.net >= 0 ? '#27ae60' : '#e74c3c'
-                }}>
+                <strong style={{ fontSize: '24px', color: ledgerByDate.net >= 0 ? '#27ae60' : '#e74c3c' }}>
                   ₹{ledgerByDate.net}
                 </strong>
               </div>
@@ -1226,6 +1202,99 @@ function DailySales() {
           )}
         </div>
       )}
+
+      {/* TAB: GALLA HISAAB (live denomination drawer) */}
+      {activeTab === 'galla' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ marginBottom: '4px' }}>🧮 Galla Hisaab — Live Note Count</h3>
+              {drawerData?.baseline_set_at && (
+                <p style={{ fontSize: '12px', color: '#888' }}>
+                  Last count set: {drawerData.baseline_set_at}
+                </p>
+              )}
+              {!drawerData?.baseline_set_at && (
+                <p style={{ fontSize: '12px', color: '#e67e22' }}>
+                  ⚠️ Abhi tak koi starting count set nahi hui — "Set Galla Count" se shuru karo.
+                </p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={fetchDrawer} style={{ ...styles.tab, fontSize: '13px' }}>🔄 Refresh</button>
+              <button
+                onClick={() => setShowBaselineForm(f => !f)}
+                style={{ backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+              >
+                {showBaselineForm ? 'Cancel' : '⚙️ Set Galla Count'}
+              </button>
+            </div>
+          </div>
+
+          {showBaselineForm && (
+            <div style={{ backgroundColor: '#fff9e6', border: '1px solid #ffc107', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
+              <p style={{ fontSize: '13px', color: '#856404', marginBottom: '12px' }}>
+                Abhi physically gin kar jo bhi note drawer me hain, unka exact count daalo. Isi point se aage hisaab track hoga.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                {ALL_DENOMS.map(d => {
+                  const count = Number(baselineCounts[d]) || 0
+                  return (
+                    <div key={d} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #eee' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '13px' }}>₹{d}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button type="button" onClick={() => bumpBaseline(d, -1)} style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer' }}>−</button>
+                        <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: 'bold' }}>{count}</span>
+                        <button type="button" onClick={() => bumpBaseline(d, 1)} style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid #27ae60', backgroundColor: '#27ae60', color: '#fff', cursor: 'pointer' }}>+</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>Total: ₹{ALL_DENOMS.reduce((s, d) => s + (Number(baselineCounts[d]) || 0) * d, 0)}</strong>
+                <button
+                  onClick={handleSetBaseline}
+                  disabled={baselineSaving}
+                  style={{ backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: baselineSaving ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: baselineSaving ? 0.6 : 1 }}
+                >
+                  {baselineSaving ? 'Saving...' : 'Save & Start Tracking'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {drawerLoading && <p style={{ color: '#888' }}>Loading...</p>}
+
+          {drawerData && !drawerLoading && (
+            <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                {ALL_DENOMS.map(d => {
+                  const count = drawerData.denominations[d] || 0
+                  return (
+                    <div key={d} style={{
+                      backgroundColor: count < 0 ? '#fff5f5' : '#f8f8f8',
+                      padding: '12px', borderRadius: '8px', textAlign: 'center',
+                      border: count < 0 ? '1px solid #fdd' : '1px solid transparent'
+                    }}>
+                      <div style={{ fontSize: '13px', color: '#888' }}>₹{d}</div>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: count < 0 ? '#e74c3c' : '#1a1a2e' }}>
+                        {count}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#aaa' }}>₹{count * d}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '14px', borderTop: '2px solid #f0f0f0' }}>
+                <span style={{ fontSize: '15px', color: '#555' }}>Total Galla Value</span>
+                <strong style={{ fontSize: '26px', color: '#27ae60' }}>₹{drawerData.total_value}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   )
 }

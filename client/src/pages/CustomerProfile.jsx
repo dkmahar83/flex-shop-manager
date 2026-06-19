@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getCustomerProfile, addOpeningBalance } from '../services/api'
+import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto } from '../services/api'
 
 function CustomerProfile() {
   const { id } = useParams()
@@ -12,6 +12,9 @@ function CustomerProfile() {
   const [obDate, setObDate]         = useState(new Date().toLocaleDateString('en-CA'))
   const [obNotes, setObNotes]       = useState('Pichle saal ka bakaya')
   const [obMsg, setObMsg]           = useState('')
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoMsg, setPhotoMsg] = useState('')
+  const [showPhotoModal, setShowPhotoModal] = useState(false)
 
   useEffect(() => {
     getCustomerProfile(id)
@@ -65,6 +68,30 @@ function handleOpeningBalance(e) {
     })
     .catch(err => setObMsg('Error: ' + (err.response?.data?.error || 'Failed')))
 }
+function handlePhotoChange(e) {
+  const file = e.target.files[0]
+  if (!file) return
+
+  setPhotoUploading(true)
+  setPhotoMsg('')
+
+  uploadCustomerPhoto(id, file)
+    .then(() => {
+      setPhotoMsg('Photo updated!')
+      return getCustomerProfile(id)
+    })
+    .then(res => setCustomer(res.data))
+    .catch(err => setPhotoMsg('Error: ' + (err.response?.data?.error || 'Upload failed')))
+    .finally(() => setPhotoUploading(false))
+}
+
+function handlePhotoRemove() {
+  if (!window.confirm('Remove this photo?')) return
+  deleteCustomerPhoto(id)
+    .then(() => getCustomerProfile(id))
+    .then(res => setCustomer(res.data))
+    .catch(err => setPhotoMsg('Error: ' + (err.response?.data?.error || 'Delete failed')))
+}
   function chequeStatusBadge(status) {
     const colors = {
       received: '#f39c12',
@@ -83,12 +110,50 @@ function handleOpeningBalance(e) {
 
       {/* CUSTOMER HEADER */}
       <div style={styles.profileCard}>
-        <div>
-          <h2 style={{ marginBottom: '4px' }}>{customer.firm_name}</h2>
-          <p style={{ color: '#888', fontSize: '14px' }}>
-            {customer.contact_name && `Contact: ${customer.contact_name}`}
-            {customer.phone && ` • 📞 ${customer.phone}`}
-          </p>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flex: 1 }}>
+          <div style={{ position: 'relative' }}>
+            {customer.photo_path ? (
+              <img
+                src={`http://localhost:5000/${customer.photo_path}`}
+                alt={customer.firm_name}
+                style={{ ...styles.photoCircle, cursor: 'pointer' }}
+                onClick={() => setShowPhotoModal(true)}
+              />
+            ) : (
+              <div style={{ ...styles.photoCircle, ...styles.photoPlaceholder }}>
+                {customer.firm_name?.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <label style={styles.photoEditBtn} title="Upload photo">
+              📷
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoChange}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
+
+          <div>
+            <h2 style={{ marginBottom: '4px' }}>{customer.firm_name}</h2>
+            <p style={{ color: '#888', fontSize: '14px' }}>
+              {customer.contact_name && `Contact: ${customer.contact_name}`}
+              {customer.phone && ` • 📞 ${customer.phone}`}
+            </p>
+            {photoUploading && <p style={{ fontSize: '12px', color: '#888' }}>Uploading...</p>}
+            {photoMsg && (
+              <p style={{ fontSize: '12px', color: photoMsg.includes('Error') ? '#e74c3c' : '#27ae60' }}>
+                {photoMsg}
+                {customer.photo_path && !photoMsg.includes('Error') && (
+                  <span onClick={handlePhotoRemove} style={{ marginLeft: '8px', color: '#e74c3c', cursor: 'pointer', textDecoration: 'underline' }}>
+                    Remove
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
         </div>
         <div style={styles.statsRow}>
           <div style={styles.statBox}>
@@ -409,6 +474,27 @@ function handleOpeningBalance(e) {
           </tfoot>
         </table>
       )}
+
+      {/* PHOTO MODAL */}
+      {showPhotoModal && customer.photo_path && (
+        <div
+          onClick={() => setShowPhotoModal(false)}
+          style={styles.photoModalOverlay}
+        >
+          <img
+            src={`http://localhost:5000/${customer.photo_path}`}
+            alt={customer.firm_name}
+            style={styles.photoModalImg}
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setShowPhotoModal(false)}
+            style={styles.photoModalClose}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -432,7 +518,13 @@ const styles = {
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },
-  badge: { padding: '3px 10px', borderRadius: '12px', color: '#fff', fontSize: '12px', textTransform: 'capitalize' }
+  badge: { padding: '3px 10px', borderRadius: '12px', color: '#fff', fontSize: '12px', textTransform: 'capitalize' },
+  photoCircle: { width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #eee', boxSizing: 'border-box' },
+  photoPlaceholder: { backgroundColor: '#1a1a2e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 'bold' },
+  photoEditBtn: { position: 'absolute', bottom: '-2px', right: '-2px', backgroundColor: '#fff', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.3)', cursor: 'pointer', zIndex: 1 },
+  photoModalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'pointer' },
+  photoModalImg: { maxWidth: '90%', maxHeight: '90%', borderRadius: '8px', boxShadow: '0 4px 24px rgba(0,0,0,0.5)', cursor: 'default' },
+  photoModalClose: { position: 'absolute', top: '20px', right: '30px', backgroundColor: 'transparent', border: 'none', color: '#fff', fontSize: '32px', cursor: 'pointer' }
 }
 
 export default CustomerProfile

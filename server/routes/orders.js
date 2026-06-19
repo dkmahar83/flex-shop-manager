@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const fs = require('fs');
+const path = require('path');
+const { uploadOrder } = require('../middleware/upload');
 
 // ─────────────────────────────────────────
 // GET /api/orders
@@ -159,7 +162,8 @@ router.post('/', (req, res) => {
     notes,
     items,
     discount_amount,
-    discount_note
+    discount_note,
+    advance_denomination_breakdown
   } = req.body;
 
   if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
@@ -184,17 +188,21 @@ router.post('/', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
+    const breakdownToSave = (advance > 0 && advance_payment_mode === 'cash' && advance_denomination_breakdown && Object.keys(advance_denomination_breakdown).length > 0)
+      ? JSON.stringify(advance_denomination_breakdown)
+      : null;
+
     db.run(`
       INSERT INTO orders
         (customer_id, description, status, total_amount, advance_paid, balance_due,
          advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id,
-         discount_amount, discount_note, created_at)
-      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+         discount_amount, discount_note, created_at, advance_denomination_breakdown)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
     `,
     [customer_id, description, total_amount, advance, balance_due,
      advance > 0 ? advance_payment_mode : null,
      follow_up_date, notes,
-     discount, discount_note || null, createdAt],
+     discount, discount_note || null, createdAt, breakdownToSave],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
 
@@ -492,6 +500,54 @@ router.put('/:id/items', (req, res) => {
       });
     });
   });
+});
+
+// GET /api/orders/:id/photos — order ki saari photos
+router.get('/:id/photos', (req, res) => {
+  db.all(
+    `SELECT * FROM order_photos WHERE order_id = ? ORDER BY uploaded_at ASC`,
+    [req.params.id],
+    (err, photos) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(photos);
+    }
+  );
+});
+
+// POST /api/orders/:id/photos — photo upload karo
+router.post('/:id/photos', uploadOrder.single('photo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No photo received' });
+
+  const photoPath = `uploads/orders/${req.file.filename}`;
+  const uploadedAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+
+  db.run(
+    `INSERT INTO order_photos (order_id, photo_path, caption, uploaded_at) VALUES (?, ?, ?, ?)`,
+    [req.params.id, photoPath, req.body.caption || null, uploadedAt],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.status(201).json({ id: this.lastID, photo_path: photoPath });
+    }
+  );
+});
+
+// DELETE /api/orders/:id/photos/:photoId — photo delete karo
+router.delete('/:id/photos/:photoId', (req, res) => {
+  db.get(
+    `SELECT * FROM order_photos WHERE id = ? AND order_id = ?`,
+    [req.params.photoId, req.params.id],
+    (err, photo) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+      db.run(`DELETE FROM order_photos WHERE id = ?`, [photo.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const fullPath = path.join(__dirname, '..', photo.photo_path);
+        fs.unlink(fullPath, () => {});
+        res.json({ message: 'Photo deleted' });
+      });
+    }
+  );
 });
 
 module.exports = router;

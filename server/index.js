@@ -9,6 +9,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // ── ROUTES ──
 const authRoutes      = require('./routes/auth')
 const customerRoutes  = require('./routes/customers')
@@ -24,6 +27,7 @@ const vendorRoutes    = require('./routes/vendors')
 const inventoryRoutes = require('./routes/inventory')
 const pdfRoutes       = require('./routes/pdf')
 const whatsappRoutes  = require('./routes/whatsapp')
+const commissionRoutes = require('./routes/commission')
 
 // ── AUTH MIDDLEWARE ──
 const requireAuth = require('./middleware/auth')
@@ -48,10 +52,16 @@ app.use('/api/vendors',    requireAuth, vendorRoutes)
 app.use('/api/inventory',  requireAuth, inventoryRoutes)
 app.use('/api/pdf',        requireAuth, pdfRoutes)
 app.use('/api/whatsapp',   requireAuth, whatsappRoutes)
+app.use('/api/commission', requireAuth, commissionRoutes)
 
 app.get('/', (req, res) => {
   res.json({ message: 'VijayFlex Pro API is running!' })
 })
+// Global error handler — catches multer errors etc, always returns JSON
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.message);
+  res.status(500).json({ error: err.message || 'Something went wrong' });
+});
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)

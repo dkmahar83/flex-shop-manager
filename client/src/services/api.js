@@ -40,6 +40,14 @@ export const updateCustomer = (id, data) => api.put(`/customers/${id}`, data)
 export const deleteCustomer = (id) => api.delete(`/customers/${id}`)
 export const getCustomerProfile = (id) => api.get(`/customers/${id}`)
 export const addOpeningBalance = (id, data) => api.post(`/customers/${id}/opening-balance`, data)
+export const uploadCustomerPhoto = (id, file) => {
+  const formData = new FormData()
+  formData.append('photo', file)
+  return api.post(`/customers/${id}/photo`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+export const deleteCustomerPhoto = (id) => api.delete(`/customers/${id}/photo`)
 
 // Orders
 export const getOrders = (params) => api.get('/orders', { params })
@@ -49,6 +57,16 @@ export const updateOrderStatus = (id, status) => api.put(`/orders/${id}/status`,
 export const getOrderDetail = (id) => api.get(`/orders/${id}`)
 export const deleteOrder = (id) => api.delete(`/orders/${id}`)
 export const addPayment = (data) => api.post('/payments', data)
+export const getOrderPhotos = (orderId) => api.get(`/orders/${orderId}/photos`)
+export const uploadOrderPhoto = (orderId, file, caption) => {
+  const formData = new FormData()
+  formData.append('photo', file)
+  if (caption) formData.append('caption', caption)
+  return api.post(`/orders/${orderId}/photos`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+export const deleteOrderPhoto = (orderId, photoId) => api.delete(`/orders/${orderId}/photos/${photoId}`)
 
 // Employees
 export const getEmployees = () => api.get('/employees')
@@ -71,6 +89,8 @@ export const getTodaySales = () => api.get('/daily/today')
 export const getDailyLedgerByDate = (date) => api.get(`/daily/ledger/date?date=${date}`)
 export const saveCashIncome = (data) => api.post('/daily/cash-income', data)
 export const getCashDrawer = (date) => api.get(`/daily/cash-drawer?date=${date}`)
+export const getDenominationDrawer = () => api.get('/daily/denomination-drawer')
+export const setDrawerBaseline = (data) => api.post('/daily/denomination-drawer/set-baseline', data)
 
 // Expenses
 export const getExpenses = (month, year) => api.get('/expenses', { params: { month, year } })
@@ -145,5 +165,13 @@ export const generatePDF = (orderId) => api.get(`/pdf/bill/${orderId}`, { respon
 // Recycle Bin
 export const getRecycleBin = () => api.get('/customers/deleted/recent')
 export const restoreCustomer = (id) => api.put(`/customers/${id}/restore`)
+
+// Commission
+export const getCommissionHistory = (customerId) =>
+  api.get(`/commission${customerId ? `?customer_id=${customerId}` : ''}`)
+export const getCommissionBalance = (customerId) =>
+  api.get(`/commission/balance/${customerId}`)
+export const creditCommission = (data) => api.post('/commission/credit', data)
+export const returnCommission = (data) => api.post('/commission/return', data)
 
 export default api

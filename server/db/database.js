@@ -39,6 +39,8 @@ db.run(`CREATE TABLE IF NOT EXISTS employee_salary_credits (
 
 // Add soft delete columns if they don't exist yet
 db.run(`ALTER TABLE customers ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
+// Add photo_path column for customer photo upload feature
+db.run(`ALTER TABLE customers ADD COLUMN photo_path TEXT DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE orders ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE expenses ADD COLUMN paid_to_type TEXT DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE expenses ADD COLUMN paid_to_id INTEGER DEFAULT NULL`, () => {})
@@ -58,6 +60,40 @@ db.run(`ALTER TABLE payments ADD COLUMN payment_mode TEXT DEFAULT 'cash'`, () =>
 db.run(`ALTER TABLE payments ADD COLUMN upi_account TEXT DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE payments ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`, () => {})
 db.run(`UPDATE payments SET payment_mode = 'cash' WHERE payment_mode IS NULL`, () => {})
+// Denomination breakdown columns (optional, JSON string) for cash forms
+db.run(`ALTER TABLE cash_income ADD COLUMN denomination_breakdown TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE orders ADD COLUMN advance_denomination_breakdown TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE payments ADD COLUMN denomination_breakdown TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE expenses ADD COLUMN denomination_breakdown TEXT DEFAULT NULL`, () => {})
+db.run(`ALTER TABLE employee_salary_credits ADD COLUMN denomination_breakdown TEXT DEFAULT NULL`, () => {})
+db.run(`CREATE TABLE IF NOT EXISTS cash_drawer_baseline (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  denomination_counts TEXT NOT NULL,
+  set_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  notes TEXT
+)`);
+db.run(`CREATE TABLE IF NOT EXISTS order_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL,
+  photo_path TEXT NOT NULL,
+  caption TEXT DEFAULT NULL,
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id)
+)`);
+db.run(`CREATE TABLE IF NOT EXISTS commission_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('credit', 'return')),
+  amount INTEGER NOT NULL,
+  return_mode TEXT DEFAULT NULL,
+  return_upi_account TEXT DEFAULT NULL,
+  cheque_number TEXT DEFAULT NULL,
+  bank_name TEXT DEFAULT NULL,
+  note TEXT DEFAULT NULL,
+  transaction_date DATE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+)`);
 
 // Create all tables if they don't exist
 db.serialize(() => {

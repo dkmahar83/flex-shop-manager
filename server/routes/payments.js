@@ -15,7 +15,7 @@ function nowIST() {
 }
 
 router.post('/', (req, res) => {
-  const { order_id, customer_id, amount, payment_date, note, payment_mode, upi_account, cheque_number, bank_name } = req.body;
+  const { order_id, customer_id, amount, payment_date, note, payment_mode, upi_account, cheque_number, bank_name, denomination_breakdown } = req.body;
 
   if (!order_id || !customer_id || !amount) {
     return res.status(400).json({ error: 'order_id, customer_id and amount are required' });
@@ -63,11 +63,15 @@ router.post('/', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
+    const breakdownToSave = (cleanMode === 'cash' && denomination_breakdown && Object.keys(denomination_breakdown).length > 0)
+      ? JSON.stringify(denomination_breakdown)
+      : null;
+
     db.run(`
-      INSERT INTO payments (order_id, customer_id, amount, payment_date, note, payment_mode, upi_account, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO payments (order_id, customer_id, amount, payment_date, note, payment_mode, upi_account, created_at, denomination_breakdown)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    [order_id, customer_id, amount, cleanDate, note || '', cleanMode, cleanUpi, createdAt],
+    [order_id, customer_id, amount, cleanDate, note || '', cleanMode, cleanUpi, createdAt, breakdownToSave],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
 
