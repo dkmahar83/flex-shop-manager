@@ -22,7 +22,6 @@ router.post('/send-bill/:orderId', async (req, res) => {
   const { orderId } = req.params
 
   try {
-    // Get order + customer for message text
     db.get(`
       SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
       FROM orders
@@ -37,7 +36,10 @@ router.post('/send-bill/:orderId', async (req, res) => {
         // Fetch the SAME PDF that the download button uses
         const pdfResponse = await axios.get(
           `http://localhost:5000/api/pdf/bill/${orderId}`,
-          { responseType: 'arraybuffer' }
+          {
+            responseType: 'arraybuffer',
+            headers: { Authorization: req.headers.authorization }
+          }
         )
 
         const pdfBuffer = Buffer.from(pdfResponse.data)

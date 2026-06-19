@@ -51,7 +51,11 @@ router.get('/:id', (req, res) => {
 
       db.all(`SELECT * FROM payments WHERE order_id = ?`, [id], (err, payments) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ ...order, items, payments });
+
+        db.all(`SELECT * FROM cheques WHERE order_id = ? ORDER BY received_date ASC`, [id], (err, cheques) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ ...order, items, payments, cheques });
+        });
       });
     });
   });
@@ -242,6 +246,20 @@ router.post('/', (req, res) => {
   });
 });
 
+router.put('/:id/follow-up', (req, res) => {
+  const { id } = req.params;
+  const { follow_up_date } = req.body;
+  db.run(
+    `UPDATE orders SET follow_up_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [follow_up_date, id],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
+      res.json({ message: 'Follow-up date updated' });
+    }
+  );
+});
+
 // ─────────────────────────────────────────
 // PUT /api/orders/:id/status
 // ─────────────────────────────────────────
@@ -310,7 +328,10 @@ router.put('/:id', (req, res) => {
                 discount_amount=?, discount_note=?,
                 updated_at=CURRENT_TIMESTAMP
                 WHERE id=?`,
-          [description||order.description, notes||order.notes, follow_up_date||order.follow_up_date,
+          [
+          description !== undefined ? description : order.description,
+          notes !== undefined ? notes : order.notes,
+          follow_up_date !== undefined ? follow_up_date : order.follow_up_date,
           new_advance, fresh_balance,
           new_advance>0?(advance_payment_mode||order.advance_payment_mode):null,
           entryTable||order.advance_entry_table, entryId||order.advance_entry_id,

@@ -62,6 +62,7 @@ router.get('/:id', (req, res) => {
               FROM cash_income 
               WHERE customer_id = ?
               AND (notes NOT IN ('Order Advance Payment', 'Order Payment') OR notes IS NULL)
+              AND (notes NOT LIKE 'Cheque Cleared%')
             `, [id], (err, cashIncomePayments) => {
               if (err) return res.status(500).json({ error: err.message });
 

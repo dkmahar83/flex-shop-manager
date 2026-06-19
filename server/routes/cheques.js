@@ -94,10 +94,49 @@ router.put('/:id/status', (req, res) => {
   const validStatuses = ['received', 'deposited', 'cleared', 'bounced'];
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-  db.run(`UPDATE cheques SET status = ? WHERE id = ?`, [status, id], function(err) {
+  db.get(`SELECT * FROM cheques WHERE id = ?`, [id], (err, cheque) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Cheque not found' });
-    res.json({ message: `Cheque marked as ${status}` });
+    if (!cheque) return res.status(404).json({ error: 'Cheque not found' });
+
+    db.run(`UPDATE cheques SET status = ? WHERE id = ?`, [status, id], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Cheque not found' });
+
+      // When a cheque clears: (1) drop a "Cash Income" style entry on TODAY's date
+      // so it appears in the Daily Ledger / cash flow, and (2) settle the linked order's balance.
+      if (status === 'cleared' && cheque.status !== 'cleared') {
+        const clearedDate = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+        const createdAt   = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+
+        db.run(`
+          INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
+          VALUES (?, ?, ?, ?, 'cheque', NULL, ?)
+        `,
+        [cheque.customer_id, cheque.amount, clearedDate,
+         `Cheque Cleared${cheque.cheque_number ? ' #' + cheque.cheque_number : ''} (${cheque.firm_name})`,
+         createdAt],
+        (err) => {
+          if (err) console.error('Could not add cheque-cleared ledger entry:', err.message);
+        });
+
+        if (cheque.order_id) {
+          db.get(`SELECT total_amount, advance_paid FROM orders WHERE id = ?`, [cheque.order_id], (err, order) => {
+            if (err || !order) return;
+            db.get(`SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE order_id = ?`, [cheque.order_id], (err, r) => {
+              if (err) return;
+              db.get(`SELECT COALESCE(SUM(amount),0) as cleared FROM cheques WHERE order_id = ? AND status = 'cleared'`, [cheque.order_id], (err, c) => {
+                if (err) return;
+                const newBalance = Math.max(0, order.total_amount - order.advance_paid - r.paid - c.cleared);
+                db.run(`UPDATE orders SET balance_due = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                  [newBalance, cheque.order_id], () => {});
+              });
+            });
+          });
+        }
+      }
+
+      res.json({ message: `Cheque marked as ${status}` });
+    });
   });
 });
 

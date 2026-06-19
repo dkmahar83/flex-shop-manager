@@ -183,14 +183,14 @@ router.get('/report', (req, res) => {
       `, [m, year], (err, advanceCash) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        // 4. Cash income ONLY (non-order, payment_mode = cash) — Ghar Khata excluded
+        // 4. Cash income ONLY (non-order, payment_mode = cash) — Ghar Khata excluded — includes cleared cheques
         db.get(`
           SELECT COALESCE(SUM(ci.amount), 0) as total
           FROM cash_income ci
           LEFT JOIN customers c ON ci.customer_id = c.id
           WHERE strftime('%m', ci.income_date) = ?
             AND strftime('%Y', ci.income_date) = ?
-            AND (ci.payment_mode = 'cash' OR ci.payment_mode IS NULL)
+            AND (ci.payment_mode = 'cash' OR ci.payment_mode IS NULL OR ci.payment_mode = 'cheque')
             AND ci.notes != 'Order Advance Payment'
             AND (c.firm_name != 'Ghar Khata' OR c.id IS NULL)
         `, [m, year], (err, cashIncome) => {
@@ -467,13 +467,13 @@ router.get('/summary', (req, res) => {
         `, [month, year], (err, advanceCash) => {
           if (err) return res.status(500).json({ error: err.message });
 
-          // Non-order cash — Ghar Khata excluded
+          // Non-order cash — Ghar Khata excluded — includes cleared cheques
           db.get(`
             SELECT COALESCE(SUM(ci.amount), 0) as total
             FROM cash_income ci
             LEFT JOIN customers c ON ci.customer_id = c.id
             WHERE strftime('%m', ci.income_date) = ? AND strftime('%Y', ci.income_date) = ?
-              AND (ci.payment_mode = 'cash' OR ci.payment_mode IS NULL)
+              AND (ci.payment_mode = 'cash' OR ci.payment_mode IS NULL OR ci.payment_mode = 'cheque')
               AND ci.notes != 'Order Advance Payment'
               AND (c.firm_name != 'Ghar Khata' OR c.id IS NULL)
           `, [month, year], (err, cashIncome) => {
@@ -539,7 +539,13 @@ router.get('/ledger/date', (req, res) => {
 
   // Follow-up order payments
   db.all(`
-    SELECT payments.amount, payments.payment_mode, payments.created_at,
+    SELECT payments.amount,
+      CASE
+        WHEN payments.payment_mode = 'upi' AND payments.upi_account IS NOT NULL
+        THEN payments.upi_account
+        ELSE payments.payment_mode
+      END as payment_mode,
+      payments.created_at,
       customers.firm_name as party_name, 'Order Payment' as type
     FROM payments
     JOIN orders ON payments.order_id = orders.id

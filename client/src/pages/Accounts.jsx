@@ -367,11 +367,14 @@ function Accounts() {
   }
 
   function fmtDT(dateStr) {
-    if (!dateStr) return '—'
-    const d = new Date(dateStr); if (isNaN(d)) return dateStr
-    const pad = n => String(n).padStart(2, '0')
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}  ${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`
-  }
+  if (!dateStr) return '—'
+  // Database se IST string aati hai "2026-06-19 12:33:15" — T laga ke parse karo
+  const normalized = dateStr.replace(' ', 'T')
+  const d = new Date(normalized); if (isNaN(d)) return dateStr
+  const ist = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(ist.getHours())}:${pad(ist.getMinutes())}:${pad(ist.getSeconds())}  ${pad(ist.getDate())}.${pad(ist.getMonth()+1)}.${ist.getFullYear()}`
+}
 
   const statusColor = s => ({ received: '#f39c12', deposited: '#3498db', cleared: '#27ae60', bounced: '#e74c3c' }[s] || '#ccc')
   const upiColor    = acc => ({ 'BOI Shop Account': '#1a237e', 'Google Pay - Rampratap Painter': '#1a73e8', 'PhonePe - Bhavya Printers': '#5f259f', 'Amazon Pay - Deepak': '#ff9900' }[acc] || '#888')

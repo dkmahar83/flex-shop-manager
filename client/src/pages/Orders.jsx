@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp } from '../services/api'
-import axios from 'axios'
+import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF } from '../services/api'
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -28,6 +27,8 @@ function Orders() {
       follow_up_date: '',
       payment_mode: 'cash',
       upi_account: '',
+      cheque_number: '',
+      bank_name: '',
       showDiscount: false,
       discount_amount: '',
       discount_note: ''
@@ -130,7 +131,7 @@ function Orders() {
       discount_amount: order.discount_amount || '',
       discount_note: order.discount_note || ''
     })
-    axios.get(`http://localhost:5000/api/orders/${order.id}`)
+    api.get(`/orders/${order.id}`)
       .then(res => {
         if (res.data.items && res.data.items.length > 0) {
           setItems(res.data.items.map(i => ({
@@ -174,14 +175,14 @@ function Orders() {
       const validItems = items.filter(i => i.item_name && (parseFloat(i.quantity) > 0))
       if (validItems.length === 0) return setMessage('Add at least one valid item.')
 
-      axios.put(`http://localhost:5000/api/orders/${editingOrder.id}/items`, {
+      api.put(`/orders/${editingOrder.id}/items`, {
         items: validItems.map(i => ({
           item_name: i.item_name,
           quantity: parseFloat(i.quantity) || 1,
           unit_price: parseFloat(i.unit_price) || 0
         }))
       }).then(() => {
-        return axios.put(`http://localhost:5000/api/orders/${editingOrder.id}`, {
+        return api.put(`/orders/${editingOrder.id}`, {
           description: form.description,
           notes: form.notes,
           follow_up_date: form.follow_up_date,
@@ -266,7 +267,7 @@ function Orders() {
 
     // Discount pehle save karo order mein (agar hai to)
     const discountPromise = discountAmt > 0
-      ? axios.put(`http://localhost:5000/api/orders/${orderDetail.id}`, {
+      ? api.put(`/orders/${orderDetail.id}`, {
           discount_amount: (parseFloat(orderDetail.discount_amount) || 0) + discountAmt,
           discount_note: paymentForm.discount_note || 'Round-off'
         })
@@ -279,6 +280,8 @@ function Orders() {
       note: paymentForm.note,
       payment_mode: paymentForm.payment_mode,
       upi_account:  paymentForm.upi_account || null,
+      cheque_number: paymentForm.payment_mode === 'cheque' ? (paymentForm.cheque_number || null) : null,
+      bank_name:     paymentForm.payment_mode === 'cheque' ? (paymentForm.bank_name || null) : null,
       payment_date: paymentForm.payment_date
         ? paymentForm.payment_date + ' ' + new Date().toLocaleTimeString('en-GB', { hour12: false })
         : new Date().toLocaleString('en-GB', {
@@ -288,12 +291,16 @@ function Orders() {
     }))
       .then(() => {
         if (paymentForm.follow_up_date) {
-          axios.put(`http://localhost:5000/api/orders/${orderDetail.id}`, {
+          api.put(`/orders/${orderDetail.id}`, {
             follow_up_date: paymentForm.follow_up_date
           }).catch(() => {})
         }
-        setMessage('Payment recorded!')
-        setPaymentForm({ amount: '', note: '', payment_date: '', follow_up_date: '', payment_mode: 'cash', upi_account: '', showDiscount: false, discount_amount: '', discount_note: '' })
+        setMessage(
+          paymentForm.payment_mode === 'cheque'
+            ? 'Cheque recorded! Balance will update once marked cleared in Accounts.'
+            : 'Payment recorded!'
+        )
+        setPaymentForm({ amount: '', note: '', payment_date: '', follow_up_date: '', payment_mode: 'cash', upi_account: '', cheque_number: '', bank_name: '', showDiscount: false, discount_amount: '', discount_note: '' })
         getOrderDetail(orderDetail.id).then(res => {
           setOrderDetail(res.data)
           fetchOrders()
@@ -302,19 +309,18 @@ function Orders() {
       .catch(() => setMessage('Error recording payment.'))
   }
   function handleFollowUpSave(orderId) {
-    axios.put(`http://localhost:5000/api/orders/${orderId}`, {
-      follow_up_date: followUpValue
+  api.put(`/orders/${orderId}/follow-up`, {
+    follow_up_date: followUpValue
+  })
+    .then(() => {
+      setEditingFollowUp(null)
+      fetchOrders()
+      if (expandedOrder === orderId) {
+        getOrderDetail(orderId).then(res => setOrderDetail(res.data))
+      }
     })
-      .then(() => {
-        setEditingFollowUp(null)
-        fetchOrders()
-        // Agar ye order expand hai to detail bhi refresh karo
-        if (expandedOrder === orderId) {
-          getOrderDetail(orderId).then(res => setOrderDetail(res.data))
-        }
-      })
-      .catch(() => setMessage('Error updating follow-up date.'))
-  }
+    .catch(() => setMessage('Error updating follow-up date.'))
+}
 
   const total    = calculateTotal()
   const advance  = parseFloat(form.advance_paid) || 0
@@ -662,7 +668,18 @@ function Orders() {
                     </button>
                     <button
                       onClick={() => {
-                        window.open(`http://localhost:5000/api/pdf/bill/${o.id}`, '_blank')
+                        generatePDF(o.id)
+                          .then(res => {
+                            const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+                            const link = document.createElement('a')
+                            link.href = blobUrl
+                            link.download = `bill-${o.id}.pdf`
+                            document.body.appendChild(link)
+                            link.click()
+                            document.body.removeChild(link)
+                            setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000)
+                          })
+                          .catch(() => setMessage('Error loading bill PDF.'))
                       }}
                       style={{
                         backgroundColor: '#fff',
@@ -808,6 +825,38 @@ function Orders() {
                                   </td>
                                 </tr>
                               ))}
+                              {orderDetail.cheques && orderDetail.cheques.map((c) => (
+                                <tr key={`cheque-${c.id}`} style={{ backgroundColor: '#f5f0ff' }}>
+                                  <td style={styles.innerTd}>🧾</td>
+                                  <td style={styles.innerTd}>
+                                    {c.received_date
+                                      ? new Date(c.received_date).toLocaleDateString('en-GB').replace(/\//g, '.')
+                                      : '—'}
+                                  </td>
+                                  <td style={styles.innerTd}><strong>₹{c.amount}</strong></td>
+                                  <td style={styles.innerTd}>
+                                    {c.notes || 'Cheque Payment'}
+                                    {c.cheque_number && <span style={{ fontSize: '11px', color: '#888' }}> #{c.cheque_number}</span>}
+                                    {c.bank_name && <span style={{ fontSize: '11px', color: '#888' }}> ({c.bank_name})</span>}
+                                    <span style={{
+                                      ...styles.advanceBadge,
+                                      marginLeft: '6px',
+                                      backgroundColor:
+                                        c.status === 'cleared' ? '#e8f5e9'
+                                        : c.status === 'bounced' ? '#fdecea'
+                                        : '#fff3cd',
+                                      color:
+                                        c.status === 'cleared' ? '#2e7d32'
+                                        : c.status === 'bounced' ? '#c0392b'
+                                        : '#856404'
+                                    }}>
+                                      🧾 {c.status === 'cleared' ? 'Cleared'
+                                        : c.status === 'bounced' ? 'Bounced'
+                                        : 'Awaiting Clearance'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
                               {orderDetail.discount_amount > 0 && (
                                 <tr style={{ backgroundColor: '#fff8e1' }}>
                                   <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: '#e67e22' }}>
@@ -911,7 +960,7 @@ function Orders() {
                                   <div style={{ display: 'flex', gap: '6px' }}>
                                     <button
                                       type="button"
-                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'cash', upi_account: '' }))}
+                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'cash', upi_account: '', cheque_number: '', bank_name: '' }))}
                                       style={{
                                         padding: '8px 14px', borderRadius: '6px', border: '1px solid #ddd',
                                         backgroundColor: paymentForm.payment_mode === 'cash' ? '#27ae60' : '#fff',
@@ -923,7 +972,7 @@ function Orders() {
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'upi' }))}
+                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'upi', cheque_number: '', bank_name: '' }))}
                                       style={{
                                         padding: '8px 14px', borderRadius: '6px', border: '1px solid #ddd',
                                         backgroundColor: paymentForm.payment_mode === 'upi' ? '#1565c0' : '#fff',
@@ -932,6 +981,18 @@ function Orders() {
                                       }}
                                     >
                                       📱 UPI
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'cheque', upi_account: '' }))}
+                                      style={{
+                                        padding: '8px 14px', borderRadius: '6px', border: '1px solid #ddd',
+                                        backgroundColor: paymentForm.payment_mode === 'cheque' ? '#8e44ad' : '#fff',
+                                        color: paymentForm.payment_mode === 'cheque' ? '#fff' : '#333',
+                                        cursor: 'pointer', fontSize: '13px', fontWeight: '500'
+                                      }}
+                                    >
+                                      🧾 Cheque
                                     </button>
                                   </div>
                                 </div>
@@ -952,6 +1013,30 @@ function Orders() {
                                       ))}
                                     </select>
                                   </div>
+                                )}
+
+                                {/* ✅ NEW: Cheque details — sirf jab Cheque select ho */}
+                                {paymentForm.payment_mode === 'cheque' && (
+                                  <>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                      <label style={{ fontSize: '11px', color: '#888' }}>Cheque Number</label>
+                                      <input
+                                        style={{ ...styles.input, maxWidth: '140px' }}
+                                        placeholder="e.g. 004521"
+                                        value={paymentForm.cheque_number}
+                                        onChange={e => setPaymentForm({ ...paymentForm, cheque_number: e.target.value })}
+                                      />
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                      <label style={{ fontSize: '11px', color: '#888' }}>Bank Name</label>
+                                      <input
+                                        style={{ ...styles.input, maxWidth: '160px' }}
+                                        placeholder="e.g. SBI, BOI"
+                                        value={paymentForm.bank_name}
+                                        onChange={e => setPaymentForm({ ...paymentForm, bank_name: e.target.value })}
+                                      />
+                                    </div>
+                                  </>
                                 )}
 
                                 {/* Next Follow-up */}

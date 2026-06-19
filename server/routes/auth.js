@@ -1,0 +1,74 @@
+const express = require('express')
+const router = express.Router()
+const jwt = require('jsonwebtoken')
+const bcrypt = require('bcryptjs')
+
+// Single user credentials — change PASSWORD to whatever you want
+const USERS = [
+  {
+    id: 1,
+    username: 'flexshop',
+    // bcrypt hash of your password
+    // Default password: flex@2026
+    passwordHash: bcrypt.hashSync('flex@2026', 10),
+    name: 'FlexShop Manager'
+  },
+  {
+    id: 2,
+    username: 'admin',
+    passwordHash: bcrypt.hashSync('admin@2026', 10),
+    name: 'Admin'
+  }
+]
+
+const JWT_SECRET = 'flexshop_manager_secret_2026_pilibangan'
+const JWT_EXPIRES = '7d' // token valid for 7 days
+
+// POST /api/auth/login
+router.post('/login', (req, res) => {
+  const { username, password } = req.body
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' })
+  }
+
+  const user = USERS.find(u => u.username === username.toLowerCase())
+
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid username or password' })
+  }
+
+  const isValid = bcrypt.compareSync(password, user.passwordHash)
+
+  if (!isValid) {
+    return res.status(401).json({ error: 'Invalid username or password' })
+  }
+
+  const token = jwt.sign(
+    { id: user.id, username: user.username, name: user.name },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES }
+  )
+
+  res.json({
+    token,
+    user: { id: user.id, username: user.username, name: user.name },
+    message: 'Login successful'
+  })
+})
+
+// POST /api/auth/verify
+router.post('/verify', (req, res) => {
+  const { token } = req.body
+  if (!token) return res.status(401).json({ valid: false })
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET)
+    res.json({ valid: true, user: decoded })
+  } catch {
+    res.status(401).json({ valid: false })
+  }
+})
+
+module.exports = router
+module.exports.JWT_SECRET = JWT_SECRET

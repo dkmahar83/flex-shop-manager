@@ -20,6 +20,29 @@ function getLastQR() {
   return lastQR
 }
 
+// Purana session delete karo (corrupted/detached frame ke baad) aur fresh QR ke liye reinit karo
+function clearSessionAndReinit(oldClient) {
+  // Purana client safely destroy karne ki koshish karo
+  if (oldClient) {
+    try { oldClient.destroy() } catch (e) { /* already dead, ignore */ }
+  }
+
+  setTimeout(() => {
+    try {
+      const authPath = path.join(__dirname, '.wwebjs_auth')
+      const cachePath = path.join(__dirname, '.wwebjs_cache')
+      if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true })
+      if (fs.existsSync(cachePath)) fs.rmSync(cachePath, { recursive: true, force: true })
+      console.log('Old WhatsApp session cleared.')
+    } catch (e) {
+      console.log('Could not clear session folders:', e.message)
+    }
+
+    console.log('Re-initializing WhatsApp — new QR will appear shortly...')
+    initWhatsApp()
+  }, 3000)
+}
+
 function initWhatsApp() {
   if (client) {
     console.log('WhatsApp already initialized, skipping.')
@@ -60,27 +83,30 @@ function initWhatsApp() {
     })
 
     client.on('auth_failure', () => {
+      console.log('WhatsApp auth failed — clearing session for fresh QR')
       clientStatus = 'auth_failed'
       clientReady = false
+      const c = client
       client = null
+      clearSessionAndReinit(c)
     })
 
     client.on('disconnected', (reason) => {
       console.log('WhatsApp disconnected:', reason)
       clientStatus = 'disconnected'
       clientReady = false
+      const c = client
       client = null
-      // Wait 10 seconds before reconnecting — prevent rapid restart loops
-      setTimeout(() => {
-        console.log('Attempting WhatsApp reconnect...')
-        initWhatsApp()
-      }, 10000)
+      clearSessionAndReinit(c)
     })
 
     client.initialize().catch(err => {
-      console.log('WhatsApp init failed (Chrome not found):', err.message)
-      clientStatus = 'unavailable'
+      console.log('WhatsApp init crashed (detached frame / Chrome issue):', err.message)
+      clientStatus = 'disconnected'
+      clientReady = false
+      const c = client
       client = null
+      clearSessionAndReinit(c)
     })
 
   } catch (err) {

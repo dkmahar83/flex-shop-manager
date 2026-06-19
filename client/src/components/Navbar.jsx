@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 
-function Navbar() {
+function Navbar({ user, onLogout }) {
   const location = useLocation()
 
   const links = [
@@ -13,7 +13,7 @@ function Navbar() {
     { path: '/accounts', label: '🏦 Accounts' },
     { path: '/inventory', label: '📦 Inventory' },
     { path: '/reports', label: '📊 Reports' },
-    { path: '/recycle-bin', label: '🗑️ Bin' }
+    { path: '/bin', label: '🗑️ Bin' }
   ]
 
   return (
@@ -35,9 +35,23 @@ function Navbar() {
           </Link>
         ))}
       </div>
+
+      {/* User + Logout */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{ color: '#aaa', fontSize: '13px' }}>
+          👤 {user?.name || user?.username}
+        </span>
+        <button
+          onClick={onLogout}
+          style={styles.logoutBtn}
+        >
+          Logout
+        </button>
+      </div>
     </nav>
   )
 }
+
 
 const styles = {
   nav: {
@@ -55,6 +69,7 @@ const styles = {
   links: {
     display: 'flex',
     gap: '8px',
+    flexWrap: 'wrap'
   },
   link: {
     color: '#aaa',
@@ -66,6 +81,15 @@ const styles = {
   activeLink: {
     backgroundColor: '#e94560',
     color: '#fff',
+  },
+  logoutBtn: {
+    backgroundColor: 'transparent',
+    border: '1px solid #e74c3c',
+    color: '#e74c3c',
+    padding: '6px 14px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px'
   }
 }
 

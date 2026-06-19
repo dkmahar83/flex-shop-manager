@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getWhatsAppStatus } from '../services/api'
-import axios from 'axios'
+import { getWhatsAppStatus, getWhatsAppQR } from '../services/api'
 
 function WhatsAppSetup() {
   const [status, setStatus] = useState('checking')
@@ -10,7 +9,7 @@ function WhatsAppSetup() {
       .then(res => {
         setStatus(res.data.status)
         if (res.data.status === 'qr_pending') {
-          axios.get('http://localhost:5000/api/whatsapp/qr')
+          getWhatsAppQR()
             .then(r => setQr(r.data.qr))
         } else {
           setQr(null)

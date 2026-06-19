@@ -377,7 +377,7 @@ function DailySales() {
 
                 {/* Total cash in */}
                 <div style={{ ...styles.todayCard, backgroundColor: '#1a1a2e' }}>
-                  <div style={{ ...styles.todayCardLabel, color: '#aaa' }}>Total Cash In Today</div>
+                  <div style={{ ...styles.todayCardLabel, color: '#aaa' }}>Total Payment In Today</div>
                   <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>
                     ₹{todayData.total_cash_in || 0}
                   </div>

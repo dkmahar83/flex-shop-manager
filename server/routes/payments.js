@@ -15,7 +15,7 @@ function nowIST() {
 }
 
 router.post('/', (req, res) => {
-  const { order_id, customer_id, amount, payment_date, note, payment_mode, upi_account } = req.body;
+  const { order_id, customer_id, amount, payment_date, note, payment_mode, upi_account, cheque_number, bank_name } = req.body;
 
   if (!order_id || !customer_id || !amount) {
     return res.status(400).json({ error: 'order_id, customer_id and amount are required' });
@@ -25,6 +25,39 @@ router.post('/', (req, res) => {
   const cleanMode = payment_mode || 'cash';
   const cleanUpi  = (cleanMode === 'upi' && upi_account) ? upi_account : null;
   const createdAt = nowIST();
+
+  // Cheque payments go to the cheques table, not the payments table —
+  // they only count as real cash once cleared (handled in cheques.js)
+  if (cleanMode === 'cheque') {
+    return db.get(`SELECT * FROM orders WHERE id = ?`, [order_id], (err, order) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      db.get(`SELECT firm_name FROM customers WHERE id = ?`, [customer_id], (err, customer) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        db.run(`
+          INSERT INTO cheques (cheque_number, firm_name, customer_id, bank_name, amount, received_date, order_id, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [cheque_number || null, customer ? customer.firm_name : '', customer_id, bank_name || null,
+         amount, cleanDate, order_id, note || 'Order Payment'],
+        function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+
+          // Note: balance_due is NOT reduced here — order stays "due" until cheque clears.
+          // Mark cleared in Accounts > Cheques, which will then settle the order balance.
+          res.status(201).json({
+            id:       this.lastID,
+            order_id,
+            amount,
+            payment_mode: 'cheque',
+            message:  'Cheque recorded — balance will update once cheque is marked cleared'
+          });
+        });
+      });
+    });
+  }
 
   db.get(`SELECT * FROM orders WHERE id = ?`, [order_id], (err, order) => {
     if (err) return res.status(500).json({ error: err.message });

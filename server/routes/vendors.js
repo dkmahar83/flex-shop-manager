@@ -100,13 +100,14 @@ router.post('/:id/purchase', (req, res) => {
   const { amount, description, transaction_date, items = [] } = req.body;
   if (!amount) return res.status(400).json({ error: 'amount required' });
 
-  const txDate = transaction_date || new Date().toISOString().split('T')[0];
+  const txDate = transaction_date || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
   const itemsJson = JSON.stringify(items);
 
   db.run(
-    `INSERT INTO vendor_transactions (vendor_id, type, amount, transaction_date, description, items_json)
-     VALUES (?, 'purchase', ?, ?, ?, ?)`,
-    [id, amount, txDate, description, itemsJson],
+    `INSERT INTO vendor_transactions (vendor_id, type, amount, transaction_date, description, items_json, created_at)
+      VALUES (?, 'purchase', ?, ?, ?, ?, ?)`,
+      [id, amount, txDate, description, itemsJson,
+      new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ')],
     function (err) {
       if (err) return res.status(500).json({ error: err.message });
 
@@ -151,7 +152,7 @@ router.post('/:id/payment', (req, res) => {
 
   if (!amount) return res.status(400).json({ error: 'amount required' });
 
-  const txDate = transaction_date || new Date().toISOString().split('T')[0];
+  const txDate = transaction_date || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
 
   // Build a readable payment label
   let paymentLabel = 'Cash';
@@ -170,9 +171,10 @@ router.post('/:id/payment', (req, res) => {
     // ── Step 1: Record vendor_transaction ──
     db.run(
       `INSERT INTO vendor_transactions
-         (vendor_id, type, amount, transaction_date, description, payment_method, upi_account, bank_transfer_type)
-       VALUES (?, 'payment', ?, ?, ?, ?, ?, ?)`,
-      [id, amount, txDate, txDesc, payment_method, upi_account, bank_transfer_type],
+          (vendor_id, type, amount, transaction_date, description, payment_method, upi_account, bank_transfer_type, created_at)
+        VALUES (?, 'payment', ?, ?, ?, ?, ?, ?, ?)`,
+        [id, amount, txDate, txDesc, payment_method, upi_account, bank_transfer_type,
+        new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ')],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -188,13 +190,23 @@ router.post('/:id/payment', (req, res) => {
 
             // ── Step 3: Record expense ──
             db.run(
-              `INSERT INTO expenses (category, amount, expense_date, description, payment_method, reference)
-               VALUES ('Vendor Payment', ?, ?, ?, ?, ?)`,
-              [amount, txDate, fullDesc, payment_method, `vendor_${id}`],
-              (err) => {
-                if (err) console.error('Expense insert error:', err.message);
+              `INSERT INTO expenses (category, amount, expense_date, description, payment_mode, paid_to_type, paid_to_id, created_at)
+              VALUES ('Vendor Payment', ?, ?, ?, ?, 'vendor', ?, ?)`,
+              [amount, txDate, fullDesc, payment_method, id, new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ')],
+                (err) => {
+                  if (err) console.error('Expense insert error:', err.message);
 
-                // ── Step 4: Record daily ledger entry ──
+                  // ── daily_records update ──
+                  db.run(`
+                    INSERT INTO daily_records (record_date, total_expenses)
+                    VALUES (?, ?)
+                    ON CONFLICT(record_date) DO UPDATE SET
+                      total_expenses = total_expenses + excluded.total_expenses
+                  `, [txDate, parseFloat(amount)], (err) => {
+                    if (err) console.error('daily_records update error:', err.message);
+                  });
+
+                  // ── Step 4: Record daily ledger entry ──
                 db.run(
                   `INSERT INTO daily_ledger (entry_date, type, amount, description, payment_method, reference_type, reference_id)
                    VALUES (?, 'expense', ?, ?, ?, 'vendor', ?)`,

@@ -96,15 +96,21 @@ function Employees() {
   }
 
   function fetchSalary(empId, month, year) {
-    getSalary(empId, month, year)
+    getSalary(empId, { month, year })
       .then(res => setSalaryData(res.data))
-      .catch(() => setMessage('Error fetching salary.'))
+      .catch(err => {
+        console.error('Salary fetch failed:', err)
+        setMessage('Error fetching salary: ' + (err?.response?.data?.error || err.message))
+      })
   }
 
   function fetchCalendar(empId, month, year) {
-    getAttendance(empId, month, year)
+    getAttendance(empId, { month, year })
       .then(res => setAttendanceCalendar(res.data))
-      .catch(() => setMessage('Error loading calendar.'))
+      .catch(err => {
+        console.error('Calendar load failed:', err)
+        setMessage('Error loading calendar: ' + (err?.response?.data?.error || err.message))
+      })
   }
 
   function handleCalendarLoad() {
@@ -284,11 +290,11 @@ function Employees() {
                     }} style={{ ...styles.actionBtn, color: '#8e44ad', borderColor: '#8e44ad', marginLeft: '6px' }}>
                       👤 Profile
                     </button>
+                    <button onClick={() => handleDeleteEmployee(emp)}
+                      style={{ ...styles.actionBtn, color: '#e74c3c', borderColor: '#e74c3c', marginLeft: '6px' }}>
+                      🗑️ Delete
+                    </button>
                   </td>
-                  <button onClick={() => handleDeleteEmployee(emp)}
-                    style={{ ...styles.actionBtn, color: '#e74c3c', borderColor: '#e74c3c', marginLeft: '6px' }}>
-                    🗑️ Delete
-                  </button>
                 </tr>
               ))}
             </tbody>
