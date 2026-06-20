@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PageLock from '../components/PageLock'
 import { getMonthlyReport, getYearlyReport } from '../services/api'
 
 function Reports() {
@@ -33,8 +34,9 @@ function Reports() {
     .toLocaleString('en-IN', { month: 'long' })
 
   return (
-    <div>
-      <div style={styles.header}>
+  <PageLock pageKey="reports" pageTitle="Reports">
+  <div>
+    <div style={styles.header}>
         <h2>📊 Reports</h2>
       </div>
 
@@ -375,6 +377,7 @@ function Reports() {
       {/* ── ALL DUES ── */}
       {activeTab === 'dues' && <DuesTab />}
     </div>
+  </PageLock>
   )
 }
 

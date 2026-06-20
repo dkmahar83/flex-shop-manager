@@ -3,106 +3,102 @@ const router = express.Router();
 const db = require('../db/database');
 
 // ─── DB MIGRATION: Run once on startup ───────────────────────────────────────
-// Call this from your main server.js / app.js:
-//   const { runInventoryMigrations } = require('./routes/inventory');
-//   runInventoryMigrations();
-
 function runInventoryMigrations() {
-  // Core tables (already exist — safe to re-run with IF NOT EXISTS)
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_flex (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    brand TEXT NOT NULL,
-    size_ft REAL NOT NULL,
-    quantity INTEGER DEFAULT 0,
-    unit TEXT DEFAULT 'roll',
-    notes TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventory_flex (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      brand TEXT NOT NULL,
+      size_ft REAL NOT NULL,
+      quantity INTEGER DEFAULT 0,
+      unit TEXT DEFAULT 'roll',
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_stamps (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    stamp_type TEXT NOT NULL,
-    size TEXT,
-    design_type TEXT,
-    quantity INTEGER DEFAULT 0,
-    notes TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_stamps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stamp_type TEXT NOT NULL,
+      size TEXT,
+      design_type TEXT,
+      quantity INTEGER DEFAULT 0,
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_chemicals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chemical_name TEXT NOT NULL,
-    quantity REAL DEFAULT 0,
-    unit TEXT DEFAULT 'litre',
-    items_per_box INTEGER,
-    minimum_stock REAL DEFAULT 0,
-    notes TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_chemicals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chemical_name TEXT NOT NULL,
+      quantity REAL DEFAULT 0,
+      unit TEXT DEFAULT 'litre',
+      items_per_box INTEGER,
+      minimum_stock REAL DEFAULT 0,
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_frames (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    frame_type TEXT NOT NULL,
-    size TEXT,
-    design TEXT,
-    quantity INTEGER DEFAULT 0,
-    notes TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_frames (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      frame_type TEXT NOT NULL,
+      size TEXT,
+      design TEXT,
+      quantity INTEGER DEFAULT 0,
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_ink (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    item_name TEXT NOT NULL,
-    item_type TEXT DEFAULT 'ink',
-    quantity REAL DEFAULT 0,
-    unit TEXT DEFAULT 'litre',
-    minimum_level REAL DEFAULT 0,
-    notes TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_ink (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_name TEXT NOT NULL,
+      item_type TEXT DEFAULT 'ink',
+      quantity REAL DEFAULT 0,
+      unit TEXT DEFAULT 'litre',
+      minimum_level REAL DEFAULT 0,
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_name TEXT,
-    item_id INTEGER,
-    item_name TEXT,
-    action TEXT,
-    quantity_changed REAL,
-    quantity_before REAL,
-    quantity_after REAL,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name TEXT,
+      item_id INTEGER,
+      item_name TEXT,
+      action TEXT,
+      quantity_changed REAL,
+      quantity_before REAL,
+      quantity_after REAL,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  // ── NEW: Dynamic categories ──────────────────────────────────────────────
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    label TEXT NOT NULL,
-    icon TEXT DEFAULT '📦',
-    attr1_label TEXT DEFAULT 'Size',
-    attr2_label TEXT DEFAULT 'Type',
-    unit_default TEXT DEFAULT 'pcs',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL,
+      icon TEXT DEFAULT '📦',
+      attr1_label TEXT DEFAULT 'Size',
+      attr2_label TEXT DEFAULT 'Type',
+      unit_default TEXT DEFAULT 'pcs',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  db.run(`CREATE TABLE IF NOT EXISTS inventory_dynamic_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category_id INTEGER NOT NULL REFERENCES inventory_categories(id) ON DELETE CASCADE,
-    item_name TEXT NOT NULL,
-    attr1 TEXT,
-    attr2 TEXT,
-    quantity REAL DEFAULT 0,
-    unit TEXT DEFAULT 'pcs',
-    minimum_stock REAL DEFAULT 0,
-    notes TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    CREATE TABLE IF NOT EXISTS inventory_dynamic_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id INTEGER NOT NULL REFERENCES inventory_categories(id) ON DELETE CASCADE,
+      item_name TEXT NOT NULL,
+      attr1 TEXT,
+      attr2 TEXT,
+      quantity REAL DEFAULT 0,
+      unit TEXT DEFAULT 'pcs',
+      minimum_stock REAL DEFAULT 0,
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
   console.log('✅ Inventory migrations done');
 }
@@ -433,7 +429,6 @@ router.get('/log', (req, res) => {
 // DYNAMIC CATEGORIES  (NEW)
 // ════════════════════════════════════════════════════════════════════════════
 
-// GET all categories
 router.get('/categories', (req, res) => {
   db.all(`SELECT * FROM inventory_categories ORDER BY created_at ASC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -441,7 +436,6 @@ router.get('/categories', (req, res) => {
   });
 });
 
-// POST create new category
 router.post('/categories', (req, res) => {
   const { label, icon, attr1_label, attr2_label, unit_default } = req.body;
   if (!label || !label.trim()) return res.status(400).json({ error: 'label required' });
@@ -455,9 +449,7 @@ router.post('/categories', (req, res) => {
   );
 });
 
-// DELETE category (cascades to its items via FK)
 router.delete('/categories/:id', (req, res) => {
-  // Manual cascade in case PRAGMA foreign_keys is off
   db.run(`DELETE FROM inventory_dynamic_items WHERE category_id = ?`, [req.params.id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     db.run(`DELETE FROM inventory_categories WHERE id = ?`, [req.params.id], (err) => {
@@ -471,7 +463,6 @@ router.delete('/categories/:id', (req, res) => {
 // DYNAMIC ITEMS  (NEW)
 // ════════════════════════════════════════════════════════════════════════════
 
-// GET all items for a category
 router.get('/categories/:catId/items', (req, res) => {
   db.all(
     `SELECT * FROM inventory_dynamic_items WHERE category_id = ? ORDER BY item_name ASC`,
@@ -483,7 +474,6 @@ router.get('/categories/:catId/items', (req, res) => {
   );
 });
 
-// POST add or restock item in a category (upsert by item_name + attr1 + attr2)
 router.post('/categories/:catId/items', (req, res) => {
   const catId = req.params.catId;
   const { item_name, attr1, attr2, quantity_to_add, unit, minimum_stock, notes } = req.body;
@@ -492,7 +482,6 @@ router.post('/categories/:catId/items', (req, res) => {
   const qty = parseFloat(quantity_to_add);
   if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'Invalid quantity' });
 
-  // Upsert: find existing by name + attr1 + attr2
   db.get(
     `SELECT * FROM inventory_dynamic_items
      WHERE category_id = ?
@@ -532,7 +521,6 @@ router.post('/categories/:catId/items', (req, res) => {
   );
 });
 
-// PUT update item (edit / correct)
 router.put('/categories/:catId/items/:id', (req, res) => {
   const { item_name, attr1, attr2, quantity, unit, minimum_stock, notes } = req.body;
   db.get(`SELECT * FROM inventory_dynamic_items WHERE id = ? AND category_id = ?`, [req.params.id, req.params.catId], (err, row) => {
@@ -561,7 +549,6 @@ router.put('/categories/:catId/items/:id', (req, res) => {
   });
 });
 
-// DELETE single item
 router.delete('/categories/:catId/items/:id', (req, res) => {
   db.run(`DELETE FROM inventory_dynamic_items WHERE id = ? AND category_id = ?`, [req.params.id, req.params.catId], (err) => {
     if (err) return res.status(500).json({ error: err.message });
