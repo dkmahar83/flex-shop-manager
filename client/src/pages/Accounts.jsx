@@ -4,7 +4,7 @@ import {
   getUpiTransactions, getUpiSummary, addUpiTransaction,
   getVendors, getVendor, addVendor, updateVendor, deleteVendor,
   addVendorPurchase, addVendorPayment,
-  getCustomers
+  getCustomers, getExpenses
 } from '../services/api'
 
 const UPI_ACCOUNTS = [
@@ -258,10 +258,21 @@ function Accounts() {
 
   // Customers
   const [customers, setCustomers] = useState([])
+  const [commissionEntries, setCommissionEntries] = useState([])
+  const [commissionLoading, setCommissionLoading] = useState(false)
 
   useEffect(() => { fetchAll(); getCustomers().then(r => setCustomers(r.data)).catch(() => {}) }, [filterMonth, filterYear]) // eslint-disable-line
 
   function fetchAll()    { fetchCheques(); fetchUpi(); fetchVendors() }
+  function fetchCommission() {
+    setCommissionLoading(true)
+    getExpenses(filterMonth, filterYear)
+      .then(r => {
+        setCommissionEntries((r.data || []).filter(e => e.category === 'Commission'))
+        setCommissionLoading(false)
+      })
+      .catch(() => setCommissionLoading(false))
+  }
   function fetchCheques() {
     getCheques({ month: filterMonth, year: filterYear }).then(r => setCheques(r.data)).catch(() => {})
     getChequeSummary().then(r => setChequeSummary(r.data)).catch(() => {})
@@ -409,11 +420,17 @@ function Accounts() {
 
       {/* Tabs */}
       <div style={styles.tabRow}>
-        {['cheques','upi','vendors'].map(tab => (
-          <button key={tab} style={{ ...styles.tab, ...(activeTab === tab ? styles.activeTab : {}) }} onClick={() => setActiveTab(tab)}>
-            {tab === 'cheques' ? '🧾 Cheque Register' : tab === 'upi' ? '📱 UPI Accounts' : '🏪 Vendor Accounts'}
-          </button>
-        ))}
+        {['cheques','upi','vendors','commission'].map(tab => (
+        <button key={tab} style={{ ...styles.tab, ...(activeTab === tab ? styles.activeTab : {}) }} onClick={() => {
+          setActiveTab(tab)
+          if (tab === 'commission') fetchCommission()
+        }}>
+          {tab === 'cheques' ? '🧾 Cheque Register'
+            : tab === 'upi' ? '📱 UPI Accounts'
+            : tab === 'vendors' ? '🏪 Vendor Accounts'
+            : '💸 Commission'}
+        </button>
+      ))}
       </div>
 
       {/* ─── CHEQUES TAB ─── */}
@@ -767,7 +784,73 @@ function Accounts() {
           )}
         </div>
       )}
+      {/* ─── COMMISSION TAB ─── */}
+      {activeTab === 'commission' && (
+        <div>
+          <div style={{ marginBottom: '16px', padding: '12px 16px', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ff9800', fontSize: '13px', color: '#e65100' }}>
+            💡 Commission entries sirf <strong>Daily Sales → Add Expense → Category: Commission</strong> se add hoti hain.
+            Yahan sirf history dikhti hai.
+          </div>
 
+          {commissionLoading ? (
+            <p style={{ color: '#888' }}>Loading...</p>
+          ) : commissionEntries.length === 0 ? (
+            <p style={{ color: '#aaa' }}>Is mahine koi commission entry nahi hai.</p>
+          ) : (
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Date & Time</th>
+                  <th style={styles.th}>Customer</th>
+                  <th style={styles.th}>Amount</th>
+                  <th style={styles.th}>Payment Mode</th>
+                  <th style={styles.th}>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commissionEntries.map(e => (
+                  <tr key={e.id} style={styles.tr}
+                    onMouseEnter={ev => ev.currentTarget.style.backgroundColor = '#f9f9f9'}
+                    onMouseLeave={ev => ev.currentTarget.style.backgroundColor = '#fff'}
+                  >
+                    <td style={styles.td}>
+                      <div>{e.expense_date}</div>
+                      {e.created_at && <div style={{ fontSize: '11px', color: '#aaa' }}>🕐 {fmtDT(e.created_at)}</div>}
+                    </td>
+                    <td style={styles.td}>
+                      <strong>{e.customer_name || '—'}</strong>
+                    </td>
+                    <td style={styles.td}>
+                      <strong style={{ color: '#e65100', fontSize: '16px' }}>₹{e.amount}</strong>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{
+                        ...styles.badge,
+                        backgroundColor: e.payment_mode === 'upi' ? '#1565c0' : '#2e7d32'
+                      }}>
+                        {e.payment_mode === 'upi' ? `📱 ${e.upi_account || 'UPI'}` : '💵 Cash'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ fontSize: '13px', color: '#666' }}>{e.description || '—'}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ backgroundColor: '#fff3e0' }}>
+                  <td colSpan="2" style={{ ...styles.td, fontWeight: 'bold' }}>Total Commission</td>
+                  <td style={{ ...styles.td, fontWeight: 'bold', color: '#e65100', fontSize: '16px' }}>
+                    ₹{commissionEntries.reduce((s, e) => s + e.amount, 0)}
+                  </td>
+                  <td colSpan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      )}
+      
       {/* ── Add Vendor Modal ── */}
       {showAddVendor && (
         <Modal title="Add New Vendor" onClose={() => setShowAddVendor(false)}>

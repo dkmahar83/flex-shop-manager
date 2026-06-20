@@ -13,7 +13,6 @@ import RecycleBin from './pages/RecycleBin'
 import Reports from './pages/Reports'
 import Inventory from './pages/Inventory'
 import WhatsAppSetup from './pages/WhatsAppSetup'
-import Commission from './pages/Commission'
 import { verifyToken } from './services/api'
 
 function App() {
@@ -92,7 +91,6 @@ function App() {
           <Route path="/reports" element={<Reports />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/whatsapp" element={<WhatsAppSetup />} />
-          <Route path="/commission" element={<Commission />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>

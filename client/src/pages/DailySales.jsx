@@ -19,7 +19,8 @@ const CATEGORIES = [
   'Vendor Payment',
   'Ink Purchase',
   'Rent',
-  'Miscellaneous'
+  'Miscellaneous',
+  'Commission'
 ]
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -74,8 +75,15 @@ function DailySales() {
     payment_mode: 'cash',
     upi_account: '',
     paid_to_type: null,
-    paid_to_id: ''
+    paid_to_id: '',
+    customer_id: '',
+    customer_name: ''
   })
+
+  // Commission customer search state
+  const [commCustomerSearch, setCommCustomerSearch] = useState('')
+  const [commSelectedCustomer, setCommSelectedCustomer] = useState(null)
+  const [showCommDropdown, setShowCommDropdown] = useState(false)
 
   const [expenses, setExpenses] = useState([])
   const [summary, setSummary] = useState(null)
@@ -230,6 +238,9 @@ function DailySales() {
     if (expenseForm.category === 'Vendor Payment' && !expenseForm.paid_to_id) {
       return showMsg('Please select a vendor for the payment.', 'error')
     }
+    if (expenseForm.category === 'Commission' && !expenseForm.customer_id) {
+      return showMsg('Commission ke liye customer select karo.', 'error')
+    }
 
     const payload = {
       category: expenseForm.category,
@@ -240,6 +251,8 @@ function DailySales() {
       upi_account: expenseForm.upi_account || null,
       paid_to_type: expenseForm.paid_to_type || null,
       paid_to_id: expenseForm.paid_to_id || null,
+      customer_id: expenseForm.customer_id || null,
+      customer_name: expenseForm.customer_name || null,
       denomination_breakdown: expenseForm.payment_mode === 'cash' && Object.keys(expenseDenomination).length > 0
         ? expenseDenomination
         : null
@@ -251,8 +264,11 @@ function DailySales() {
         setExpenseForm({
           category: '', amount: '', description: '',
           expense_date: today, payment_mode: 'cash',
-          upi_account: '', paid_to_type: null, paid_to_id: ''
+          upi_account: '', paid_to_type: null, paid_to_id: '',
+          customer_id: '', customer_name: ''
         })
+        setCommSelectedCustomer(null)
+        setCommCustomerSearch('')
         setExpenseDenomination({})
         fetchAll()
       })
@@ -650,13 +666,22 @@ function DailySales() {
                   <select
                     style={styles.input}
                     value={expenseForm.category}
-                    onChange={e => setExpenseForm({
-                      ...expenseForm,
-                      category: e.target.value,
-                      paid_to_type: e.target.value === 'Employee Advance' ? 'employee'
-                        : e.target.value === 'Vendor Payment' ? 'vendor' : null,
-                      paid_to_id: ''
-                    })}
+                    onChange={e => {
+                      const cat = e.target.value
+                      setExpenseForm({
+                        ...expenseForm,
+                        category: cat,
+                        paid_to_type: cat === 'Employee Advance' ? 'employee'
+                          : cat === 'Vendor Payment' ? 'vendor' : null,
+                        paid_to_id: '',
+                        customer_id: '',
+                        customer_name: ''
+                      })
+                      if (cat !== 'Commission') {
+                        setCommSelectedCustomer(null)
+                        setCommCustomerSearch('')
+                      }
+                    }}
                   >
                     <option value="">Select Category</option>
                     {CATEGORIES.map(cat => (
@@ -704,7 +729,69 @@ function DailySales() {
                     </select>
                   </div>
                 )}
-
+                {expenseForm.category === 'Commission' && (
+                  <div style={{ marginBottom: '12px', backgroundColor: '#fff3e0', padding: '12px', borderRadius: '8px', border: '1px solid #ff9800', position: 'relative' }}>
+                    <label style={{ ...styles.label, color: '#e65100', fontWeight: '600' }}>
+                      💸 Customer Select Karo * (Commission ke liye zaroori)
+                    </label>
+                    <input
+                      style={{
+                        ...styles.input,
+                        borderColor: !commSelectedCustomer && commCustomerSearch ? '#e74c3c' : '#ff9800'
+                      }}
+                      type="text"
+                      placeholder="Customer naam search karo..."
+                      value={commCustomerSearch}
+                      onChange={e => {
+                        setCommCustomerSearch(e.target.value)
+                        setShowCommDropdown(true)
+                        if (commSelectedCustomer) {
+                          setCommSelectedCustomer(null)
+                          setExpenseForm(f => ({ ...f, customer_id: '', customer_name: '' }))
+                        }
+                      }}
+                      onFocus={() => setShowCommDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowCommDropdown(false), 150)}
+                      autoComplete="off"
+                    />
+                    {showCommDropdown && customers.filter(c =>
+                      c.firm_name.toLowerCase().includes(commCustomerSearch.toLowerCase())
+                    ).length > 0 && (
+                      <div style={styles.dropdown}>
+                        {customers
+                          .filter(c => c.firm_name.toLowerCase().includes(commCustomerSearch.toLowerCase()))
+                          .map(c => (
+                            <div
+                              key={c.id}
+                              style={styles.dropdownItem}
+                              onMouseDown={() => {
+                                setCommSelectedCustomer(c)
+                                setCommCustomerSearch(c.firm_name)
+                                setShowCommDropdown(false)
+                                setExpenseForm(f => ({
+                                  ...f,
+                                  customer_id: c.id,
+                                  customer_name: c.firm_name
+                                }))
+                              }}
+                            >
+                              <span style={{ fontWeight: 'bold' }}>{c.firm_name}</span>
+                              {c.phone && <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>📞 {c.phone}</span>}
+                            </div>
+                          ))
+                        }
+                      </div>
+                    )}
+                    {commSelectedCustomer && (
+                      <div style={{ ...styles.selectedCustomerBadge, marginTop: '8px', backgroundColor: '#fff3e0', borderColor: '#ff9800', color: '#e65100' }}>
+                        ✅ {commSelectedCustomer.firm_name}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '11px', color: '#e65100', marginTop: '6px' }}>
+                      ⚠️ Ye amount customer ko wapas ki gayi hai — Cash Drawer / UPI se deduct hogi
+                    </div>
+                  </div>
+                )}
                 <div style={{ marginBottom: '12px' }}>
                   <label style={styles.label}>Amount (₹) *</label>
                   <input

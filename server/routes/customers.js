@@ -46,7 +46,6 @@ router.get('/:id', (req, res) => {
           db.all(`SELECT id, amount, received_date as date, bank_name as source, status, cheque_number, 'Cheque' as payment_type FROM cheques WHERE customer_id = ?`, [id], (err, chequePayments) => {
             if (err) return res.status(500).json({ error: err.message });
 
-            // NEW: cash income entries linked to this customer
             db.all(`
               SELECT 
                 id, 
@@ -69,54 +68,80 @@ router.get('/:id', (req, res) => {
             `, [id], (err, cashIncomePayments) => {
               if (err) return res.status(500).json({ error: err.message });
 
-              const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
-              const totalDiscount = orders.reduce((sum, o) => sum + Number(o.discount_amount || 0), 0);
-              const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0);
-              const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-              const totalUpi = [ ...upiPayments, ...cashIncomePayments.filter(p => p.payment_type === 'UPI')].reduce((sum, p) => sum + Number(p.amount || 0), 0);
-              const totalChequeCleared = chequePayments
-                .filter(p => p.status === 'cleared')
-                .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-              const totalCashIncome = cashIncomePayments.filter(p => p.payment_type === 'Cash Income').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+              db.all(`
+                SELECT 
+                  id,
+                  amount,
+                  expense_date as date,
+                  CASE 
+                    WHEN payment_mode = 'upi' AND upi_account IS NOT NULL 
+                    THEN upi_account 
+                    ELSE 'Cash' 
+                  END as source,
+                  'Commission' as payment_type,
+                  description,
+                  payment_mode,
+                  upi_account,
+                  created_at
+                FROM expenses
+                WHERE category = 'Commission'
+                  AND customer_id = ?
+                ORDER BY expense_date DESC
+              `, [id], (err, commissionPayments) => {
+                if (err) return res.status(500).json({ error: err.message });
 
-              const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared + totalCashIncome;
-              const totalDue = totalBilled - totalPaid - totalDiscount;
+                const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+                const totalDiscount = orders.reduce((sum, o) => sum + Number(o.discount_amount || 0), 0);
+                const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0);
+                const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const totalUpi = [...upiPayments, ...cashIncomePayments.filter(p => p.payment_type === 'UPI')].reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const totalChequeCleared = chequePayments
+                  .filter(p => p.status === 'cleared')
+                  .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const totalCashIncome = cashIncomePayments.filter(p => p.payment_type === 'Cash Income').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const totalCommission = commissionPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-              const allPayments = [
-                ...orders.filter(o => o.advance_paid > 0).map(o => ({
-                  id: `adv-${o.id}`,
-                  amount: o.advance_paid,
-                  date: o.created_at?.split('T')[0],
-                  source: 'Advance Payment',
-                  payment_type: 'Advance',
-                  order_description: o.description
-                })),
-                ...orderPayments,
-                ...upiPayments,
-                ...chequePayments,
-                ...cashIncomePayments   // ← cash income entries appear here
-              ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared + totalCashIncome;
+                const totalDue = totalBilled - totalPaid - totalDiscount;
 
-              res.json({
-                ...customer,
-                orders,
-                payments: allPayments,
-                totalBilled,
-                totalAdvance,
-                totalOrderPayments,
-                totalUpi,
-                totalChequeCleared,
-                totalCashIncome,
-                totalPaid,
-                totalDiscount,
-                totalDue
-              });
-            });
-          });
-        });
-      });
-    });
-  });
+                const allPayments = [
+                  ...orders.filter(o => o.advance_paid > 0).map(o => ({
+                    id: `adv-${o.id}`,
+                    amount: o.advance_paid,
+                    date: o.created_at?.split('T')[0],
+                    source: 'Advance Payment',
+                    payment_type: 'Advance',
+                    order_description: o.description
+                  })),
+                  ...orderPayments,
+                  ...upiPayments,
+                  ...chequePayments,
+                  ...cashIncomePayments,
+                  ...commissionPayments
+                ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+                res.json({
+                  ...customer,
+                  orders,
+                  payments: allPayments,
+                  totalBilled,
+                  totalAdvance,
+                  totalOrderPayments,
+                  totalUpi,
+                  totalChequeCleared,
+                  totalCashIncome,
+                  totalCommission,
+                  totalPaid,
+                  totalDiscount,
+                  totalDue
+                });
+              }); // commissionPayments close
+            }); // cashIncomePayments close
+          }); // chequePayments close
+        }); // upiPayments close
+      }); // orderPayments close
+    }); // orders close
+  }); // customer close
 });
 
 // POST /api/customers
@@ -202,7 +227,7 @@ router.post('/:id/opening-balance', (req, res) => {
   });
 });
 
-// POST /api/customers/:id/photo — upload/replace customer photo
+// POST /api/customers/:id/photo
 router.post('/:id/photo', upload.single('photo'), (req, res) => {
   const { id } = req.params;
 
@@ -210,11 +235,9 @@ router.post('/:id/photo', upload.single('photo'), (req, res) => {
     return res.status(400).json({ error: 'No photo file received' });
   }
 
-  // Check customer exists, and get old photo path to delete it
   db.get(`SELECT photo_path FROM customers WHERE id = ? AND deleted_at IS NULL`, [id], (err, customer) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!customer) {
-      // clean up uploaded file since customer doesn't exist
       fs.unlink(req.file.path, () => {});
       return res.status(404).json({ error: 'Customer not found' });
     }
@@ -224,10 +247,9 @@ router.post('/:id/photo', upload.single('photo'), (req, res) => {
     db.run(`UPDATE customers SET photo_path = ? WHERE id = ?`, [newPhotoPath, id], function (err) {
       if (err) return res.status(500).json({ error: err.message });
 
-      // delete old photo file if one existed
       if (customer.photo_path) {
         const oldFullPath = path.join(__dirname, '..', customer.photo_path);
-        fs.unlink(oldFullPath, () => {}); // ignore errors (file may already be gone)
+        fs.unlink(oldFullPath, () => {});
       }
 
       res.json({ message: 'Photo uploaded successfully', photo_path: newPhotoPath });
@@ -235,7 +257,7 @@ router.post('/:id/photo', upload.single('photo'), (req, res) => {
   });
 });
 
-// DELETE /api/customers/:id/photo — remove customer photo
+// DELETE /api/customers/:id/photo
 router.delete('/:id/photo', (req, res) => {
   const { id } = req.params;
 

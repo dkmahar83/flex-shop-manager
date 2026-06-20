@@ -37,7 +37,8 @@ function CustomerProfile() {
       'Order Payment': '#3498db',
       'UPI': '#0a6ebd',
       'Cheque': '#8e44ad',
-      'Cash Income': '#16a085'   // teal for cash income
+      'Cash Income': '#16a085',
+      'Commission': '#e65100'
     }
     return colors[type] || '#888'
   }
@@ -325,6 +326,14 @@ function handlePhotoRemove() {
             <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #16a085' }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a085' }}>₹{customer.totalCashIncome}</div>
               <div style={{ fontSize: '12px', color: '#888' }}>Cash Income</div>
+            </div>
+          )}
+
+          {/* NEW: Commission tile */}
+          {customer.totalCommission > 0 && (
+            <div style={{ ...styles.breakdownItem, borderLeft: '4px solid #e65100' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#e65100' }}>₹{customer.totalCommission}</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>💸 Commission Wapas Ki</div>
             </div>
           )}
           {customer.totalDiscount > 0 && (

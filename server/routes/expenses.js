@@ -75,8 +75,14 @@ router.post('/', (req, res) => {
   const {
     category, amount, expense_date, description,
     paid_to_type, paid_to_id,
-    payment_mode, upi_account, utr_number, denomination_breakdown
+    payment_mode, upi_account, utr_number, denomination_breakdown,
+    customer_id, customer_name
   } = req.body;
+
+  // Commission ke liye customer zaroori hai
+  if (category === 'Commission' && !customer_id) {
+    return res.status(400).json({ error: 'Commission ke liye customer select karna zaroori hai' });
+  }
 
   if (!category || !amount)
     return res.status(400).json({ error: 'category and amount are required' });
@@ -91,13 +97,15 @@ router.post('/', (req, res) => {
 
   db.run(`
     INSERT INTO expenses 
-      (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number, created_at, denomination_breakdown)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number, created_at, denomination_breakdown, customer_id, customer_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     category, parseInt(parseFloat(amount), 10), date, description || null,
     paid_to_type || null, paid_to_id ? parseInt(paid_to_id) : null,
     payment_mode || 'cash', upi_account || null, utr_number || null,
-    createdAt, breakdownToSave
+    createdAt, breakdownToSave,
+    customer_id ? parseInt(customer_id) : null,
+    customer_name || null
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     const expenseId = this.lastID;

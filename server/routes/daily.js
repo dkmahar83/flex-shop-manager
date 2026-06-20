@@ -612,18 +612,22 @@ router.get('/ledger/date', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
 
             db.all(`
-              SELECT expenses.amount, expenses.payment_mode, expenses.category,
-                expenses.upi_account,
-                CASE
-                  WHEN paid_to_type = 'employee' THEN employees.name
-                  WHEN paid_to_type = 'vendor' THEN vendors.name
-                  ELSE expenses.category
-                END as party_name, expenses.description, expenses.created_at
-              FROM expenses
-              LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
-              LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id
-              WHERE expense_date = ?
-            `, [date], (err, expenses) => {
+                SELECT expenses.amount, expenses.payment_mode, expenses.category,
+                  expenses.upi_account,
+                  CASE
+                    WHEN expenses.category = 'Commission' AND expenses.customer_name IS NOT NULL
+                      THEN 'Commission'
+                    WHEN paid_to_type = 'employee' THEN employees.name
+                    WHEN paid_to_type = 'vendor' THEN vendors.name
+                    ELSE expenses.category
+                  END as party_name,
+                  expenses.description, expenses.created_at,
+                  expenses.customer_id, expenses.customer_name
+                FROM expenses
+                LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
+                LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id
+                WHERE expense_date = ?
+              `, [date], (err, expenses) => {
               if (err) return res.status(500).json({ error: err.message });
 
               const income = [...orderPayments, ...advanceUpiPayments, ...advanceCashPayments, ...cashIncome, ...upiPayments];
