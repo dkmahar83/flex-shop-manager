@@ -495,7 +495,7 @@ function Inventory() {
                           )
                         })}
                         <td style={S.td}>
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxWidth: '180px' }}>
                             {Object.values(sizes).map(item => (
                               <div key={item.id} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
                                 <button style={S.useBtn}

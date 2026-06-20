@@ -8,6 +8,7 @@ function Navbar({ user, onLogout }) {
     { path: '/daily-sales', label: '💰 Sales' },
     { path: '/customers', label: 'Customers' },
     { path: '/orders', label: 'Orders' },
+    { path: '/upi-qr', label: '📲 UPI QR' },
     { path: '/whatsapp', label: '📱 WA Setup' },
     { path: '/employees', label: 'Employees' },
     { path: '/accounts', label: '🏦 Accounts' },

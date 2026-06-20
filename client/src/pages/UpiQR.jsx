@@ -1,0 +1,358 @@
+import { useState } from 'react'
+import QRCode from 'qrcode'
+
+const UPI_ACCOUNTS = [
+  { label: 'BOI Shop Account',               upi: 'vijayflex@boi',        name: 'Vijay Flex' },
+  { label: 'Google Pay - Rampratap Painter', upi: '7073580621@yapl',      name: 'Rampratap Painter' },
+  { label: 'PhonePe - Bhavya Printers',      upi: 'bhavyaprinters@ybl',   name: 'Bhavya Printers' },
+  { label: 'Amazon Pay - Deepak',            upi: 'deepak@apl',           name: 'Deepak' },
+]
+
+const STORAGE_KEY = 'upi_qr_history'
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] }
+}
+function saveHistory(h) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(0, 200))) } catch {return []}
+}
+
+export default function UpiQR() {
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const [amount, setAmount]           = useState('')
+  const [remarks, setRemarks]         = useState('')
+  const [qrUrl, setQrUrl]             = useState('')
+  const [generating, setGenerating]   = useState(false)
+  const [activeTab, setActiveTab]     = useState('generator') // 'generator' | 'history'
+  const [history, setHistory]         = useState(loadHistory)
+  const [copied, setCopied]           = useState(false)
+
+  const acc = UPI_ACCOUNTS[selectedIdx]
+
+  function buildUpiString() {
+    const base = `upi://pay?pa=${encodeURIComponent(acc.upi)}&pn=${encodeURIComponent(acc.name)}&cu=INR`
+    const amt  = parseFloat(amount)
+    const withAmt = !isNaN(amt) && amt > 0 ? `${base}&am=${amt.toFixed(2)}` : base
+    return remarks.trim() ? `${withAmt}&tn=${encodeURIComponent(remarks.trim())}` : withAmt
+  }
+
+  async function generateQR() {
+    if (!amount || parseFloat(amount) <= 0) return alert('Amount daalo pehle')
+    setGenerating(true)
+    try {
+      const upiStr = buildUpiString()
+      const url = await QRCode.toDataURL(upiStr, {
+        width: 320, margin: 2,
+        color: { dark: '#1a1a2e', light: '#ffffff' },
+        errorCorrectionLevel: 'M'
+      })
+      setQrUrl(url)
+
+      // Save to history
+      const entry = {
+        id: Date.now(),
+        upi_account: acc.label,
+        upi_id: acc.upi,
+        payee_name: acc.name,
+        amount: parseFloat(amount),
+        remarks: remarks.trim(),
+        timestamp: new Date().toISOString(),
+        paid: false
+      }
+      const newHistory = [entry, ...history]
+      setHistory(newHistory)
+      saveHistory(newHistory)
+    } catch (e) {
+      alert('QR generate karne mein error: ' + e.message)
+    }
+    setGenerating(false)
+  }
+
+  function downloadQR() {
+    if (!qrUrl) return
+    const a = document.createElement('a')
+    a.href = qrUrl
+    a.download = `UPI-QR-${acc.name}-₹${amount}-${Date.now()}.png`
+    a.click()
+  }
+
+  function copyUpiId() {
+    navigator.clipboard.writeText(acc.upi).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  function togglePaid(id) {
+    const updated = history.map(h => h.id === id ? { ...h, paid: !h.paid } : h)
+    setHistory(updated); saveHistory(updated)
+  }
+
+  function deleteEntry(id) {
+    const updated = history.filter(h => h.id !== id)
+    setHistory(updated); saveHistory(updated)
+  }
+
+  function clearAll() {
+    if (!window.confirm('Saari history delete karni hai?')) return
+    setHistory([]); saveHistory([])
+  }
+
+  function fmtTime(iso) {
+    const d = new Date(iso)
+    return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+  }
+
+  const todayStr = new Date().toDateString()
+  const todayHistory = history.filter(h => new Date(h.timestamp).toDateString() === todayStr)
+  const todayTotal   = todayHistory.filter(h => h.paid).reduce((s, h) => s + h.amount, 0)
+  const pendingCount = todayHistory.filter(h => !h.paid).length
+
+  const accColors = ['#1a237e','#1a73e8','#5f259f','#ff9900']
+
+  return (
+    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '0 0 40px' }}>
+
+      {/* Header */}
+      <div style={{ marginBottom: '24px' }}>
+        <h2 style={{ margin: 0, fontSize: '22px', color: '#1a1a2e' }}>📲 UPI QR Generator</h2>
+      </div>
+
+      {/* Today summary */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        {[
+          { label: "Today Received (Marked ✓)", val: `₹${todayTotal.toFixed(0)}`, color: '#27ae60', bg: '#f0fdf4' },
+          { label: "Pending Confirmations",   val: pendingCount,                 color: '#f39c12', bg: '#fffbeb' },
+          { label: "Total QRs Today",         val: todayHistory.length,          color: '#3b82f6', bg: '#eff6ff' },
+        ].map(({ label, val, color, bg }) => (
+          <div key={label} style={{ flex: 1, minWidth: '140px', background: bg, border: `1px solid ${color}30`, borderRadius: '10px', padding: '14px 16px' }}>
+            <div style={{ fontSize: '22px', fontWeight: 'bold', color }}>{val}</div>
+            <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        {[['generator','🖨️ Generate QR'],['history','📋 Payment History']].map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)} style={{
+            padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+            fontWeight: 600, fontSize: '14px',
+            background: activeTab === key ? '#1a1a2e' : '#fff',
+            color: activeTab === key ? '#fff' : '#555',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.08)'
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* ── GENERATOR TAB ── */}
+      {activeTab === 'generator' && (
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+
+          {/* Left panel */}
+          <div style={{ flex: 1, minWidth: '280px' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
+
+              {/* UPI Account selector */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={ls.label}>UPI Account Select karo *</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                  {UPI_ACCOUNTS.map((a, i) => (
+                    <button key={i} onClick={() => { setSelectedIdx(i); setQrUrl('') }} style={{
+                      display: 'flex', alignItems: 'center', gap: '12px',
+                      padding: '12px 14px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+                      border: selectedIdx === i ? `2px solid ${accColors[i]}` : '2px solid #eee',
+                      background: selectedIdx === i ? accColors[i] + '12' : '#fafafa',
+                      transition: 'all .15s'
+                    }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: accColors[i], flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a1a2e' }}>{a.label}</div>
+                        <div style={{ fontSize: '11px', color: '#888', marginTop: '1px' }}>{a.upi}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Selected UPI ID display */}
+              <div style={{ background: '#f8f8f8', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#888' }}>Selected UPI ID</div>
+                  <div style={{ fontWeight: 700, fontSize: '14px', color: '#1a1a2e' }}>{acc.upi}</div>
+                </div>
+                <button onClick={copyUpiId} style={{ background: copied ? '#27ae60' : '#1a1a2e', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+
+              {/* Amount */}
+              <div style={{ marginBottom: '14px' }}>
+                <label style={ls.label}>Amount (₹) *</label>
+                <input
+                  type="number" placeholder="0" value={amount}
+                  onChange={e => { setAmount(e.target.value); setQrUrl('') }}
+                  style={{ ...ls.input, fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e' }}
+                />
+              </div>
+
+              {/* Remarks */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={ls.label}>Remarks (Optional)</label>
+                <input placeholder="e.g. Invoice #45, Flex Order" value={remarks}
+                  onChange={e => { setRemarks(e.target.value); setQrUrl('') }}
+                  style={ls.input}
+                />
+              </div>
+
+              <button onClick={generateQR} disabled={generating || !amount} style={{
+                width: '100%', padding: '14px', borderRadius: '10px', border: 'none',
+                background: !amount ? '#ccc' : '#1a1a2e', color: '#fff',
+                fontSize: '16px', fontWeight: 700, cursor: !amount ? 'not-allowed' : 'pointer'
+              }}>
+                {generating ? 'Generating…' : '⚡ Generate QR Code'}
+              </button>
+
+              {/* UPI logos */}
+              <div style={{ marginTop: '16px', textAlign: 'center', color: '#aaa', fontSize: '11px' }}>
+                Works with GPay • PhonePe • Paytm • BHIM • all UPI apps
+              </div>
+            </div>
+          </div>
+
+          {/* Right panel — QR display */}
+          <div style={{ flex: 1, minWidth: '280px' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', textAlign: 'center', minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              {!qrUrl ? (
+                <div style={{ color: '#ccc' }}>
+                  <div style={{ fontSize: '60px', marginBottom: '12px' }}>📱</div>
+                  <div style={{ fontSize: '14px' }}>UPI ID aur amount choose karo,<br/>phir Generate karo</div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 700, color: '#27ae60' }}>✅ QR Ready </div>
+
+                  {/* Amount badge */}
+
+                  <img src={qrUrl} alt="UPI QR Code" style={{ width: '240px', height: '240px', borderRadius: '12px', border: '2px solid #eee' }} />
+
+                  <div style={{ marginTop: '12px', fontSize: '12px', color: '#888' }}>
+                    {acc.label}<br/>
+                    <span style={{ color: '#555', fontWeight: 600 }}>{acc.upi}</span>
+                  </div>
+                  {remarks && <div style={{ fontSize: '12px', color: '#3b82f6', marginTop: '4px' }}>📝 {remarks}</div>}
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px', width: '100%', maxWidth: '280px' }}>
+                    <button onClick={downloadQR} style={{ flex: 1, padding: '10px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                      ⬇️ Download PNG
+                    </button>
+                    <button onClick={() => { setQrUrl(''); setAmount(''); setRemarks('') }} style={{ flex: 1, padding: '10px', background: '#f3f4f6', color: '#555', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                      🔄 New QR
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── HISTORY TAB ── */}
+      {activeTab === 'history' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ fontSize: '14px', color: '#666' }}>{history.length} total entries</div>
+            {history.length > 0 && (
+              <button onClick={clearAll} style={{ background: '#fff', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', cursor: 'pointer' }}>
+                🗑️ Clear All
+              </button>
+            )}
+          </div>
+
+          {history.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px', color: '#aaa', background: '#fff', borderRadius: '12px' }}>
+              <div style={{ fontSize: '40px', marginBottom: '12px' }}>📋</div>
+              <div>Abhi koi QR generate nahi hua.<br/>Generator se pehla QR banao!</div>
+            </div>
+          ) : (
+            <div>
+              {/* Group by date */}
+              {(() => {
+                const groups = {}
+                history.forEach(h => {
+                  const d = new Date(h.timestamp).toDateString()
+                  if (!groups[d]) groups[d] = []
+                  groups[d].push(h)
+                })
+                return Object.entries(groups).map(([date, entries]) => {
+                  const dayTotal   = entries.filter(e => e.paid).reduce((s, e) => s + e.amount, 0)
+                  const dayPending = entries.filter(e => !e.paid).length
+                  return (
+                    <div key={date} style={{ marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ fontWeight: 700, fontSize: '14px', color: '#1a1a2e' }}>
+                          {date === todayStr ? '📅 Today' : date}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#666' }}>
+                          Received: <strong style={{ color: '#27ae60' }}>₹{dayTotal}</strong>
+                          {dayPending > 0 && <span style={{ color: '#f39c12', marginLeft: '8px' }}> • {dayPending} pending</span>}
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: '#f8f8f8' }}>
+                              {['Time','UPI Account','Amount','Remarks','Status','Action'].map(h => (
+                                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '12px', color: '#888', fontWeight: 600, borderBottom: '1px solid #eee' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entries.map(e => {
+                              const aIdx = UPI_ACCOUNTS.findIndex(a => a.label === e.upi_account)
+                              const col = accColors[aIdx] || '#888'
+                              return (
+                                <tr key={e.id} style={{ borderBottom: '1px solid #f5f5f5', background: e.paid ? '#f0fdf4' : '#fff' }}>
+                                  <td style={{ padding: '10px 14px', fontSize: '13px', color: '#555', whiteSpace: 'nowrap' }}>{fmtTime(e.timestamp)}</td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <span style={{ background: col + '18', color: col, border: `1px solid ${col}40`, borderRadius: '5px', padding: '3px 8px', fontSize: '11px', fontWeight: 600 }}>
+                                      {e.upi_account.split('-')[0].trim()}
+                                    </span>
+                                    <div style={{ fontSize: '10px', color: '#aaa', marginTop: '2px' }}>{e.upi_id}</div>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', fontWeight: 700, fontSize: '16px', color: '#1a1a2e' }}>₹{e.amount.toLocaleString('en-IN')}</td>
+                                  <td style={{ padding: '10px 14px', fontSize: '12px', color: '#666' }}>{e.remarks || '—'}</td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <button onClick={() => togglePaid(e.id)} style={{
+                                      padding: '4px 12px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+                                      background: e.paid ? '#27ae60' : '#f3f4f6',
+                                      color: e.paid ? '#fff' : '#555'
+                                    }}>
+                                      {e.paid ? '✓ Received' : 'Mark Paid'}
+                                    </button>
+                                  </td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <button onClick={() => deleteEntry(e.id)} style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const ls = {
+  label: { fontSize: '12px', color: '#888', display: 'block', marginBottom: '5px', fontWeight: 600 },
+  input: { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box', outline: 'none' }
+}
