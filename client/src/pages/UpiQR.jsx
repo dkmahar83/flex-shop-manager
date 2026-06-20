@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import QRCode from 'qrcode'
+import { getUpiQrHistory, addUpiQrHistory, toggleUpiQrPaid, deleteUpiQrHistory, clearUpiQrHistory } from '../services/api'
 
 const UPI_ACCOUNTS = [
   { label: 'BOI Shop Account',               upi: 'vijayflex@boi',        name: 'Vijay Flex' },
@@ -8,26 +9,31 @@ const UPI_ACCOUNTS = [
   { label: 'Amazon Pay - Deepak',            upi: 'deepak@apl',           name: 'Deepak' },
 ]
 
-const STORAGE_KEY = 'upi_qr_history'
-
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] }
-}
-function saveHistory(h) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(0, 200))) } catch {return []}
-}
-
 export default function UpiQR() {
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [amount, setAmount]           = useState('')
   const [remarks, setRemarks]         = useState('')
   const [qrUrl, setQrUrl]             = useState('')
   const [generating, setGenerating]   = useState(false)
-  const [activeTab, setActiveTab]     = useState('generator') // 'generator' | 'history'
-  const [history, setHistory]         = useState(loadHistory)
+  const [activeTab, setActiveTab]     = useState('generator')
+  const [history, setHistory]         = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
   const [copied, setCopied]           = useState(false)
 
   const acc = UPI_ACCOUNTS[selectedIdx]
+
+  useEffect(() => { refreshHistory() }, [])
+
+  async function refreshHistory() {
+    setLoadingHistory(true)
+    try {
+      const res = await getUpiQrHistory()
+      setHistory(res.data.map(h => ({ ...h, paid: !!h.paid })))
+    } catch (e) {
+      console.error('History load failed:', e)
+    }
+    setLoadingHistory(false)
+  }
 
   function buildUpiString() {
     const base = `upi://pay?pa=${encodeURIComponent(acc.upi)}&pn=${encodeURIComponent(acc.name)}&cu=INR`
@@ -48,20 +54,14 @@ export default function UpiQR() {
       })
       setQrUrl(url)
 
-      // Save to history
-      const entry = {
-        id: Date.now(),
+      await addUpiQrHistory({
         upi_account: acc.label,
         upi_id: acc.upi,
         payee_name: acc.name,
         amount: parseFloat(amount),
-        remarks: remarks.trim(),
-        timestamp: new Date().toISOString(),
-        paid: false
-      }
-      const newHistory = [entry, ...history]
-      setHistory(newHistory)
-      saveHistory(newHistory)
+        remarks: remarks.trim()
+      })
+      await refreshHistory()
     } catch (e) {
       alert('QR generate karne mein error: ' + e.message)
     }
@@ -82,19 +82,32 @@ export default function UpiQR() {
     })
   }
 
-  function togglePaid(id) {
-    const updated = history.map(h => h.id === id ? { ...h, paid: !h.paid } : h)
-    setHistory(updated); saveHistory(updated)
+  async function togglePaid(id) {
+    try {
+      await toggleUpiQrPaid(id)
+      setHistory(history.map(h => h.id === id ? { ...h, paid: !h.paid } : h))
+    } catch (e) {
+      alert('Update fail hua: ' + (e.response?.data?.error || e.message))
+    }
   }
 
-  function deleteEntry(id) {
-    const updated = history.filter(h => h.id !== id)
-    setHistory(updated); saveHistory(updated)
+  async function deleteEntry(id) {
+    try {
+      await deleteUpiQrHistory(id)
+      setHistory(history.filter(h => h.id !== id))
+    } catch (e) {
+      alert('Delete fail hua: ' + (e.response?.data?.error || e.message))
+    }
   }
 
-  function clearAll() {
+  async function clearAll() {
     if (!window.confirm('Saari history delete karni hai?')) return
-    setHistory([]); saveHistory([])
+    try {
+      await clearUpiQrHistory()
+      setHistory([])
+    } catch (e) {
+      alert('Clear fail hua: ' + (e.response?.data?.error || e.message))
+    }
   }
 
   function fmtTime(iso) {
@@ -103,7 +116,7 @@ export default function UpiQR() {
   }
 
   const todayStr = new Date().toDateString()
-  const todayHistory = history.filter(h => new Date(h.timestamp).toDateString() === todayStr)
+  const todayHistory = history.filter(h => new Date(h.created_at).toDateString() === todayStr)
   const todayTotal   = todayHistory.filter(h => h.paid).reduce((s, h) => s + h.amount, 0)
   const pendingCount = todayHistory.filter(h => !h.paid).length
 
@@ -112,12 +125,10 @@ export default function UpiQR() {
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '0 0 40px' }}>
 
-      {/* Header */}
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ margin: 0, fontSize: '22px', color: '#1a1a2e' }}>📲 UPI QR Generator</h2>
       </div>
 
-      {/* Today summary */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
         {[
           { label: "Today Received (Marked ✓)", val: `₹${todayTotal.toFixed(0)}`, color: '#27ae60', bg: '#f0fdf4' },
@@ -131,7 +142,6 @@ export default function UpiQR() {
         ))}
       </div>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
         {[['generator','🖨️ Generate QR'],['history','📋 Payment History']].map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key)} style={{
@@ -144,15 +154,11 @@ export default function UpiQR() {
         ))}
       </div>
 
-      {/* ── GENERATOR TAB ── */}
       {activeTab === 'generator' && (
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-
-          {/* Left panel */}
           <div style={{ flex: 1, minWidth: '280px' }}>
             <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
 
-              {/* UPI Account selector */}
               <div style={{ marginBottom: '20px' }}>
                 <label style={ls.label}>UPI Account Select karo *</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
@@ -174,7 +180,6 @@ export default function UpiQR() {
                 </div>
               </div>
 
-              {/* Selected UPI ID display */}
               <div style={{ background: '#f8f8f8', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: '11px', color: '#888' }}>Selected UPI ID</div>
@@ -185,7 +190,6 @@ export default function UpiQR() {
                 </button>
               </div>
 
-              {/* Amount */}
               <div style={{ marginBottom: '14px' }}>
                 <label style={ls.label}>Amount (₹) *</label>
                 <input
@@ -195,7 +199,6 @@ export default function UpiQR() {
                 />
               </div>
 
-              {/* Remarks */}
               <div style={{ marginBottom: '20px' }}>
                 <label style={ls.label}>Remarks (Optional)</label>
                 <input placeholder="e.g. Invoice #45, Flex Order" value={remarks}
@@ -212,14 +215,12 @@ export default function UpiQR() {
                 {generating ? 'Generating…' : '⚡ Generate QR Code'}
               </button>
 
-              {/* UPI logos */}
               <div style={{ marginTop: '16px', textAlign: 'center', color: '#aaa', fontSize: '11px' }}>
                 Works with GPay • PhonePe • Paytm • BHIM • all UPI apps
               </div>
             </div>
           </div>
 
-          {/* Right panel — QR display */}
           <div style={{ flex: 1, minWidth: '280px' }}>
             <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', textAlign: 'center', minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               {!qrUrl ? (
@@ -230,17 +231,12 @@ export default function UpiQR() {
               ) : (
                 <>
                   <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 700, color: '#27ae60' }}>✅ QR Ready </div>
-
-                  {/* Amount badge */}
-
                   <img src={qrUrl} alt="UPI QR Code" style={{ width: '240px', height: '240px', borderRadius: '12px', border: '2px solid #eee' }} />
-
                   <div style={{ marginTop: '12px', fontSize: '12px', color: '#888' }}>
                     {acc.label}<br/>
                     <span style={{ color: '#555', fontWeight: 600 }}>{acc.upi}</span>
                   </div>
                   {remarks && <div style={{ fontSize: '12px', color: '#3b82f6', marginTop: '4px' }}>📝 {remarks}</div>}
-
                   <div style={{ display: 'flex', gap: '10px', marginTop: '16px', width: '100%', maxWidth: '280px' }}>
                     <button onClick={downloadQR} style={{ flex: 1, padding: '10px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
                       ⬇️ Download PNG
@@ -256,7 +252,6 @@ export default function UpiQR() {
         </div>
       )}
 
-      {/* ── HISTORY TAB ── */}
       {activeTab === 'history' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -268,18 +263,19 @@ export default function UpiQR() {
             )}
           </div>
 
-          {history.length === 0 ? (
+          {loadingHistory ? (
+            <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>Loading…</div>
+          ) : history.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px', color: '#aaa', background: '#fff', borderRadius: '12px' }}>
               <div style={{ fontSize: '40px', marginBottom: '12px' }}>📋</div>
               <div>Abhi koi QR generate nahi hua.<br/>Generator se pehla QR banao!</div>
             </div>
           ) : (
             <div>
-              {/* Group by date */}
               {(() => {
                 const groups = {}
                 history.forEach(h => {
-                  const d = new Date(h.timestamp).toDateString()
+                  const d = new Date(h.created_at).toDateString()
                   if (!groups[d]) groups[d] = []
                   groups[d].push(h)
                 })
@@ -313,7 +309,7 @@ export default function UpiQR() {
                               const col = accColors[aIdx] || '#888'
                               return (
                                 <tr key={e.id} style={{ borderBottom: '1px solid #f5f5f5', background: e.paid ? '#f0fdf4' : '#fff' }}>
-                                  <td style={{ padding: '10px 14px', fontSize: '13px', color: '#555', whiteSpace: 'nowrap' }}>{fmtTime(e.timestamp)}</td>
+                                  <td style={{ padding: '10px 14px', fontSize: '13px', color: '#555', whiteSpace: 'nowrap' }}>{fmtTime(e.created_at)}</td>
                                   <td style={{ padding: '10px 14px' }}>
                                     <span style={{ background: col + '18', color: col, border: `1px solid ${col}40`, borderRadius: '5px', padding: '3px 8px', fontSize: '11px', fontWeight: 600 }}>
                                       {e.upi_account.split('-')[0].trim()}

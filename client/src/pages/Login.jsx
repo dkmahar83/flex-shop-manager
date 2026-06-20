@@ -33,7 +33,7 @@ function Login({ onLogin }) {
         {/* Logo */}
         <div style={styles.logoBox}>
           <div style={styles.logoIcon}>🖨️</div>
-          <h1 style={styles.logoText}>FlexShop Manager</h1>
+          <h1 style={styles.logoText}>VijayFlex Pro</h1>
           <p style={styles.logoSub}>Pilibangan, Rajasthan</p>
         </div>
 

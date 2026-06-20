@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-
+import BackupButton from './BackupButton'
 function Navbar({ user, onLogout }) {
   const location = useLocation()
 
@@ -39,13 +39,11 @@ function Navbar({ user, onLogout }) {
 
       {/* User + Logout */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <BackupButton />
         <span style={{ color: '#aaa', fontSize: '13px' }}>
           👤 {user?.name || user?.username}
         </span>
-        <button
-          onClick={onLogout}
-          style={styles.logoutBtn}
-        >
+        <button onClick={onLogout} style={styles.logoutBtn}>
           Logout
         </button>
       </div>

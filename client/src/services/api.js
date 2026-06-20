@@ -214,4 +214,14 @@ export const getCommissionBalance = (customerId) =>
 export const creditCommission = (data) => api.post('/commission/credit', data)
 export const returnCommission = (data) => api.post('/commission/return', data)
 
+// Backup
+export const downloadBackup = () => api.get('/backup/download', { responseType: 'blob' })
+
+// UPI QR History
+export const getUpiQrHistory = () => api.get('/upi-qr-history')
+export const addUpiQrHistory = (data) => api.post('/upi-qr-history', data)
+export const toggleUpiQrPaid = (id) => api.put(`/upi-qr-history/${id}/toggle-paid`)
+export const deleteUpiQrHistory = (id) => api.delete(`/upi-qr-history/${id}`)
+export const clearUpiQrHistory = () => api.delete('/upi-qr-history')
+
 export default api

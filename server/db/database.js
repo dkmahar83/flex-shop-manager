@@ -13,6 +13,8 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   }
 });
 
+db.DB_PATH = DB_PATH;
+
 // Enable foreign keys (SQLite has them off by default)
 db.run('PRAGMA foreign_keys = ON');
 
@@ -84,6 +86,17 @@ db.run(`CREATE TABLE IF NOT EXISTS order_photos (
 // expenses table mein customer_id column add karo
 db.run(`ALTER TABLE expenses ADD COLUMN customer_id INTEGER DEFAULT NULL`, () => {})
 db.run(`ALTER TABLE expenses ADD COLUMN customer_name TEXT DEFAULT NULL`, () => {})
+
+db.run(`CREATE TABLE IF NOT EXISTS upi_qr_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  upi_account TEXT NOT NULL,
+  upi_id TEXT NOT NULL,
+  payee_name TEXT,
+  amount REAL NOT NULL,
+  remarks TEXT,
+  paid INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // Create all tables if they don't exist
 db.serialize(() => {

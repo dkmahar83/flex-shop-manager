@@ -56,6 +56,8 @@ app.use('/api/pdf',        requireAuth, pdfRoutes)
 app.use('/api/whatsapp',   requireAuth, whatsappRoutes)
 app.use('/api/commission', requireAuth, commissionRoutes)
 app.use('/api/page-locks', requireAuth, pageLockRoutes)
+app.use('/api/backup', require('./routes/backup'))
+app.use('/api/upi-qr-history', require('./routes/upiQrHistory'))
 
 app.get('/', (req, res) => {
   res.json({ message: 'VijayFlex Pro API is running!' })
