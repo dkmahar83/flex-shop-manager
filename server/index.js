@@ -1,3 +1,23 @@
+// Permanent fix: whatsapp-web.js + puppeteer ka known bug — disconnect ke baad
+// library internally detached frame mein script inject karne ki koshish karti hai,
+// jo uncaught exception throw karta hai aur pura process crash kar deta hai.
+// Yeh handler sirf process ko zinda rakhta hai, hamara apna disconnect/reinit logic
+// (whatsapp.js mein) waise hi chalta rehta hai.
+process.on('uncaughtException', (err) => {
+  if (err && err.message && err.message.includes('detached Frame')) {
+    console.log('⚠️  WhatsApp Chrome frame detached (non-fatal, ignored):', err.message)
+    return
+  }
+  console.error('Uncaught Exception:', err)
+})
+
+process.on('unhandledRejection', (reason) => {
+  if (reason && reason.message && reason.message.includes('detached Frame')) {
+    console.log('⚠️  WhatsApp Chrome frame detached (non-fatal, ignored):', reason.message)
+    return
+  }
+  console.error('Unhandled Rejection:', reason)
+})
 require('dotenv').config();
 const db = require('./db/database');
 const express = require('express');
