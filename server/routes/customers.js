@@ -102,7 +102,7 @@ router.get('/:id', (req, res) => {
                 const totalCommission = commissionPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
                 const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared + totalCashIncome;
-                const totalDue = totalBilled - totalPaid - totalDiscount;
+                const totalDue = totalBilled - totalPaid - totalDiscount + totalCommission;
 
                 const allPayments = [
                   ...orders.filter(o => o.advance_paid > 0).map(o => ({

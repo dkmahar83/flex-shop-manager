@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto } from '../services/api'
+import PageLock from '../components/PageLock'
 
 function CustomerProfile() {
   const { id } = useParams()
@@ -104,6 +105,7 @@ function handlePhotoRemove() {
   }
 
   return (
+    <PageLock pageKey="customer-profile" pageTitle="Customer Profile">
     <div>
       <button onClick={() => navigate('/customers')} style={styles.backBtn}>
         ← Back to Customers
@@ -166,8 +168,8 @@ function handlePhotoRemove() {
             <div style={styles.statLabel}>Total Paid</div>
           </div>
           <div style={styles.statBox}>
-            <div style={{ ...styles.statNum, color: totalDue > 0 ? '#e74c3c' : '#27ae60' }}>
-              ₹{totalDue}
+            <div style={{ ...styles.statNum, color: totalDue > 0 ? '#e74c3c' : totalDue < 0 ? '#e67e22' : '#27ae60' }}>
+              {totalDue < 0 ? `−₹${Math.abs(totalDue)} (Hum denge)` : `₹${totalDue}`}
             </div>
             <div style={styles.statLabel}>Total Due</div>
           </div>
@@ -405,8 +407,14 @@ function handlePhotoRemove() {
                     {p.order_description && <span style={{ fontSize: '12px', color: '#888' }}> ({p.order_description})</span>}
                   </td>
                   <td style={styles.td}>
-                    <strong style={{ color: p.status === 'bounced' ? '#e74c3c' : '#27ae60' }}>
-                      ₹{p.amount}
+                    <strong style={{ 
+                      color: p.payment_type === 'Commission' 
+                        ? '#e74c3c' 
+                        : p.status === 'bounced' 
+                          ? '#e74c3c' 
+                          : '#27ae60' 
+                    }}>
+                      {p.payment_type === 'Commission' ? '-' : ''}₹{p.amount}
                     </strong>
                   </td>
                   <td style={styles.td}>
@@ -477,7 +485,13 @@ function handlePhotoRemove() {
               <td colSpan="2" style={{ ...styles.td, fontWeight: 'bold' }}>Total</td>
               <td style={{ ...styles.td, fontWeight: 'bold' }}>₹{totalBilled}</td>
               <td style={{ ...styles.td, fontWeight: 'bold' }}>₹{customer.totalAdvance}</td>
-              <td style={{ ...styles.td, fontWeight: 'bold', color: totalDue > 0 ? '#e74c3c' : '#27ae60' }}>₹{totalDue}</td>
+              <td style={{ 
+                ...styles.td, 
+                fontWeight: 'bold', 
+                color: totalDue > 0 ? '#e74c3c' : totalDue < 0 ? '#e67e22' : '#27ae60' 
+              }}>
+                {totalDue < 0 ? `−₹${Math.abs(totalDue)}` : `₹${totalDue}`}
+              </td>
               <td colSpan="3"></td>
             </tr>
           </tfoot>
@@ -505,6 +519,7 @@ function handlePhotoRemove() {
         </div>
       )}
     </div>
+    </PageLock>
   )
 }
 

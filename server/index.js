@@ -28,6 +28,8 @@ const inventoryRoutes = require('./routes/inventory')
 const pdfRoutes       = require('./routes/pdf')
 const whatsappRoutes  = require('./routes/whatsapp')
 const commissionRoutes = require('./routes/commission')
+const pageLockRoutes = require('./routes/pageLocks')
+
 
 // ── AUTH MIDDLEWARE ──
 const requireAuth = require('./middleware/auth')
@@ -53,6 +55,7 @@ app.use('/api/inventory',  requireAuth, inventoryRoutes)
 app.use('/api/pdf',        requireAuth, pdfRoutes)
 app.use('/api/whatsapp',   requireAuth, whatsappRoutes)
 app.use('/api/commission', requireAuth, commissionRoutes)
+app.use('/api/page-locks', requireAuth, pageLockRoutes)
 
 app.get('/', (req, res) => {
   res.json({ message: 'VijayFlex Pro API is running!' })

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import PageLock from '../components/PageLock'
 import {
   getEmployees, createEmployee, markAttendance,
   getSalary, getAttendance, getEmployeeProfile, deleteEmployee, generateSalary
@@ -228,6 +229,7 @@ function Employees() {
   ]
 
   return (
+    <PageLock pageKey="employees" pageTitle="Employees">
     <div>
       {/* HEADER */}
       <div style={styles.header}>
@@ -854,6 +856,7 @@ function Employees() {
         </div>
       )}
     </div>
+    </PageLock>
   )
 }
 

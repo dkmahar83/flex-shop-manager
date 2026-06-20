@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import PageLock from '../components/PageLock'
 import {
   getCheques, addCheque, updateChequeStatus, getChequeSummary, getCheque, updateCheque,
   getUpiTransactions, getUpiSummary, addUpiTransaction,
@@ -401,6 +402,7 @@ function Accounts() {
   }
 
   return (
+    <PageLock pageKey="accounts" pageTitle="Accounts">
     <div>
       <div style={styles.header}><h2>🏦 Accounts</h2></div>
 
@@ -850,7 +852,7 @@ function Accounts() {
           )}
         </div>
       )}
-      
+
       {/* ── Add Vendor Modal ── */}
       {showAddVendor && (
         <Modal title="Add New Vendor" onClose={() => setShowAddVendor(false)}>
@@ -879,6 +881,7 @@ function Accounts() {
         </Modal>
       )}
     </div>
+    </PageLock>
   )
 }
 
