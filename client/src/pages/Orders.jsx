@@ -1182,6 +1182,23 @@ function Orders() {
                           </div>
                         )}
 
+                        {/* ACTIVITY LOG */}
+                        {orderDetail.activityLog && orderDetail.activityLog.length > 0 && (
+                          <div style={styles.detailSection}>
+                            <h4 style={styles.detailTitle}>📋 Activity Log</h4>
+                            {orderDetail.activityLog.map(a => (
+                              <div key={a.id} style={{
+                                fontSize: '12px', color: '#555',
+                                padding: '8px 12px', backgroundColor: '#f0f7ff',
+                                borderRadius: '6px', marginBottom: '6px',
+                                borderLeft: '3px solid #3498db'
+                              }}>
+                                {a.activity}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {/* ORDER PHOTOS */}
                         <div style={styles.detailSection}>
                           <h4 style={styles.detailTitle}>📷 Order Photos</h4>

@@ -97,6 +97,13 @@ db.run(`CREATE TABLE IF NOT EXISTS upi_qr_history (
   paid INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+db.run(`CREATE TABLE IF NOT EXISTS order_activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL,
+  activity TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id)
+)`)
 
 // ─────────────────────────────────────────
 // ADD THIS TO database.js — after the existing ALTER TABLE blocks

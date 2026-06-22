@@ -61,6 +61,24 @@ router.post('/send-bill/:orderId', async (req, res) => {
           upiId: upiId || null
         })
 
+        // Activity log save karo
+        if (upiId && (order.balance_due || 0) > 0) {
+          const label = [
+            { upiId: 'boism-9950580621@boi', name: 'BOI Shop Account' },
+            { upiId: 'gpay-11263065173@okbizaxis', name: 'Google Pay - Rampratap Painter' },
+            { upiId: 'q214575569@ybl', name: 'PhonePe - Bhavya Printers' },
+            { upiId: '7073580621@yapl', name: 'Amazon Pay - Deepak' }
+          ].find(a => a.upiId === upiId)?.name || upiId
+
+          const activity = `📲 Payment request of ₹${order.balance_due} sent via UPI QR (${label}) on ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}`
+
+          db.run(
+            `INSERT INTO order_activity_log (order_id, activity) VALUES (?, ?)`,
+            [order.id, activity],
+            (err) => { if (err) console.error('Activity log error:', err.message) }
+          )
+        }
+
         res.json({
           success: true,
           message: `Bill sent to ${order.firm_name} (${result.phone}) on WhatsApp ✅`,

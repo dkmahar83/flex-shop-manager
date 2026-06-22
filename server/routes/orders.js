@@ -57,7 +57,11 @@ router.get('/:id', (req, res) => {
 
         db.all(`SELECT * FROM cheques WHERE order_id = ? ORDER BY received_date ASC`, [id], (err, cheques) => {
           if (err) return res.status(500).json({ error: err.message });
-          res.json({ ...order, items, payments, cheques });
+
+          db.all(`SELECT * FROM order_activity_log WHERE order_id = ? ORDER BY created_at DESC`, [id], (err, activityLog) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ ...order, items, payments, cheques, activityLog: activityLog || [] });
+          });
         });
       });
     });
