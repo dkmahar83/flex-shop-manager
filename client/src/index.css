@@ -9,3 +9,16 @@ body {
   background-color: #f5f5f5;
   color: #333;
 }
+/* Mobile sidebar hide by default */
+@media (max-width: 768px) {
+  nav > div:first-child { /* sidebar */
+    transform: translateX(-220px);
+  }
+  div[style*="marginLeft: 220px"] {
+    margin-left: 0 !important;
+    padding-top: 68px !important;
+  }
+  div[style*="display: none"] {
+    display: flex !important;
+  }
+}

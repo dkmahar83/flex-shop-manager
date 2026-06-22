@@ -51,6 +51,7 @@ function DailySales() {
   const [showBaselineForm, setShowBaselineForm] = useState(false)
   const [baselineCounts, setBaselineCounts] = useState({})
   const [baselineSaving, setBaselineSaving] = useState(false)
+  const [suggestedBaseline, setSuggestedBaseline] = useState(null)
 
   const [cashForm, setCashForm] = useState({
     customer_id: '',
@@ -176,17 +177,18 @@ function DailySales() {
   }
 
   function handleSetBaseline() {
-    setBaselineSaving(true)
-    setDrawerBaseline({ denomination_counts: baselineCounts, notes: 'Manual galla count' })
-      .then(() => {
-        showMsg('Galla count set ho gaya!')
-        setShowBaselineForm(false)
-        setBaselineCounts({})
-        fetchDrawer()
-      })
-      .catch(() => showMsg('Error setting galla count.', 'error'))
-      .finally(() => setBaselineSaving(false))
-  }
+  setBaselineSaving(true)
+  setDrawerBaseline({ denomination_counts: baselineCounts, notes: 'Manual galla count' })
+    .then(() => {
+      showMsg('Galla count set ho gaya! Cash Drawer mein bhi reflect ho gaya ✅')
+      setShowBaselineForm(false)
+      setBaselineCounts({})
+      setSuggestedBaseline(null)
+      fetchDrawer()
+    })
+    .catch(() => showMsg('Error setting galla count.', 'error'))
+    .finally(() => setBaselineSaving(false))
+}
 
   const filteredCustomers = customers.filter(c =>
     c.firm_name.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -363,10 +365,19 @@ function DailySales() {
           <button
             key={tab}
             style={{ ...styles.tab, ...(activeTab === tab ? styles.activeTab : {}) }}
-            onClick={() => {
-              setActiveTab(tab)
-              if (tab === 'galla') fetchDrawer()
-            }}
+            onClick={async () => {
+            setActiveTab(tab)
+            if (tab === 'galla') {
+              fetchDrawer()
+              try {
+                const res = await getCashDrawer(today)
+                const bal = res.data?.closing_balance ?? 0
+                setSuggestedBaseline(bal)
+              } catch {
+                setSuggestedBaseline(null)
+              }
+            }
+          }}
           >
             {tab === 'today' ? '📝 Record Entry'
             : tab === 'history' ? '💰 Cash Drawer'
@@ -1317,6 +1328,39 @@ function DailySales() {
               </button>
             </div>
           </div>
+
+          {suggestedBaseline !== null && suggestedBaseline > 0 && !showBaselineForm && (
+            <div style={{
+              backgroundColor: '#e8f4fd', border: '1px solid #3498db',
+              borderRadius: '8px', padding: '14px 18px', marginBottom: '16px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <div>
+                <div style={{ fontSize: '12px', color: '#1a5276', fontWeight: 'bold', marginBottom: '2px' }}>
+                  💡 Cash Drawer ki closing balance aaj ki:
+                </div>
+                <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#2980b9' }}>
+                  ₹{suggestedBaseline}
+                </div>
+                <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
+                  Yahi amount Galla baseline mein use karo
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setBaselineCounts({ 500: Math.floor(suggestedBaseline / 500) })
+                  setShowBaselineForm(true)
+                }}
+                style={{
+                  backgroundColor: '#2980b9', color: '#fff', border: 'none',
+                  padding: '10px 18px', borderRadius: '8px', cursor: 'pointer',
+                  fontSize: '13px', fontWeight: 'bold'
+                }}
+              >
+                ⚙️ Isi se Set Karo
+              </button>
+            </div>
+          )}
 
           {showBaselineForm && (
             <div style={{ backgroundColor: '#fff9e6', border: '1px solid #ffc107', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>

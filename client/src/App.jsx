@@ -76,11 +76,16 @@ function App() {
     return <Login onLogin={handleLogin} />
   }
 
-  return (
-    <BrowserRouter>
-      <Navbar user={user} onLogout={handleLogout} />
-      <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
-        <Routes>
+return (
+      <BrowserRouter>
+        <Navbar user={user} onLogout={handleLogout} />
+        <div style={{
+          marginLeft: '220px',
+          padding: '24px',
+          minHeight: '100vh',
+          backgroundColor: '#f5f6fa'
+        }}>
+          <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerProfile />} />

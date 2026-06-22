@@ -105,7 +105,7 @@ router.get('/today', (req, res) => {
                   FROM cash_income
                   LEFT JOIN customers ON cash_income.customer_id = customers.id
                   WHERE income_date = ?
-                    AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment') OR cash_income.notes IS NULL)
+                    AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance') OR cash_income.notes IS NULL)
                   ORDER BY id DESC
                 `, [today], (err, cashIncomeToday) => {
                   if (err) return res.status(500).json({ error: err.message });
@@ -192,6 +192,7 @@ router.get('/report', (req, res) => {
             AND strftime('%Y', ci.income_date) = ?
             AND (ci.payment_mode = 'cash' OR ci.payment_mode IS NULL OR ci.payment_mode = 'cheque')
             AND ci.notes != 'Order Advance Payment'
+            AND ci.notes != 'Galla Opening Balance'
             AND (c.firm_name != 'Ghar Khata' OR c.id IS NULL)
         `, [m, year], (err, cashIncome) => {
           if (err) return res.status(500).json({ error: err.message });
@@ -481,8 +482,9 @@ router.get('/summary', (req, res) => {
             WHERE strftime('%m', ci.income_date) = ? AND strftime('%Y', ci.income_date) = ?
               AND (ci.payment_mode = 'cash' OR ci.payment_mode IS NULL OR ci.payment_mode = 'cheque')
               AND ci.notes != 'Order Advance Payment'
+              AND ci.notes != 'Galla Opening Balance'
               AND (c.firm_name != 'Ghar Khata' OR c.id IS NULL)
-          `, [month, year], (err, cashIncome) => {
+          `, [month, year], (err, cashIncome) => {            
             if (err) return res.status(500).json({ error: err.message });
 
             // Non-order UPI — Ghar Khata excluded
@@ -848,13 +850,56 @@ router.post('/denomination-drawer/set-baseline', (req, res) => {
   if (!denomination_counts) return res.status(400).json({ error: 'denomination_counts required' });
 
   const setAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+  const today = setAt.split(' ')[0];
+
+  const totalAmount = Object.entries(denomination_counts)
+    .reduce((sum, [denom, count]) => sum + (Number(denom) * Number(count)), 0);
 
   db.run(`
     INSERT INTO cash_drawer_baseline (denomination_counts, set_at, notes)
     VALUES (?, ?, ?)
   `, [JSON.stringify(denomination_counts), setAt, notes || null], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
+
+    // Pehle check karo — aaj ka opening balance already hai?
+    db.get(`
+      SELECT id FROM cash_income
+      WHERE income_date = ? AND notes = 'Galla Opening Balance'
+    `, [today], (err, existing) => {
+      if (err || existing) {
+        // Already hai — update karo
+        if (existing) {
+          db.run(`
+            UPDATE cash_income SET amount = ? WHERE id = ?
+          `, [totalAmount, existing.id], () => {});
+        }
+        return res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
+      }
+
+      // Nahi hai — naya insert karo
+      // Pehle "Galla Opening Balance" customer dhundo ya banao
+      db.get(`SELECT id FROM customers WHERE firm_name = 'Opening Balance'`, [], (err, customer) => {
+        const insertIncome = (customerId) => {
+          db.run(`
+            INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, created_at)
+            VALUES (?, ?, ?, 'Galla Opening Balance', 'cash', ?)
+          `, [customerId, totalAmount, today, setAt], () => {});
+        };
+
+        if (customer) {
+          insertIncome(customer.id);
+        } else {
+          db.run(`
+            INSERT INTO customers (firm_name, contact_name, phone, created_at)
+            VALUES ('Opening Balance', 'System', '', ?)
+          `, [setAt], function(err) {
+            insertIncome(this.lastID);
+          });
+        }
+
+        res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
+      });
+    });
   });
 });
 
