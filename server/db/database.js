@@ -98,6 +98,41 @@ db.run(`CREATE TABLE IF NOT EXISTS upi_qr_history (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─────────────────────────────────────────
+// ADD THIS TO database.js — after the existing ALTER TABLE blocks
+// (anywhere in the ALTER TABLE section, before db.serialize())
+// ─────────────────────────────────────────
+
+// Order number system: VF-YYYY-NNNNNN
+db.run(`ALTER TABLE orders ADD COLUMN order_number TEXT DEFAULT NULL`, () => {})
+
+// Backfill order numbers for all existing orders that don't have one yet
+// This runs once on server start — safe to leave in permanently
+db.all(
+  `SELECT id, created_at FROM orders WHERE order_number IS NULL ORDER BY id ASC`,
+  [],
+  (err, rows) => {
+    if (err || !rows || rows.length === 0) return;
+
+    rows.forEach((row, idx) => {
+      const year = row.created_at
+        ? new Date(row.created_at).getFullYear()
+        : new Date().getFullYear();
+
+      // For backfill, use the row's id as sequence (good enough for old data)
+      const seq = String(row.id).padStart(6, '0');
+      const orderNumber = `VF-${year}-${seq}`;
+
+      db.run(
+        `UPDATE orders SET order_number = ? WHERE id = ? AND order_number IS NULL`,
+        [orderNumber, row.id],
+        (err) => { if (err) console.warn('Backfill failed for order', row.id, err.message); }
+      );
+    });
+    console.log(`Backfilled order_number for ${rows.length} existing orders.`);
+  }
+);
+
 // Create all tables if they don't exist
 db.serialize(() => {
 
@@ -154,6 +189,20 @@ db.serialize(() => {
     payment_date TEXT DEFAULT CURRENT_DATE,
     note TEXT,
     FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  )`);
+
+  // 4b. CUSTOMER PAYMENTS (customer-wide payment history — used by Customer Profile page)
+  db.run(`CREATE TABLE IF NOT EXISTS customer_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    payment_mode TEXT DEFAULT 'cash',
+    payment_date TEXT DEFAULT CURRENT_DATE,
+    source TEXT,
+    source_id INTEGER,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id)
   )`);
 

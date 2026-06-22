@@ -14,6 +14,7 @@ const SHOP = {
   address     : 'Near New Bus Stand, Pilibangan, Rajasthan (335803)',  // Address
   tagline     : 'All Type of Printing Solutions',  // Tagline (optional, khali chhod do)
   logoPath    : './assets/Logo.png',   // Logo file ka path, e.g. './assets/logo.png'
+  watermarkPath : './assets/Watermark.png',
 }
 
 // GET /api/pdf/bill/:orderId
@@ -42,7 +43,7 @@ router.get('/bill/:orderId', (req, res) => {
         })
 
         res.setHeader('Content-Type', 'application/pdf')
-        res.setHeader('Content-Disposition', `attachment; filename=bill-${orderId}.pdf`)
+        res.setHeader('Content-Disposition', `attachment; filename=${order.order_number || `bill-${orderId}`}.pdf`)
         doc.pipe(res)
 
         // ── COLORS ──
@@ -79,6 +80,27 @@ router.get('/bill/:orderId', (req, res) => {
         // ══════════════════════════════════════════
         doc.rect(0, 0, PAGE_W, 95).fill(PRIMARY)
         doc.rect(0, 92, PAGE_W, 3).fill(ACCENT)   // accent stripe
+
+        // ══════════════════════════════════════════
+        //  WATERMARK — centered in white space, header to footer
+        // ══════════════════════════════════════════
+        if (SHOP.watermarkPath) {
+          try {
+            const FOOTER_H_RESERVED = 72   // must match FOOTER_H used later in this file
+            const wmBoxY = 105
+            const wmBoxH = doc.page.height - wmBoxY - FOOTER_H_RESERVED
+
+            doc.opacity(0.5)
+            doc.image(SHOP.watermarkPath, MARGIN, wmBoxY, {
+              fit: [CONTENT, wmBoxH],
+              align: 'center',
+              valign: 'center'
+            })
+            doc.opacity(1)
+          } catch (e) {
+            // watermark not found — skip silently, bill still works fine
+          }
+        }
 
         // Logo (agar path set hai toh show karo)
         let textStartX = MARGIN
@@ -117,7 +139,7 @@ router.get('/bill/:orderId', (req, res) => {
         doc.fill(ACCENT)
            .fontSize(13)
            .font('Helvetica-Bold')
-           .text(`INVOICE #${orderId}`, 0, 18, { align: 'right', width: PAGE_W - MARGIN })
+           .text(`INVOICE #${order.order_number || orderId}`, 0, 18, { align: 'right', width: PAGE_W - MARGIN })
 
         // Date (top-right)
         const orderDate = order.created_at
@@ -173,7 +195,7 @@ router.get('/bill/:orderId', (req, res) => {
                           : '#e67e22'
 
         doc.fill(PRIMARY).fontSize(10).font('Helvetica')
-           .text(`Order # : ${orderId}`, META_X, INFO_TOP + 26)
+           .text(`Order # : ${order.order_number || orderId}`, META_X, INFO_TOP + 26)
 
         doc.fill(statusColor).fontSize(10).font('Helvetica-Bold')
            .text(`Status  : ${statusText}`, META_X, INFO_TOP + 40)

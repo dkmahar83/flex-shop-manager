@@ -56,7 +56,54 @@ function Dashboard() {
           <div style={styles.cardNumber}>{data.today_orders_list.length}</div>
           <div style={styles.cardLabel}>Today's Orders</div>
         </div>
+        <div
+          style={{ ...styles.card, cursor: 'pointer' }}
+          onClick={() => document.getElementById('low-stock-section')?.scrollIntoView({ behavior: 'smooth' })}
+        >
+          <div style={{ ...styles.cardNumber, color: (data.low_stock_alerts?.length || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
+            {data.low_stock_alerts?.length || 0}
+          </div>
+          <div style={styles.cardLabel}>Low Stock Items</div>
+        </div>
       </div>
+
+      {/* LOW STOCK ALERTS */}
+      {data.low_stock_alerts && data.low_stock_alerts.length > 0 && (
+        <div style={styles.section} id="low-stock-section">
+          <h3 style={styles.sectionTitle}>📦 Low Stock Alerts</h3>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Category</th>
+                <th style={styles.th}>Item</th>
+                <th style={styles.th}>Remaining</th>
+                <th style={styles.th}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.low_stock_alerts.map((item, i) => (
+                <tr key={i} style={styles.tr}
+                  onClick={() => navigate('/inventory')}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                >
+                  <td style={styles.td}>{item.category}</td>
+                  <td style={{ ...styles.td, fontWeight: 'bold' }}>{item.item_name}</td>
+                  <td style={styles.td}>{item.quantity} {item.unit}</td>
+                  <td style={styles.td}>
+                    <span style={{
+                      ...styles.badge,
+                      backgroundColor: item.status === 'out' ? '#e74c3c' : '#f39c12'
+                    }}>
+                      {item.status === 'out' ? '🚨 Out of Stock' : '⚠️ Low Stock'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* TODAY'S ORDERS */}
       <div style={styles.section}>

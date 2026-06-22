@@ -1,9 +1,63 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const util = require('util');
+
+const dbAllAsync = util.promisify(db.all).bind(db);
 
 function todayIST() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+}
+
+// ── Low stock / out of stock across ALL inventory types ──
+// Thresholds match exactly what Inventory.jsx already shows, taaki dono jagah same data dikhe.
+async function getLowStockAlerts() {
+  const [flexLow, framesLow, stampsOut, chemLow, inkLow, dynLow] = await Promise.all([
+    dbAllAsync(`SELECT brand, size_ft, quantity FROM inventory_flex WHERE quantity <= 1`),
+    dbAllAsync(`SELECT frame_type, size, design, quantity FROM inventory_frames WHERE quantity < 5`),
+    dbAllAsync(`SELECT stamp_type, size, quantity FROM inventory_stamps WHERE quantity = 0`),
+    dbAllAsync(`SELECT chemical_name, quantity, unit, minimum_stock FROM inventory_chemicals WHERE quantity = 0 OR (minimum_stock > 0 AND quantity <= minimum_stock)`),
+    dbAllAsync(`SELECT item_name, item_type, quantity, unit, minimum_level FROM inventory_ink WHERE quantity = 0 OR (minimum_level > 0 AND quantity <= minimum_level)`),
+    dbAllAsync(`
+      SELECT d.item_name, d.attr1, d.attr2, d.quantity, d.unit, c.label as category_label
+      FROM inventory_dynamic_items d
+      JOIN inventory_categories c ON d.category_id = c.id
+      WHERE d.quantity = 0 OR (d.minimum_stock > 0 AND d.quantity <= d.minimum_stock)
+    `)
+  ]);
+
+  const alerts = [
+    ...flexLow.map(f => ({
+      category: 'Flex Roll', item_name: `${f.brand} ${f.size_ft}ft`,
+      quantity: f.quantity, unit: 'roll', status: f.quantity === 0 ? 'out' : 'low'
+    })),
+    ...framesLow.map(f => ({
+      category: 'Photo Frame',
+      item_name: `${f.frame_type}${f.size ? ' ' + f.size : ''}${f.design ? ' ' + f.design : ''}`,
+      quantity: f.quantity, unit: 'pcs', status: f.quantity === 0 ? 'out' : 'low'
+    })),
+    ...stampsOut.map(s => ({
+      category: 'Stamp', item_name: `${s.stamp_type}${s.size ? ' ' + s.size : ''}`,
+      quantity: s.quantity, unit: 'pcs', status: 'out'
+    })),
+    ...chemLow.map(c => ({
+      category: 'Chemical', item_name: c.chemical_name,
+      quantity: c.quantity, unit: c.unit, status: c.quantity === 0 ? 'out' : 'low'
+    })),
+    ...inkLow.map(i => ({
+      category: i.item_type === 'solvent' ? 'Solvent' : 'Ink', item_name: i.item_name,
+      quantity: i.quantity, unit: i.unit, status: i.quantity === 0 ? 'out' : 'low'
+    })),
+    ...dynLow.map(d => ({
+      category: d.category_label,
+      item_name: `${d.item_name}${d.attr1 ? ' ' + d.attr1 : ''}${d.attr2 ? ' ' + d.attr2 : ''}`,
+      quantity: d.quantity, unit: d.unit, status: d.quantity === 0 ? 'out' : 'low'
+    })),
+  ];
+
+  // Out of stock pehle dikhao, phir low stock
+  alerts.sort((a, b) => (a.status === 'out' ? 0 : 1) - (b.status === 'out' ? 0 : 1));
+  return alerts;
 }
 
 router.get('/', (req, res) => {
@@ -68,7 +122,17 @@ router.get('/', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
             result.all_dues = allDues;
 
-            res.json({ date: today, ...result });
+            // 6. Low stock alerts — saari inventory tables se combined
+            getLowStockAlerts()
+              .then(alerts => {
+                result.low_stock_alerts = alerts;
+                res.json({ date: today, ...result });
+              })
+              .catch(lowStockErr => {
+                console.error('Low stock fetch failed:', lowStockErr.message);
+                result.low_stock_alerts = [];
+                res.json({ date: today, ...result });
+              });
           });
         });
       });

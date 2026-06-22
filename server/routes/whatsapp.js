@@ -48,6 +48,8 @@ router.post('/send-bill/:orderId', async (req, res) => {
         const paidAmount = (order.total_amount || 0) - (order.balance_due || 0)
 
         // Send via WhatsApp
+        const { upiId } = req.body
+
         const result = await sendBillToCustomer({
           phone: order.phone,
           customerName: order.firm_name,
@@ -55,7 +57,8 @@ router.post('/send-bill/:orderId', async (req, res) => {
           totalAmount: order.total_amount,
           advancePaid: order.advance_paid || 0,
           balanceDue: order.balance_due || 0,
-          pdfBuffer
+          pdfBuffer,
+          upiId: upiId || null
         })
 
         res.json({

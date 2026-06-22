@@ -49,6 +49,10 @@ const pdfRoutes       = require('./routes/pdf')
 const whatsappRoutes  = require('./routes/whatsapp')
 const commissionRoutes = require('./routes/commission')
 const pageLockRoutes = require('./routes/pageLocks')
+const backupRoutes = require('./routes/backup')
+const { startBackupScheduler } = require('./backup')
+
+
 
 
 // ── AUTH MIDDLEWARE ──
@@ -91,6 +95,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
   setTimeout(initWhatsApp, 3000)
+  startBackupScheduler()
 })
 
 

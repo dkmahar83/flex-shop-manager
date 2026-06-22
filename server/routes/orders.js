@@ -22,8 +22,8 @@ router.get('/', (req, res) => {
   if (status) { query += ` AND orders.status = ?`; params.push(status); }
   if (customer_id) { query += ` AND orders.customer_id = ?`; params.push(customer_id); }
   if (search) {
-    query += ` AND (customers.firm_name LIKE ? OR orders.description LIKE ?)`;
-    params.push(`%${search}%`, `%${search}%`);
+    query += ` AND (customers.firm_name LIKE ? OR orders.description LIKE ? OR orders.order_number LIKE ?)`;
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   query += ` ORDER BY orders.created_at DESC`;
@@ -77,6 +77,37 @@ function todayIST() {
 }
 
 // ─────────────────────────────────────────
+// HELPER: Generate next order number for a given year
+// Format: VF-YYYY-NNNNNN
+// Finds the highest existing sequence for that year and increments it.
+// Thread-safe enough for SQLite single-process servers.
+// ─────────────────────────────────────────
+function generateOrderNumber(year, callback) {
+  const prefix = `VF-${year}-`;
+
+  db.get(
+    `SELECT order_number FROM orders
+     WHERE order_number LIKE ?
+     ORDER BY order_number DESC
+     LIMIT 1`,
+    [`${prefix}%`],
+    (err, row) => {
+      if (err) return callback(err);
+
+      let nextSeq = 1;
+      if (row && row.order_number) {
+        const parts = row.order_number.split('-');
+        const lastSeq = parseInt(parts[2], 10);
+        if (!isNaN(lastSeq)) nextSeq = lastSeq + 1;
+      }
+
+      const orderNumber = `${prefix}${String(nextSeq).padStart(6, '0')}`;
+      callback(null, orderNumber);
+    }
+  );
+}
+
+// ─────────────────────────────────────────
 // HELPER: Record advance payment into ALL financial tables
 //
 // Single source of truth for order advance payments.
@@ -100,40 +131,36 @@ function recordAdvancePayment({ customer_id, firm_name, advance, payment_mode, u
   function(cpErr) {
     if (cpErr) console.warn('customer_payments insert skipped:', cpErr.message);
 
-    // ✅ FIX: payments table mein bhi insert karo — ledger/daily-sales isi se padhta hai
     if (payment_mode === 'upi') {
-        db.run(`
-          INSERT INTO upi_transactions
-            (upi_account, customer_name, customer_id, amount, transaction_date, notes, order_id, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [upi_account, firm_name, customer_id, advance, date, notes, order_id, createdAt],
-        function(err) {
-          if (err) return callback(err);
-          callback(null, { table: 'upi_transactions', id: this.lastID });
-        });
-      } else {
-        db.run(`
-          INSERT INTO cash_income
-            (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
-          VALUES (?, ?, ?, ?, 'cash', NULL, ?)
-        `,
-        [customer_id, advance, date, notes, createdAt],
-        function(err) {
-          if (err) return callback(err);
-          callback(null, { table: 'cash_income', id: this.lastID });
-        });
-      }
+      db.run(`
+        INSERT INTO upi_transactions
+          (upi_account, customer_name, customer_id, amount, transaction_date, notes, order_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [upi_account, firm_name, customer_id, advance, date, notes, order_id, createdAt],
+      function(err) {
+        if (err) return callback(err);
+        callback(null, { table: 'upi_transactions', id: this.lastID });
+      });
+    } else {
+      db.run(`
+        INSERT INTO cash_income
+          (customer_id, amount, income_date, notes, payment_mode, upi_account, created_at)
+        VALUES (?, ?, ?, ?, 'cash', NULL, ?)
+      `,
+      [customer_id, advance, date, notes, createdAt],
+      function(err) {
+        if (err) return callback(err);
+        callback(null, { table: 'cash_income', id: this.lastID });
+      });
+    }
   });
 }
 
 // ─────────────────────────────────────────
 // HELPER: Delete a previously recorded advance entry
-// Used when advance is edited — remove old entry, insert fresh one.
-// Deletes from BOTH customer_payments and the financial table.
 // ─────────────────────────────────────────
 function deleteAdvanceEntry({ advance_entry_table, advance_entry_id, order_id }, callback) {
-  // Delete from customer_payments by order_id + source
   if (order_id) {
     db.run(
       `DELETE FROM customer_payments WHERE source = 'order_advance' AND source_id = ?`,
@@ -156,8 +183,8 @@ router.post('/', (req, res) => {
     customer_id,
     description,
     advance_paid,
-    advance_payment_mode,  // 'cash' | 'upi'
-    advance_upi_account,   // required if mode = 'upi'
+    advance_payment_mode,
+    advance_upi_account,
     follow_up_date,
     notes,
     items,
@@ -183,73 +210,79 @@ router.post('/', (req, res) => {
   const balance_due  = total_amount - advance - discount;
   const today        = todayIST();
   const createdAt    = nowIST();
+  const year         = new Date().getFullYear();
 
   db.get(`SELECT firm_name FROM customers WHERE id = ?`, [customer_id], (err, customer) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const breakdownToSave = (advance > 0 && advance_payment_mode === 'cash' && advance_denomination_breakdown && Object.keys(advance_denomination_breakdown).length > 0)
-      ? JSON.stringify(advance_denomination_breakdown)
-      : null;
+    // Generate order number first, then insert
+    generateOrderNumber(year, (err, orderNumber) => {
+      if (err) return res.status(500).json({ error: 'Could not generate order number: ' + err.message });
 
-    db.run(`
-      INSERT INTO orders
-        (customer_id, description, status, total_amount, advance_paid, balance_due,
-         advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id,
-         discount_amount, discount_note, created_at, advance_denomination_breakdown)
-      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
-    `,
-    [customer_id, description, total_amount, advance, balance_due,
-     advance > 0 ? advance_payment_mode : null,
-     follow_up_date, notes,
-     discount, discount_note || null, createdAt, breakdownToSave],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
+      const breakdownToSave = (advance > 0 && advance_payment_mode === 'cash' && advance_denomination_breakdown && Object.keys(advance_denomination_breakdown).length > 0)
+        ? JSON.stringify(advance_denomination_breakdown)
+        : null;
 
-      const order_id = this.lastID;
+      db.run(`
+        INSERT INTO orders
+          (customer_id, description, status, total_amount, advance_paid, balance_due,
+           advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id,
+           discount_amount, discount_note, created_at, advance_denomination_breakdown, order_number)
+        VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
+      `,
+      [customer_id, description, total_amount, advance, balance_due,
+       advance > 0 ? advance_payment_mode : null,
+       follow_up_date, notes,
+       discount, discount_note || null, createdAt, breakdownToSave, orderNumber],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
 
-      const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      items.forEach(item => {
-        insertItem.run([order_id, item.item_name, item.quantity, item.unit_price,
-                        item.quantity * item.unit_price]);
-      });
-      insertItem.finalize();
+        const order_id = this.lastID;
 
-      if (advance > 0) {
-        recordAdvancePayment({
-          customer_id,
-          firm_name: customer.firm_name,
-          advance,
-          payment_mode: advance_payment_mode,
-          upi_account: advance_upi_account,
-          order_id,
-          date: today
-        }, (err, entry) => {
-          if (err) return res.status(500).json({ error: 'Order created but advance entry failed: ' + err.message });
+        const insertItem = db.prepare(`
+          INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        items.forEach(item => {
+          insertItem.run([order_id, item.item_name, item.quantity, item.unit_price,
+                          item.quantity * item.unit_price]);
+        });
+        insertItem.finalize();
 
-          db.run(`
-            UPDATE orders SET advance_entry_table = ?, advance_entry_id = ? WHERE id = ?
-          `, [entry.table, entry.id, order_id], (err) => {
-            if (err) console.error('Could not save advance_entry ref:', err.message);
+        if (advance > 0) {
+          recordAdvancePayment({
+            customer_id,
+            firm_name: customer.firm_name,
+            advance,
+            payment_mode: advance_payment_mode,
+            upi_account: advance_upi_account,
+            order_id,
+            date: today
+          }, (err, entry) => {
+            if (err) return res.status(500).json({ error: 'Order created but advance entry failed: ' + err.message });
+
+            db.run(`
+              UPDATE orders SET advance_entry_table = ?, advance_entry_id = ? WHERE id = ?
+            `, [entry.table, entry.id, order_id], (err) => {
+              if (err) console.error('Could not save advance_entry ref:', err.message);
+            });
+
+            res.status(201).json({
+              id: order_id, order_number: orderNumber, customer_id, total_amount,
+              advance_paid: advance, balance_due, status: 'pending',
+              advance_payment_mode,
+              message: `Order ${orderNumber} created and advance recorded in financial ledger`
+            });
           });
-
+        } else {
           res.status(201).json({
-            id: order_id, customer_id, total_amount,
-            advance_paid: advance, balance_due, status: 'pending',
-            advance_payment_mode,
-            message: 'Order created and advance recorded in financial ledger'
+            id: order_id, order_number: orderNumber, customer_id, total_amount,
+            advance_paid: 0, balance_due, status: 'pending',
+            message: `Order ${orderNumber} created successfully`
           });
-        });
-      } else {
-        res.status(201).json({
-          id: order_id, customer_id, total_amount,
-          advance_paid: 0, balance_due, status: 'pending',
-          message: 'Order created successfully'
-        });
-      }
+        }
+      });
     });
   });
 });
@@ -327,9 +360,8 @@ router.put('/:id', (req, res) => {
     }
 
     const doUpdate = (entryTable, entryId) => {
-      // Fresh balance from payments table
       db.get('SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE order_id=?', [id], (err, r) => {
-        const fresh_balance = order.total_amount - new_advance - new_discount - (r ? r.paid : 0)
+        const fresh_balance = order.total_amount - new_advance - new_discount - (r ? r.paid : 0);
         db.run(`UPDATE orders SET description=?, notes=?, follow_up_date=?,
                 advance_paid=?, balance_due=?, advance_payment_mode=?,
                 advance_entry_table=?, advance_entry_id=?,
@@ -337,14 +369,15 @@ router.put('/:id', (req, res) => {
                 updated_at=CURRENT_TIMESTAMP
                 WHERE id=?`,
           [
-          description !== undefined ? description : order.description,
-          notes !== undefined ? notes : order.notes,
-          follow_up_date !== undefined ? follow_up_date : order.follow_up_date,
-          new_advance, fresh_balance,
-          new_advance>0?(advance_payment_mode||order.advance_payment_mode):null,
-          entryTable||order.advance_entry_table, entryId||order.advance_entry_id,
-          new_discount, discount_note !== undefined ? discount_note : (order.discount_note || null),
-          id],
+            description !== undefined ? description : order.description,
+            notes !== undefined ? notes : order.notes,
+            follow_up_date !== undefined ? follow_up_date : order.follow_up_date,
+            new_advance, fresh_balance,
+            new_advance > 0 ? (advance_payment_mode || order.advance_payment_mode) : null,
+            entryTable || order.advance_entry_table, entryId || order.advance_entry_id,
+            new_discount, discount_note !== undefined ? discount_note : (order.discount_note || null),
+            id
+          ],
           function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ message: 'Order updated successfully', balance_due: fresh_balance });
@@ -399,24 +432,20 @@ router.delete('/:id', (req, res) => {
       if (err) return res.status(500).json({ error: err.message });
       if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
 
-      // Delete follow-up payments from payments table
       db.run(`DELETE FROM payments WHERE order_id = ?`, [id], (err) => {
         if (err) console.error('Could not delete payments:', err.message);
       });
 
-      // Delete follow-up payments from cash_income (notes = 'Order Payment')
       db.run(`DELETE FROM cash_income WHERE notes = 'Order Payment' AND customer_id = (
         SELECT customer_id FROM orders WHERE id = ?
       )`, [id], (err) => {
         if (err) console.error('Could not delete cash_income payments:', err.message);
       });
 
-      // Delete follow-up UPI payments from upi_transactions (order_id linked)
       db.run(`DELETE FROM upi_transactions WHERE order_id = ? AND notes != 'Order Advance Payment'`, [id], (err) => {
         if (err) console.error('Could not delete upi payments:', err.message);
       });
 
-      // Delete advance entry (cash_income or upi_transactions)
       if (order && order.advance_entry_table && order.advance_entry_id) {
         deleteAdvanceEntry({
           advance_entry_table: order.advance_entry_table,
@@ -502,7 +531,7 @@ router.put('/:id/items', (req, res) => {
   });
 });
 
-// GET /api/orders/:id/photos — order ki saari photos
+// GET /api/orders/:id/photos
 router.get('/:id/photos', (req, res) => {
   db.all(
     `SELECT * FROM order_photos WHERE order_id = ? ORDER BY uploaded_at ASC`,
@@ -514,7 +543,7 @@ router.get('/:id/photos', (req, res) => {
   );
 });
 
-// POST /api/orders/:id/photos — photo upload karo
+// POST /api/orders/:id/photos
 router.post('/:id/photos', uploadOrder.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No photo received' });
 
@@ -531,7 +560,7 @@ router.post('/:id/photos', uploadOrder.single('photo'), (req, res) => {
   );
 });
 
-// DELETE /api/orders/:id/photos/:photoId — photo delete karo
+// DELETE /api/orders/:id/photos/:photoId
 router.delete('/:id/photos/:photoId', (req, res) => {
   db.get(
     `SELECT * FROM order_photos WHERE id = ? AND order_id = ?`,

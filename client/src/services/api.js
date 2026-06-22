@@ -196,7 +196,7 @@ export const getDues = () => api.get('/payments/dues')
 
 // WhatsApp
 export const getWhatsAppStatus = () => api.get('/whatsapp/status')
-export const sendBillWhatsApp = (orderId) => api.post(`/whatsapp/send-bill/${orderId}`)
+export const sendBillWhatsApp = (orderId, upiId) => api.post(`/whatsapp/send-bill/${orderId}`, { upiId: upiId || null })
 export const getWhatsAppQR = () => api.get('/whatsapp/qr')
 
 // PDF

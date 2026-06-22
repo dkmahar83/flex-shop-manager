@@ -116,7 +116,7 @@ function initWhatsApp() {
   }
 }
 
-async function sendBillToCustomer({ phone, customerName, orderId, totalAmount, advancePaid, balanceDue, pdfBuffer }) {
+async function sendBillToCustomer({ phone, customerName, orderId, totalAmount, advancePaid, balanceDue, pdfBuffer, upiId }) {
   if (!clientReady || !client) {
     throw new Error('WhatsApp not connected. Please scan QR code first.')
   }
@@ -157,6 +157,16 @@ _VijayFlex Pro, Pilibangan_`
       `Bill-${orderId}.pdf`
     )
     await client.sendMessage(chatId, media)
+  }
+
+  // UPI QR send karo agar balance hai aur upiId diya gaya
+  if (balanceDue > 0 && upiId) {
+    const QRCode = require('qrcode')
+    const upiString = `upi://pay?pa=${upiId}&am=${balanceDue}&cu=INR`
+    const qrBuffer = await QRCode.toBuffer(upiString, { type: 'png', width: 400 })
+    const qrMedia = new MessageMedia('image/png', qrBuffer.toString('base64'), `PayNow-${orderId}.png`)
+    await client.sendMessage(chatId, qrMedia)
+    await client.sendMessage(chatId, `📲 *Scan to Pay the Balance ₹${balanceDue}*\nUPI: ${upiId}`)
   }
 
   return { success: true, phone: formattedPhone }

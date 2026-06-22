@@ -16,29 +16,32 @@ function Orders() {
   const [showForm, setShowForm] = useState(false)
   const [message, setMessage] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [editingOrder, setEditingOrder] = useState(null)
   const [expandedOrder, setExpandedOrder] = useState(null)
   const [orderDetail, setOrderDetail] = useState(null)
-  const [editingFollowUp, setEditingFollowUp] = useState(null) // order id
+  const [editingFollowUp, setEditingFollowUp] = useState(null)
   const [orderPhotos, setOrderPhotos] = useState([])
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoCaption, setPhotoCaption] = useState('')
   const [lightboxPhoto, setLightboxPhoto] = useState(null)
-  const [followUpValue, setFollowUpValue]     = useState('')
+  const [followUpValue, setFollowUpValue] = useState('')
   const [paymentForm, setPaymentForm] = useState({
-      amount: '',
-      note: '',
-      payment_date: '',
-      follow_up_date: '',
-      payment_mode: 'cash',
-      upi_account: '',
-      cheque_number: '',
-      bank_name: '',
-      showDiscount: false,
-      discount_amount: '',
-      discount_note: ''
-    })
+    amount: '',
+    note: '',
+    payment_date: '',
+    follow_up_date: '',
+    payment_mode: 'cash',
+    upi_account: '',
+    cheque_number: '',
+    bank_name: '',
+    showDiscount: false,
+    discount_amount: '',
+    discount_note: ''
+  })
   const [waStatus, setWaStatus] = useState('disconnected')
+  const [waSendModal, setWaSendModal] = useState(null) // stores order object when modal is open
+  const [selectedUpiForWA, setSelectedUpiForWA] = useState('')
   const [advanceDenomination, setAdvanceDenomination] = useState({})
   const [paymentDenomination, setPaymentDenomination] = useState({})
 
@@ -46,7 +49,7 @@ function Orders() {
     customer_id: '',
     description: '',
     advance_paid: '',
-    advance_payment_mode: 'cash',   // 'cash' | 'upi'
+    advance_payment_mode: 'cash',
     advance_upi_account: '',
     follow_up_date: '',
     notes: '',
@@ -57,14 +60,15 @@ function Orders() {
   const [items, setItems] = useState([
     { item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }
   ])
+
   useEffect(() => {
-      // Check WhatsApp status on load
-      import('../services/api').then(({ getWhatsAppStatus }) => {
-        getWhatsAppStatus()
-          .then(res => setWaStatus(res.data.status))
-          .catch(() => {})
-      })
-    }, [])
+    import('../services/api').then(({ getWhatsAppStatus }) => {
+      getWhatsAppStatus()
+        .then(res => setWaStatus(res.data.status))
+        .catch(() => {})
+    })
+  }, [])
+
   useEffect(() => {
     fetchOrders()
     getCustomers().then(res => setCustomers(res.data))
@@ -82,7 +86,6 @@ function Orders() {
     const { name, value } = e.target
     setForm(prev => {
       const updated = { ...prev, [name]: value }
-      // Reset UPI account if switching away from UPI
       if (name === 'advance_payment_mode' && value !== 'upi') {
         updated.advance_upi_account = ''
       }
@@ -174,7 +177,6 @@ function Orders() {
 
     const advanceAmt = parseFloat(form.advance_paid) || 0
 
-    // Validate payment mode when advance > 0
     if (advanceAmt > 0 && form.advance_payment_mode === 'upi' && !form.advance_upi_account) {
       return setMessage('Please select a UPI account for the advance payment.')
     }
@@ -229,8 +231,8 @@ function Orders() {
     }
 
     createOrder(payload)
-      .then(() => {
-        setMessage('Order created successfully!')
+      .then(res => {
+        setMessage(`✅ ${res.data.order_number} created successfully!`)
         resetForm()
         fetchOrders()
       })
@@ -244,7 +246,10 @@ function Orders() {
   }
 
   function handleDeleteOrder(order) {
-    if (!window.confirm(`"${order.description || 'This order'}" delete karna chahte ho?\n(24 ghante tak restore ho sakta hai Bin se)`)) return
+    const label = order.order_number
+      ? `${order.order_number} — ${order.description || 'this order'}`
+      : (order.description || 'This order')
+    if (!window.confirm(`"${label}" delete karna chahte ho?\n(24 ghante tak restore ho sakta hai Bin se)`)) return
     deleteOrder(order.id)
       .then(() => {
         setMessage('Order deleted. Bin se restore ho sakta hai 24 ghante mein.')
@@ -271,13 +276,19 @@ function Orders() {
 
   function handleAddPayment(e) {
     e.preventDefault()
-    if (!paymentForm.amount) return setMessage('Enter payment amount.')
-    if (paymentForm.payment_mode === 'upi' && !paymentForm.upi_account) {
+
+    const amount      = parseFloat(paymentForm.amount) || 0
+    const discountAmt = parseFloat(paymentForm.discount_amount) || 0
+    const hasFollowUp = !!paymentForm.follow_up_date
+
+    if (amount <= 0 && discountAmt <= 0 && !hasFollowUp) {
+      return setMessage('Amount, discount ya follow-up date mein se kuch to daalo.')
+    }
+
+    if (amount > 0 && paymentForm.payment_mode === 'upi' && !paymentForm.upi_account) {
       return setMessage('UPI ke liye account select karo.')
     }
-    const discountAmt = parseFloat(paymentForm.discount_amount) || 0
 
-    // Discount pehle save karo order mein (agar hai to)
     const discountPromise = discountAmt > 0
       ? api.put(`/orders/${orderDetail.id}`, {
           discount_amount: (parseFloat(orderDetail.discount_amount) || 0) + discountAmt,
@@ -285,34 +296,41 @@ function Orders() {
         })
       : Promise.resolve()
 
-    discountPromise.then(() => addPayment({
-      order_id: orderDetail.id,
-      customer_id: orderDetail.customer_id,
-      amount: parseFloat(paymentForm.amount),
-      note: paymentForm.note,
-      payment_mode: paymentForm.payment_mode,
-      upi_account:  paymentForm.upi_account || null,
-      cheque_number: paymentForm.payment_mode === 'cheque' ? (paymentForm.cheque_number || null) : null,
-      bank_name:     paymentForm.payment_mode === 'cheque' ? (paymentForm.bank_name || null) : null,
-      denomination_breakdown: paymentForm.payment_mode === 'cash' && Object.keys(paymentDenomination).length > 0
-        ? paymentDenomination : null,
-      payment_date: paymentForm.payment_date
-        ? paymentForm.payment_date + ' ' + new Date().toLocaleTimeString('en-GB', { hour12: false })
-        : new Date().toLocaleString('en-GB', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-          }).replace(',', '')
-    }))
+    discountPromise
       .then(() => {
-        if (paymentForm.follow_up_date) {
-          api.put(`/orders/${orderDetail.id}`, {
-            follow_up_date: paymentForm.follow_up_date
-          }).catch(() => {})
+        if (amount > 0) {
+          return addPayment({
+            order_id: orderDetail.id,
+            customer_id: orderDetail.customer_id,
+            amount,
+            note: paymentForm.note,
+            payment_mode: paymentForm.payment_mode,
+            upi_account: paymentForm.upi_account || null,
+            cheque_number: paymentForm.payment_mode === 'cheque' ? (paymentForm.cheque_number || null) : null,
+            bank_name: paymentForm.payment_mode === 'cheque' ? (paymentForm.bank_name || null) : null,
+            denomination_breakdown: paymentForm.payment_mode === 'cash' && Object.keys(paymentDenomination).length > 0
+              ? paymentDenomination : null,
+            payment_date: paymentForm.payment_date
+              ? paymentForm.payment_date + ' ' + new Date().toLocaleTimeString('en-GB', { hour12: false })
+              : new Date().toLocaleString('en-GB', {
+                  year: 'numeric', month: '2-digit', day: '2-digit',
+                  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+                }).replace(',', '')
+          })
         }
+      })
+      .then(() => {
+        if (hasFollowUp) {
+          return api.put(`/orders/${orderDetail.id}`, { follow_up_date: paymentForm.follow_up_date })
+        }
+      })
+      .then(() => {
         setMessage(
-          paymentForm.payment_mode === 'cheque'
-            ? 'Cheque recorded! Balance will update once marked cleared in Accounts.'
-            : 'Payment recorded!'
+          amount > 0
+            ? (paymentForm.payment_mode === 'cheque'
+                ? 'Cheque recorded! Balance will update once marked cleared in Accounts.'
+                : 'Payment recorded!')
+            : (discountAmt > 0 ? 'Discount aur follow-up date saved!' : 'Follow-up date saved!')
         )
         setPaymentForm({ amount: '', note: '', payment_date: '', follow_up_date: '', payment_mode: 'cash', upi_account: '', cheque_number: '', bank_name: '', showDiscount: false, discount_amount: '', discount_note: '' })
         setPaymentDenomination({})
@@ -325,28 +343,28 @@ function Orders() {
   }
 
   function fetchOrderPhotos(id) {
-  getOrderPhotos(id).then(res => setOrderPhotos(res.data)).catch(() => {})
-}
+    getOrderPhotos(id).then(res => setOrderPhotos(res.data)).catch(() => {})
+  }
 
-function handlePhotoUpload(e) {
-  const file = e.target.files[0]
-  if (!file || !orderDetail) return
-  setPhotoUploading(true)
-  uploadOrderPhoto(orderDetail.id, file, photoCaption)
-    .then(() => {
-      setPhotoCaption('')
-      fetchOrderPhotos(orderDetail.id)
-    })
-    .catch(() => setMessage('Photo upload failed.'))
-    .finally(() => setPhotoUploading(false))
-}
+  function handlePhotoUpload(e) {
+    const file = e.target.files[0]
+    if (!file || !orderDetail) return
+    setPhotoUploading(true)
+    uploadOrderPhoto(orderDetail.id, file, photoCaption)
+      .then(() => {
+        setPhotoCaption('')
+        fetchOrderPhotos(orderDetail.id)
+      })
+      .catch(() => setMessage('Photo upload failed.'))
+      .finally(() => setPhotoUploading(false))
+  }
 
-function handlePhotoDelete(photoId) {
-  if (!window.confirm('Is photo ko delete karna chahte ho?')) return
-  deleteOrderPhoto(orderDetail.id, photoId)
-    .then(() => fetchOrderPhotos(orderDetail.id))
-    .catch(() => setMessage('Delete failed.'))
-}
+  function handlePhotoDelete(photoId) {
+    if (!window.confirm('Is photo ko delete karna chahte ho?')) return
+    deleteOrderPhoto(orderDetail.id, photoId)
+      .then(() => fetchOrderPhotos(orderDetail.id))
+      .catch(() => setMessage('Delete failed.'))
+  }
 
   function handleFollowUpSave(orderId) {
     api.put(`/orders/${orderId}/follow-up`, {
@@ -364,6 +382,16 @@ function handlePhotoDelete(photoId) {
       })
       .catch(() => setMessage('Error updating follow-up date.'))
   }
+
+  const filteredOrders = orders.filter(o => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      (o.order_number && o.order_number.toLowerCase().includes(q)) ||
+      (o.firm_name && o.firm_name.toLowerCase().includes(q)) ||
+      (o.phone && o.phone.toLowerCase().includes(q))
+    )
+  })
 
   const total    = calculateTotal()
   const advance  = parseFloat(form.advance_paid) || 0
@@ -386,7 +414,9 @@ function handlePhotoDelete(photoId) {
       {showForm && (
         <div style={styles.formBox}>
           <h3 style={{ marginBottom: '16px' }}>
-            {editingOrder ? `Edit Order #${editingOrder.id}` : 'New Order'}
+            {editingOrder
+              ? `Edit Order ${editingOrder.order_number ? `#${editingOrder.order_number}` : `#${editingOrder.id}`}`
+              : 'New Order'}
           </h3>
           <form onSubmit={handleSubmit}>
 
@@ -503,7 +533,6 @@ function handlePhotoDelete(photoId) {
                 />
               </div>
 
-              {/* ── Payment Mode — shown only when advance > 0 ── */}
               {advance > 0 && (
                 <>
                   <div style={styles.totalRow}>
@@ -544,7 +573,6 @@ function handlePhotoDelete(photoId) {
                     />
                   )}
 
-                  {/* UPI account selector */}
                   {form.advance_payment_mode === 'upi' && (
                     <div style={styles.totalRow}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -612,7 +640,20 @@ function handlePhotoDelete(photoId) {
           </form>
         </div>
       )}
-
+      <div style={styles.searchRow}>
+      <input
+        type="text"
+        placeholder="🔍 Search by Order No. / Firm Name / Phone..."
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+        style={styles.searchInput}
+      />
+      {searchQuery && (
+        <button onClick={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+          ✕ Clear
+        </button>
+      )}
+    </div>
       <div style={styles.filterRow}>
         {['', 'pending', 'in_progress', 'ready', 'delivered'].map(s => (
           <button key={s}
@@ -625,12 +666,14 @@ function handlePhotoDelete(photoId) {
       </div>
 
       {loading ? <p>Loading...</p> : orders.length === 0 ? (
-        <p style={{ color: '#888' }}>No orders found.</p>
-      ) : (
+          <p style={{ color: '#888' }}>No orders found.</p>
+        ) : filteredOrders.length === 0 ? (
+          <p style={{ color: '#888' }}>No orders match your search.</p>
+        ) : (
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>#</th>
+              <th style={styles.th}>Order No.</th>
               <th style={styles.th}>Firm</th>
               <th style={styles.th}>Description</th>
               <th style={styles.th}>Total</th>
@@ -641,13 +684,21 @@ function handlePhotoDelete(photoId) {
             </tr>
           </thead>
           <tbody>
-            {orders.map((o, index) => (
+            {filteredOrders.map((o) => (
               <>
                 <tr key={o.id} style={styles.tr}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
                 >
-                  <td style={styles.td}>{index + 1}</td>
+                  {/* ── ORDER NUMBER CELL ── */}
+                  <td style={styles.td}>
+                    {o.order_number ? (
+                      <span style={styles.orderNumberBadge}>{o.order_number}</span>
+                    ) : (
+                      <span style={{ color: '#bbb', fontSize: '12px' }}>#{o.id}</span>
+                    )}
+                  </td>
+
                   <td style={styles.td}>
                     <strong>{o.firm_name}</strong><br />
                     <span style={{ fontSize: '12px', color: '#888' }}>{o.phone}</span>
@@ -725,7 +776,7 @@ function handlePhotoDelete(photoId) {
                             const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
                             const link = document.createElement('a')
                             link.href = blobUrl
-                            link.download = `bill-${o.id}.pdf`
+                            link.download = `${o.order_number || `bill-${o.id}`}.pdf`
                             document.body.appendChild(link)
                             link.click()
                             document.body.removeChild(link)
@@ -749,9 +800,8 @@ function handlePhotoDelete(photoId) {
                     <button
                       onClick={() => {
                         if (!o.phone) return setMessage('Customer has no phone number.')
-                        sendBillWhatsApp(o.id)
-                          .then(res => setMessage(res.data.message))
-                          .catch(err => setMessage('WhatsApp error: ' + (err.response?.data?.error || 'Not connected')))
+                        setSelectedUpiForWA('')
+                        setWaSendModal(o)
                       }}
                       style={{
                         backgroundColor: waStatus === 'ready' ? '#25D366' : '#ccc',
@@ -777,6 +827,30 @@ function handlePhotoDelete(photoId) {
                   <tr key={`detail-${o.id}`}>
                     <td colSpan="8" style={styles.detailCell}>
                       <div style={styles.detailBox}>
+
+                        {/* ── ORDER NUMBER HEADER in detail ── */}
+                        {orderDetail.order_number && (
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: '12px',
+                            padding: '10px 16px', backgroundColor: '#1a1a2e',
+                            borderRadius: '8px', marginBottom: '4px'
+                          }}>
+                            <span style={{ color: '#aaa', fontSize: '13px' }}>Order Number</span>
+                            <span style={{
+                              color: '#fff', fontSize: '18px', fontWeight: 'bold',
+                              letterSpacing: '1px', fontFamily: 'monospace'
+                            }}>
+                              {orderDetail.order_number}
+                            </span>
+                            <span style={{
+                              marginLeft: 'auto', fontSize: '12px', color: '#aaa'
+                            }}>
+                              {orderDetail.firm_name} · {orderDetail.created_at
+                                ? new Date(orderDetail.created_at).toLocaleDateString('en-GB').replace(/\//g, '.')
+                                : ''}
+                            </span>
+                          </div>
+                        )}
 
                         <div style={styles.detailSection}>
                           <h4 style={styles.detailTitle}>📦 Order Items</h4>
@@ -940,7 +1014,6 @@ function handlePhotoDelete(photoId) {
                             <form onSubmit={handleAddPayment} style={styles.paymentForm}>
                               <h5 style={{ marginBottom: '8px', color: '#555' }}>+ Record New Payment</h5>
 
-                              {/* Discount toggle */}
                               <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <label style={{ fontSize: '13px', color: '#888' }}>
                                   Kuch amount discount karna hai?
@@ -981,32 +1054,24 @@ function handlePhotoDelete(photoId) {
                               )}
 
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                                
-                                {/* Amount */}
                                 <input
                                   style={{ ...styles.input, maxWidth: '150px' }}
                                   type="number" placeholder="Amount ₹"
                                   value={paymentForm.amount}
                                   onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
                                 />
-
-                                {/* Date */}
                                 <input
                                   style={{ ...styles.input, maxWidth: '160px' }}
                                   type="date"
                                   value={paymentForm.payment_date}
                                   onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
                                 />
-
-                                {/* Note */}
                                 <input
                                   style={{ ...styles.input, flex: 2 }}
                                   placeholder="Note (e.g. final payment)"
                                   value={paymentForm.note}
                                   onChange={e => setPaymentForm({ ...paymentForm, note: e.target.value })}
                                 />
-
-                                {/* ✅ NEW: Payment Mode toggle */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                   <label style={{ fontSize: '11px', color: '#888' }}>Payment Mode</label>
                                   <div style={{ display: 'flex', gap: '6px' }}>
@@ -1019,9 +1084,7 @@ function handlePhotoDelete(photoId) {
                                         color: paymentForm.payment_mode === 'cash' ? '#fff' : '#333',
                                         cursor: 'pointer', fontSize: '13px', fontWeight: '500'
                                       }}
-                                    >
-                                      💵 Cash
-                                    </button>
+                                    >💵 Cash</button>
                                     <button
                                       type="button"
                                       onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'upi', cheque_number: '', bank_name: '' }))}
@@ -1031,9 +1094,7 @@ function handlePhotoDelete(photoId) {
                                         color: paymentForm.payment_mode === 'upi' ? '#fff' : '#333',
                                         cursor: 'pointer', fontSize: '13px', fontWeight: '500'
                                       }}
-                                    >
-                                      📱 UPI
-                                    </button>
+                                    >📱 UPI</button>
                                     <button
                                       type="button"
                                       onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'cheque', upi_account: '' }))}
@@ -1043,9 +1104,7 @@ function handlePhotoDelete(photoId) {
                                         color: paymentForm.payment_mode === 'cheque' ? '#fff' : '#333',
                                         cursor: 'pointer', fontSize: '13px', fontWeight: '500'
                                       }}
-                                    >
-                                      🧾 Cheque
-                                    </button>
+                                    >🧾 Cheque</button>
                                   </div>
                                 </div>
 
@@ -1060,7 +1119,6 @@ function handlePhotoDelete(photoId) {
                                   </div>
                                 )}
 
-                                {/* ✅ NEW: UPI account selector — sirf jab UPI select ho */}
                                 {paymentForm.payment_mode === 'upi' && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                     <label style={{ fontSize: '11px', color: '#888' }}>UPI Account *</label>
@@ -1078,7 +1136,6 @@ function handlePhotoDelete(photoId) {
                                   </div>
                                 )}
 
-                                {/* ✅ NEW: Cheque details — sirf jab Cheque select ho */}
                                 {paymentForm.payment_mode === 'cheque' && (
                                   <>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1102,7 +1159,6 @@ function handlePhotoDelete(photoId) {
                                   </>
                                 )}
 
-                                {/* Next Follow-up */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                   <label style={{ fontSize: '11px', color: '#888' }}>Next Follow-up</label>
                                   <input
@@ -1129,7 +1185,6 @@ function handlePhotoDelete(photoId) {
                         {/* ORDER PHOTOS */}
                         <div style={styles.detailSection}>
                           <h4 style={styles.detailTitle}>📷 Order Photos</h4>
-
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
                             <input
                               type="text"
@@ -1154,7 +1209,6 @@ function handlePhotoDelete(photoId) {
                               />
                             </label>
                           </div>
-
                           {orderPhotos.length === 0 ? (
                             <p style={{ color: '#aaa', fontSize: '13px' }}>Koi photo nahi — upar se add karo.</p>
                           ) : (
@@ -1195,7 +1249,76 @@ function handlePhotoDelete(photoId) {
           </tbody>
         </table>
       )}
-    {/* LIGHTBOX */}
+
+      {/* WA SEND MODAL */}
+      {waSendModal && (
+        <div
+          onClick={() => setWaSendModal(null)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px', width: '380px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <h3 style={{ marginBottom: '6px', fontSize: '16px' }}>📱 WhatsApp Bill</h3>
+            <p style={{ fontSize: '13px', color: '#888', marginBottom: '20px' }}>
+              {waSendModal.firm_name} — Bill #{waSendModal.order_number || waSendModal.id}
+            </p>
+
+            {waSendModal.balance_due > 0 ? (
+              <>
+                <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '12px', fontWeight: 'bold' }}>
+                  ⚠️ Balance Due: ₹{waSendModal.balance_due}
+                </p>
+                <label style={{ fontSize: '13px', color: '#555', display: 'block', marginBottom: '6px' }}>
+                  UPI QR bhejna hai? Account select karo:
+                </label>
+                <select
+                  value={selectedUpiForWA}
+                  onChange={e => setSelectedUpiForWA(e.target.value)}
+                  style={{ ...styles.input, marginBottom: '20px' }}
+                >
+                  <option value="">❌ QR mat bhejo</option>
+                  {[
+                    { label: 'BOI Shop Account', upiId: 'boism-9950580621@boi' },
+                    { label: 'Google Pay - Rampratap Painter', upiId: 'gpay-11263065173@okbizaxis' },
+                    { label: 'PhonePe - Bhavya Printers', upiId: 'q214575569@ybl' },
+                    { label: 'Amazon Pay - Deepak', upiId: '7073580621@yapl' }
+                  ].map(acc => (
+                    <option key={acc.upiId} value={acc.upiId}>{acc.label}</option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <p style={{ fontSize: '13px', color: '#27ae60', marginBottom: '20px', fontWeight: 'bold' }}>
+                ✅ Fully Paid — QR nahi bheja jayega
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setWaSendModal(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const o = waSendModal
+                  sendBillWhatsApp(o.id, selectedUpiForWA)
+                    .then(res => { setMessage(res.data.message); setWaSendModal(null) })
+                    .catch(err => { setMessage('WhatsApp error: ' + (err.response?.data?.error || 'Not connected')); setWaSendModal(null) })
+                }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#25D366', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+              >
+                📤 Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIGHTBOX */}
       {lightboxPhoto && (
         <div
           onClick={() => setLightboxPhoto(null)}
@@ -1241,6 +1364,9 @@ const styles = {
   totalRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '15px' },
   submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   filterRow: { display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' },
+  searchRow: { display: 'flex', gap: '10px', marginBottom: '14px', alignItems: 'center' },
+  searchInput: { padding: '10px 16px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px', width: '340px', maxWidth: '100%', boxSizing: 'border-box' },
+  clearSearchBtn: { backgroundColor: '#fff', border: '1px solid #ddd', color: '#888', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   filterBtn: { padding: '7px 16px', borderRadius: '20px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', textTransform: 'capitalize' },
   filterActive: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
   table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
@@ -1261,7 +1387,19 @@ const styles = {
   paymentForm: { marginTop: '12px', padding: '12px', backgroundColor: '#f9f9f9', borderRadius: '8px' },
   modeBtn: { padding: '8px 16px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: '500' },
   modeBtnActive: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
-  requiredDot: { color: '#e74c3c', fontSize: '16px', lineHeight: 1 }
+  requiredDot: { color: '#e74c3c', fontSize: '16px', lineHeight: 1 },
+  // ── NEW: order number badge style ──
+  orderNumberBadge: {
+    display: 'inline-block',
+    backgroundColor: '#1a1a2e',
+    color: '#fff',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    letterSpacing: '0.5px',
+    fontFamily: 'monospace'
+  }
 }
 
 export default Orders

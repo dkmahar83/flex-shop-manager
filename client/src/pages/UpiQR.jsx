@@ -3,10 +3,10 @@ import QRCode from 'qrcode'
 import { getUpiQrHistory, addUpiQrHistory, toggleUpiQrPaid, deleteUpiQrHistory, clearUpiQrHistory } from '../services/api'
 
 const UPI_ACCOUNTS = [
-  { label: 'BOI Shop Account',               upi: 'vijayflex@boi',        name: 'Vijay Flex' },
-  { label: 'Google Pay - Rampratap Painter', upi: '7073580621@yapl',      name: 'Rampratap Painter' },
-  { label: 'PhonePe - Bhavya Printers',      upi: 'bhavyaprinters@ybl',   name: 'Bhavya Printers' },
-  { label: 'Amazon Pay - Deepak',            upi: 'deepak@apl',           name: 'Deepak' },
+  { label: 'BOI Shop Account',               upi: 'boism-9950580621@boi',        name: 'Vijay Flex' },
+  { label: 'Google Pay - Rampratap Painter', upi: 'gpay-11263065173@okbizaxis',      name: 'Rampratap Painter' },
+  { label: 'PhonePe - Bhavya Printers',      upi: 'q214575569@ybl',   name: 'Bhavya Printers' },
+  { label: 'Amazon Pay - Deepak',            upi: '7073580621@yapl',           name: 'Deepak' },
 ]
 
 export default function UpiQR() {
