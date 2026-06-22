@@ -166,7 +166,7 @@ _VijayFlex Pro, Pilibangan_`
     const qrBuffer = await QRCode.toBuffer(upiString, { type: 'png', width: 400 })
     const qrMedia = new MessageMedia('image/png', qrBuffer.toString('base64'), `PayNow-${orderId}.png`)
     await client.sendMessage(chatId, qrMedia)
-    await client.sendMessage(chatId, `📲 *Scan to Pay the Balance ₹${balanceDue}*\nUPI: ${upiId}`)
+    await client.sendMessage(chatId, `📲 *Scan to Pay the Balance ₹${balanceDue}*`)
   }
 
   return { success: true, phone: formattedPhone }

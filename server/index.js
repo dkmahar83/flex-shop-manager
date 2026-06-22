@@ -92,7 +92,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Something went wrong' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`)
   setTimeout(initWhatsApp, 3000)
   startBackupScheduler()

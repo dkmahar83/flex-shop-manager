@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api'
+  baseURL: `http://${window.location.hostname}:5000/api`
 })
 
 api.interceptors.request.use(config => {
@@ -26,9 +26,9 @@ api.interceptors.response.use(
 
 // Auth
 export const login = (username, password) =>
-  axios.post('http://localhost:5000/api/auth/login', { username, password })
+  axios.post(`http://${window.location.hostname}:5000/api/auth/login`, { username, password })
 export const verifyToken = (token) =>
-  axios.post('http://localhost:5000/api/auth/verify', { token })
+  axios.post(`http://${window.location.hostname}:5000/api/auth/verify`, { token })
 
 // Dashboard
 export const getDashboard = () => api.get('/dashboard')
