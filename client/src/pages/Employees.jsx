@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import PageLock from '../components/PageLock'
 import {
   getEmployees, createEmployee, markAttendance,
-  getSalary, getAttendance, getEmployeeProfile, deleteEmployee, generateSalary
+  getSalary, getAttendance, getEmployeeProfile, deleteEmployee, generateSalary,
+  updateEmployeeSalary
 } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
 
@@ -28,6 +29,9 @@ function Employees() {
   const [crediting, setCrediting] = useState(false)
   const [employeeProfile, setEmployeeProfile] = useState(null)
   const [profileError, setProfileError] = useState('')
+  const [showSalaryEdit, setShowSalaryEdit] = useState(false)
+  const [salaryEditForm, setSalaryEditForm] = useState({ new_salary: '', reason: '', effective_date: '' })
+  const [salaryEditLoading, setSalaryEditLoading] = useState(false)
 
   const [form, setForm] = useState({
     name: '', phone: '', monthly_salary: '', join_date: ''
@@ -163,6 +167,26 @@ function Employees() {
         fetchEmployees()
       })
       .catch(() => setMessage('Error deleting employee.'))
+  }
+
+  function handleSalaryUpdate(e) {
+    e.preventDefault()
+    if (!salaryEditForm.new_salary) return setMessage('Nai salary daalo.')
+    setSalaryEditLoading(true)
+    updateEmployeeSalary(selectedEmployee.id, {
+      new_salary: parseInt(salaryEditForm.new_salary),
+      reason: salaryEditForm.reason,
+      effective_date: salaryEditForm.effective_date || today
+    })
+      .then(res => {
+        setMessage(`✅ ${selectedEmployee.name} ki salary ₹${res.data.old_salary} se ₹${res.data.new_salary} ho gayi!`)
+        setShowSalaryEdit(false)
+        setSalaryEditForm({ new_salary: '', reason: '', effective_date: '' })
+        fetchEmployees()
+        loadEmployeeProfile(selectedEmployee, genMonth, genYear)
+      })
+      .catch(err => setMessage('Error: ' + (err.response?.data?.error || 'Salary update failed')))
+      .finally(() => setSalaryEditLoading(false))
   }
 
   // ── FIX: loadEmployeeProfile now shows real error instead of generic message ──
@@ -721,11 +745,69 @@ function Employees() {
               {/* Header */}
               <div style={{ marginBottom: '20px' }}>
                 <h3 style={{ marginBottom: '4px' }}>{employeeProfile.employee.name}</h3>
-                <p style={{ color: '#888', fontSize: '13px' }}>
-                  📞 {employeeProfile.employee.phone || '—'} &nbsp;•&nbsp;
-                  Salary: ₹{employeeProfile.employee.monthly_salary}/month &nbsp;•&nbsp;
-                  Per day: ₹{Math.round(employeeProfile.employee.monthly_salary / 30)}
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                  <p style={{ color: '#888', fontSize: '13px', margin: 0 }}>
+                    📞 {employeeProfile.employee.phone || '—'} &nbsp;•&nbsp;
+                    Salary: <strong style={{ color: '#1a1a2e' }}>₹{employeeProfile.employee.monthly_salary}/month</strong> &nbsp;•&nbsp;
+                    Per day: ₹{Math.round(employeeProfile.employee.monthly_salary / 30)}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowSalaryEdit(f => !f)
+                      setSalaryEditForm({ new_salary: employeeProfile.employee.monthly_salary, reason: '', effective_date: today })
+                    }}
+                    style={{
+                      backgroundColor: showSalaryEdit ? '#e74c3c' : '#f39c12',
+                      color: '#fff', border: 'none', padding: '8px 16px',
+                      borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+                    }}
+                  >
+                    {showSalaryEdit ? '✕ Cancel' : '✏️ Edit Salary'}
+                  </button>
+                </div>
+
+                {showSalaryEdit && (
+                  <form onSubmit={handleSalaryUpdate} style={{
+                    marginTop: '16px', backgroundColor: '#fff9e6', border: '1px solid #ffc107',
+                    borderRadius: '8px', padding: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end'
+                  }}>
+                    <div>
+                      <label style={styles.label}>Nai Monthly Salary (₹) *</label>
+                      <input
+                        style={{ ...styles.input, maxWidth: '180px', fontSize: '18px', fontWeight: 'bold' }}
+                        type="number" placeholder="e.g. 12000"
+                        value={salaryEditForm.new_salary}
+                        onChange={e => setSalaryEditForm(f => ({ ...f, new_salary: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label style={styles.label}>Effective Date</label>
+                      <input
+                        style={{ ...styles.input, maxWidth: '170px' }}
+                        type="date" value={salaryEditForm.effective_date || today}
+                        onChange={e => setSalaryEditForm(f => ({ ...f, effective_date: e.target.value }))}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: '200px' }}>
+                      <label style={styles.label}>Reason (optional)</label>
+                      <input
+                        style={styles.input} placeholder="e.g. Promotion, performance bonus..."
+                        value={salaryEditForm.reason}
+                        onChange={e => setSalaryEditForm(f => ({ ...f, reason: e.target.value }))}
+                      />
+                    </div>
+                    <button
+                      type="submit" disabled={salaryEditLoading}
+                      style={{
+                        backgroundColor: '#27ae60', color: '#fff', border: 'none',
+                        padding: '10px 20px', borderRadius: '6px', cursor: 'pointer',
+                        fontSize: '14px', fontWeight: 'bold', opacity: salaryEditLoading ? 0.6 : 1
+                      }}
+                    >
+                      {salaryEditLoading ? 'Saving...' : '✅ Update Salary'}
+                    </button>
+                  </form>
+                )}
               </div>
 
               {/* Month/Year selector */}

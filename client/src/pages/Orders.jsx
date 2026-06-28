@@ -58,7 +58,7 @@ function Orders() {
   })
 
   const [items, setItems] = useState([
-    { item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }
+    { item_name: '', length: '', breadth: '', pieces: '', quantity: '', unit_price: '', useSize: false }
   ])
 
   useEffect(() => {
@@ -96,10 +96,11 @@ function Orders() {
   function handleItemChange(index, field, value) {
     const updated = [...items]
     updated[index][field] = value
-    if (field === 'length' || field === 'breadth') {
+    if (field === 'length' || field === 'breadth' || field === 'pieces') {
       const l = parseFloat(field === 'length' ? value : updated[index].length) || 0
       const b = parseFloat(field === 'breadth' ? value : updated[index].breadth) || 0
-      updated[index].quantity = (l * b).toFixed(2)
+      const p = parseFloat(field === 'pieces' ? value : updated[index].pieces) || 1
+      updated[index].quantity = (l * b * p).toFixed(2)
     }
     setItems(updated)
   }
@@ -109,12 +110,13 @@ function Orders() {
     updated[index].useSize = !updated[index].useSize
     updated[index].length = ''
     updated[index].breadth = ''
+    updated[index].pieces = '' 
     if (!updated[index].useSize) updated[index].quantity = ''
     setItems(updated)
   }
 
   function addItemRow() {
-    setItems([...items, { item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
+    setItems([...items, { item_name: '', length: '', breadth: '', pieces: '', quantity: '', unit_price: '', useSize: false }])
   }
 
   function removeItemRow(index) {
@@ -486,6 +488,12 @@ function Orders() {
                           <label style={styles.label}>Breadth (ft)</label>
                           <input style={styles.input} type="number" placeholder="e.g. 4"
                             value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
+                        </div>
+                        <div style={{ paddingTop: '16px', fontSize: '18px' }}>×</div>
+                        <div style={{ flex: 1 }}>
+                          <label style={styles.label}>Pcs</label>
+                          <input style={styles.input} type="number" placeholder="1"
+                            value={item.pieces} onChange={e => handleItemChange(index, 'pieces', e.target.value)} />
                         </div>
                         <div style={{ paddingTop: '16px', fontSize: '18px' }}>=</div>
                         <div style={{ flex: 1 }}>

@@ -1,17 +1,24 @@
 import { useState, useEffect } from 'react'
-import { getDashboard } from '../services/api'
+import { getDashboard, sendBillWhatsApp, getWhatsAppStatus } from '../services/api'
 import { useNavigate } from 'react-router-dom'
 
 function Dashboard() {
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [dueDateFilter, setDueDateFilter] = useState('all') // 'overdue' | 'today' | 'week' | 'all'
+  const [waStatus, setWaStatus] = useState('disconnected')
+  const [waSendModal, setWaSendModal] = useState(null)
+  const [selectedUpiForWA, setSelectedUpiForWA] = useState('')
+  const [waMessage, setWaMessage] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
     getDashboard()
       .then(res => { setData(res.data); setLoading(false) })
       .catch(() => setLoading(false))
+    getWhatsAppStatus()
+      .then(res => setWaStatus(res.data.status))
+      .catch(() => {})
   }, [])
 
   if (loading) return <p style={{ padding: '20px' }}>Loading...</p>
@@ -231,6 +238,26 @@ function Dashboard() {
                       <span style={{ ...styles.badge, backgroundColor: statusColor(r.status) }}>
                         {r.status?.replace('_', ' ')}
                       </span>
+                      {r.balance_due > 0 && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            if (!r.phone) return setWaMessage('Customer ka phone number nahi hai.')
+                            setSelectedUpiForWA('')
+                            setWaSendModal(r)
+                          }}
+                          style={{
+                            marginLeft: '8px',
+                            backgroundColor: waStatus === 'ready' ? '#25D366' : '#ccc',
+                            color: '#fff', border: 'none', padding: '3px 10px',
+                            borderRadius: '4px', cursor: waStatus === 'ready' ? 'pointer' : 'not-allowed',
+                            fontSize: '11px'
+                          }}
+                          title={waStatus === 'ready' ? 'Payment reminder bhejo' : 'WhatsApp connected nahi'}
+                        >
+                          📱 WA
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -250,6 +277,82 @@ function Dashboard() {
           </table>
         )}
       </div>
+    {waMessage && (
+        <p
+          onClick={() => setWaMessage('')}
+          style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+            backgroundColor: '#1a1a2e', color: '#fff', padding: '10px 20px',
+            borderRadius: '8px', cursor: 'pointer', zIndex: 2000, fontSize: '14px' }}
+        >
+          {waMessage}
+        </p>
+      )}
+
+      {waSendModal && (
+        <div
+          onClick={() => setWaSendModal(null)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px',
+              width: '380px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <h3 style={{ marginBottom: '6px', fontSize: '16px' }}>📱 Payment Reminder</h3>
+            <p style={{ fontSize: '13px', color: '#888', marginBottom: '12px' }}>
+              {waSendModal.firm_name} — Order #{waSendModal.order_id}
+            </p>
+            <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '16px', fontWeight: 'bold' }}>
+              ⚠️ Balance Due: ₹{waSendModal.balance_due}
+            </p>
+            <label style={{ fontSize: '13px', color: '#555', display: 'block', marginBottom: '6px' }}>
+              UPI QR bhejna hai? Account select karo:
+            </label>
+            <select
+              value={selectedUpiForWA}
+              onChange={e => setSelectedUpiForWA(e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: '6px',
+                border: '1px solid #ddd', fontSize: '14px', marginBottom: '20px' }}
+            >
+              <option value="">❌ QR mat bhejo</option>
+              {[
+                { label: 'BOI Shop Account', upiId: 'boism-9950580621@boi' },
+                { label: 'Google Pay - Rampratap Painter', upiId: 'gpay-11263065173@okbizaxis' },
+                { label: 'PhonePe - Bhavya Printers', upiId: 'q214575569@ybl' },
+                { label: 'Amazon Pay - Deepak', upiId: '7073580621@yapl' }
+              ].map(acc => (
+                <option key={acc.upiId} value={acc.upiId}>{acc.label}</option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setWaSendModal(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px',
+                  border: '1px solid #ddd', backgroundColor: '#fff',
+                  cursor: 'pointer', fontSize: '14px' }}
+              >Cancel</button>
+              <button
+                onClick={() => {
+                  sendBillWhatsApp(waSendModal.order_id, selectedUpiForWA)
+                    .then(res => {
+                      setWaMessage(res.data.message)
+                      setWaSendModal(null)
+                    })
+                    .catch(err => {
+                      setWaMessage('WhatsApp error: ' + (err.response?.data?.error || 'Not connected'))
+                      setWaSendModal(null)
+                    })
+                }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px',
+                  border: 'none', backgroundColor: '#25D366', color: '#fff',
+                  cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+              >📤 Send</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

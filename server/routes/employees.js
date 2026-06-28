@@ -310,7 +310,39 @@ router.post('/generate-salary', (req, res) => {
   });
 });
 // ─────────────────────────────────────────
-// DELETE /api/employees/:id
+// PUT /api/employees/:id/salary
+// ─────────────────────────────────────────
+router.put('/:id/salary', (req, res) => {
+  const { id } = req.params;
+  const { new_salary, reason, effective_date } = req.body;
+
+  if (!new_salary || isNaN(new_salary) || new_salary <= 0)
+    return res.status(400).json({ error: 'Valid salary required' });
+
+  db.get(`SELECT * FROM employees WHERE id = ?`, [id], (err, employee) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const old_salary = employee.monthly_salary;
+    const date = effective_date || nowIST().split(' ')[0];
+
+    db.run(`UPDATE employees SET monthly_salary = ? WHERE id = ?`, [new_salary, id], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+
+      db.run(`
+        INSERT INTO expenses (category, amount, expense_date, description, payment_mode, created_at)
+        VALUES ('Salary Revision', 0, ?, ?, 'cash', ?)
+      `, [
+        date,
+        `${employee.name} salary revised: ₹${old_salary} → ₹${new_salary}${reason ? ' | Reason: ' + reason : ''}`,
+        nowIST()
+      ], (err) => {
+        if (err) console.warn('History log failed:', err.message);
+        res.json({ message: 'Salary updated', old_salary, new_salary: parseInt(new_salary) });
+      });
+    });
+  });
+});
 // Employee + saara related data delete karta hai
 // ─────────────────────────────────────────
 router.delete('/:id', (req, res) => {

@@ -547,7 +547,7 @@ router.get('/ledger/date', (req, res) => {
 
   // Follow-up order payments
   db.all(`
-    SELECT payments.amount,
+    SELECT payments.id, payments.amount,
       CASE
         WHEN payments.payment_mode = 'upi' AND payments.upi_account IS NOT NULL
         THEN payments.upi_account
@@ -564,10 +564,10 @@ router.get('/ledger/date', (req, res) => {
 
     // Advance UPI payments
     db.all(`
-      SELECT upi_transactions.amount, upi_transactions.upi_account as payment_mode,
+      SELECT upi_transactions.id, upi_transactions.amount, upi_transactions.upi_account as payment_mode,
         upi_transactions.created_at,
         COALESCE(customers.firm_name, upi_transactions.customer_name) as party_name,
-        'Order Payment' as type
+        'Order Payment' as type, 1 as is_advance
       FROM upi_transactions
       LEFT JOIN customers ON upi_transactions.customer_id = customers.id
       WHERE upi_transactions.transaction_date = ?
@@ -578,8 +578,8 @@ router.get('/ledger/date', (req, res) => {
 
       // Advance Cash payments
       db.all(`
-        SELECT cash_income.amount, 'cash' as payment_mode, cash_income.created_at,
-          customers.firm_name as party_name, 'Order Payment' as type
+        SELECT cash_income.id, cash_income.amount, 'cash' as payment_mode, cash_income.created_at,
+          customers.firm_name as party_name, 'Order Payment' as type, 1 as is_advance
         FROM cash_income
         LEFT JOIN customers ON cash_income.customer_id = customers.id
         WHERE cash_income.income_date = ?
@@ -603,7 +603,7 @@ router.get('/ledger/date', (req, res) => {
 
           // Non-order UPI payments
           db.all(`
-            SELECT amount, upi_account as payment_mode,
+            SELECT upi_transactions.id, amount, upi_account as payment_mode,
               COALESCE(customers.firm_name, 'Unknown') as party_name, 'UPI Payment' as type
             FROM upi_transactions
             LEFT JOIN customers ON upi_transactions.customer_id = customers.id
@@ -614,7 +614,7 @@ router.get('/ledger/date', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
 
             db.all(`
-                SELECT expenses.amount, expenses.payment_mode, expenses.category,
+                SELECT expenses.id, expenses.amount, expenses.payment_mode, expenses.category,
                   expenses.upi_account,
                   CASE
                     WHEN expenses.category = 'Commission' AND expenses.customer_name IS NOT NULL
@@ -902,5 +902,115 @@ router.post('/denomination-drawer/set-baseline', (req, res) => {
     });
   });
 });
+
+// ─────────────────────────────────────────
+// DELETE /api/daily/entry — delete any ledger entry by type+id (password protected)
+// ─────────────────────────────────────────
+const DELETE_PASSWORD = '2354'
+
+router.delete('/entry', (req, res) => {
+  const { password, type, id } = req.body
+
+  if (password !== DELETE_PASSWORD) {
+    return res.status(403).json({ error: 'Wrong password. Entry delete nahi hui.' })
+  }
+  if (!type || !id) {
+    return res.status(400).json({ error: 'type and id are required' })
+  }
+
+  if (type === 'expense') {
+    db.run(`DELETE FROM expenses WHERE id = ?`, [id], function(err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Entry not found' })
+      res.json({ message: 'Expense deleted successfully' })
+    })
+
+  } else if (type === 'cash_income') {
+    // Also delete linked upi_transaction if payment_mode = upi
+    db.get(`SELECT * FROM cash_income WHERE id = ?`, [id], (err, row) => {
+      if (err) return res.status(500).json({ error: err.message })
+      if (!row) return res.status(404).json({ error: 'Entry not found' })
+
+      db.run(`DELETE FROM cash_income WHERE id = ?`, [id], function(err) {
+        if (err) return res.status(500).json({ error: err.message })
+
+        // If UPI, also clean up upi_transactions
+        if (row.payment_mode === 'upi' && row.upi_account) {
+          db.run(
+            `DELETE FROM upi_transactions WHERE customer_id = ? AND amount = ? AND transaction_date = ? AND order_id IS NULL LIMIT 1`,
+            [row.customer_id, row.amount, row.income_date],
+            () => {}
+          )
+        }
+        res.json({ message: 'Income entry deleted successfully' })
+      })
+    })
+
+  } else if (type === 'order_payment') {
+    // Delete from payments table + linked upi_transaction if any
+    db.get(`SELECT * FROM payments WHERE id = ?`, [id], (err, row) => {
+      if (err) return res.status(500).json({ error: err.message })
+      if (!row) return res.status(404).json({ error: 'Entry not found' })
+
+      db.run(`DELETE FROM payments WHERE id = ?`, [id], function(err) {
+        if (err) return res.status(500).json({ error: err.message })
+
+        // Recalculate order balance_due after payment deletion
+        db.get(
+          `SELECT total_amount, advance_paid, discount_amount, COALESCE(SUM(p.amount),0) as paid
+           FROM orders
+           LEFT JOIN payments p ON p.order_id = orders.id
+           WHERE orders.id = ?`,
+          [row.order_id],
+          (err, o) => {
+            if (!err && o) {
+              const newBalance = o.total_amount - o.advance_paid - (o.discount_amount || 0) - o.paid
+              db.run(`UPDATE orders SET balance_due = ? WHERE id = ?`, [newBalance, row.order_id], () => {})
+            }
+          }
+        )
+
+        // Clean up upi_transaction if UPI payment
+        if (row.payment_mode === 'upi') {
+          db.run(
+            `DELETE FROM upi_transactions WHERE order_id = ? AND amount = ? AND notes != 'Order Advance Payment' LIMIT 1`,
+            [row.order_id, row.amount],
+            () => {}
+          )
+        }
+        res.json({ message: 'Order payment deleted and balance updated' })
+      })
+    })
+
+  } else if (type === 'order_advance') {
+    // Delete advance from cash_income or upi_transactions, and reset order advance
+    db.get(`SELECT * FROM orders WHERE id = ?`, [id], (err, order) => {
+      if (err) return res.status(500).json({ error: err.message })
+      if (!order) return res.status(404).json({ error: 'Order not found' })
+
+      // Delete from whichever table stored the advance
+      if (order.advance_entry_table && order.advance_entry_id) {
+        const table = order.advance_entry_table === 'upi_transactions' ? 'upi_transactions' : 'cash_income'
+        db.run(`DELETE FROM ${table} WHERE id = ?`, [order.advance_entry_id], () => {})
+        db.run(`DELETE FROM customer_payments WHERE source = 'order_advance' AND source_id = ?`, [id], () => {})
+      }
+
+      // Reset advance on order
+      const newBalance = order.total_amount - (order.discount_amount || 0)
+      db.run(
+        `UPDATE orders SET advance_paid = 0, balance_due = ?, advance_payment_mode = NULL,
+         advance_entry_table = NULL, advance_entry_id = NULL WHERE id = ?`,
+        [newBalance, id],
+        function(err) {
+          if (err) return res.status(500).json({ error: err.message })
+          res.json({ message: 'Advance deleted and order balance reset' })
+        }
+      )
+    })
+
+  } else {
+    res.status(400).json({ error: 'Unknown entry type' })
+  }
+})
 
 module.exports = router;

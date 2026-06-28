@@ -3,7 +3,7 @@ import {
   getDailySummary,
   getExpenses, addExpense, deleteExpense, getTodaySales,
   getEmployees, getVendors, getDailyLedgerByDate, saveCashIncome, getCustomers,
-  getCashDrawer, getDenominationDrawer, setDrawerBaseline
+  getCashDrawer, getDenominationDrawer, setDrawerBaseline, deleteLedgerEntry
 } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
 
@@ -52,6 +52,9 @@ function DailySales() {
   const [baselineCounts, setBaselineCounts] = useState({})
   const [baselineSaving, setBaselineSaving] = useState(false)
   const [suggestedBaseline, setSuggestedBaseline] = useState(null)
+  const [deleteModal, setDeleteModal] = useState(null) // { type, id, label }
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const [cashForm, setCashForm] = useState({
     customer_id: '',
@@ -202,6 +205,22 @@ function DailySales() {
     setShowDropdown(false)
   }
 
+  function handleLedgerDelete(e) {
+    e.preventDefault()
+    if (!deletePassword) return showMsg('Password daalo.', 'error')
+    setDeleteLoading(true)
+    deleteLedgerEntry(deletePassword, deleteModal.type, deleteModal.id)
+      .then(() => {
+        showMsg('Entry delete ho gayi ✅')
+        setDeleteModal(null)
+        setDeletePassword('')
+        fetchLedgerByDate(ledgerDate)
+      })
+      .catch(err => {
+        showMsg(err.response?.data?.error || 'Delete failed.', 'error')
+      })
+      .finally(() => setDeleteLoading(false))
+  }
   function handleSaveCashIncome(e) {
     e.preventDefault()
     if (!cashForm.customer_id) return showMsg('Please select a customer.', 'error')
@@ -1175,7 +1194,7 @@ function DailySales() {
                     <div style={styles.ledgerEmpty}>No income recorded for this date.</div>
                   ) : (
                     ledgerByDate.income.map((item, i) => (
-                      <div key={i} style={styles.ledgerRow}>
+                      <div key={i} style={{ ...styles.ledgerRow, position: 'relative' }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
                             {item.party_name || '—'}
@@ -1205,6 +1224,21 @@ function DailySales() {
                             {item.payment_mode === 'cash' || item.payment_mode === null ? '💵 Cash' : `📱 ${item.payment_mode}`}
                           </div>
                         </div>
+                        <button
+                          onClick={() => setDeleteModal({
+                            type: item.type === 'Order Payment' && item.id
+                              ? (item.is_advance ? 'order_advance' : 'order_payment')
+                              : 'cash_income',
+                            id: item.id,
+                            label: `${item.party_name} — ₹${item.amount} (${item.type})`
+                          })}
+                          style={{
+                            backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c',
+                            borderRadius: '4px', padding: '3px 8px', fontSize: '11px',
+                            cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
+                          }}
+                          title="Delete this entry"
+                        >🗑</button>
                       </div>
                     ))
                   )}
@@ -1259,6 +1293,19 @@ function DailySales() {
                             {exp.payment_mode === 'upi' ? `📱 ${exp.upi_account || 'UPI'}` : '💵 Cash'}
                           </div>
                         </div>
+                        <button
+                          onClick={() => setDeleteModal({
+                            type: 'expense',
+                            id: exp.id,
+                            label: `${exp.party_name} — ₹${exp.amount} (${exp.category || 'Expense'})`
+                          })}
+                          style={{
+                            backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c',
+                            borderRadius: '4px', padding: '3px 8px', fontSize: '11px',
+                            cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
+                          }}
+                          title="Delete this entry"
+                        >🗑</button>
                       </div>
                     ))
                   )}
@@ -1426,6 +1473,64 @@ function DailySales() {
         </div>
       )}
 
+    {deleteModal && (
+        <div
+          onClick={() => { setDeleteModal(null); setDeletePassword('') }}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px',
+              width: '360px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <h3 style={{ marginBottom: '8px', color: '#e74c3c' }}>🗑 Entry Delete Karo</h3>
+            <p style={{ fontSize: '13px', color: '#555', marginBottom: '4px' }}>Entry:</p>
+            <div style={{ backgroundColor: '#fff5f5', border: '1px solid #fdd',
+              borderRadius: '6px', padding: '10px 14px', fontSize: '13px',
+              color: '#c0392b', marginBottom: '16px', fontWeight: 'bold' }}>
+              {deleteModal.label}
+            </div>
+            <p style={{ fontSize: '12px', color: '#e74c3c', marginBottom: '16px' }}>
+              ⚠️ Ye entry permanently delete hogi aur sab jagah se hat jaegi. Password daalo:
+            </p>
+            <form onSubmit={handleLedgerDelete}>
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={deletePassword}
+                onChange={e => setDeletePassword(e.target.value)}
+                autoFocus
+                style={{ ...styles.input, marginBottom: '16px', fontSize: '18px',
+                  letterSpacing: '4px', textAlign: 'center' }}
+              />
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteModal(null); setDeletePassword('') }}
+                  style={{ flex: 1, padding: '10px', borderRadius: '6px',
+                    border: '1px solid #ddd', backgroundColor: '#fff',
+                    cursor: 'pointer', fontSize: '14px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteLoading}
+                  style={{ flex: 1, padding: '10px', borderRadius: '6px',
+                    border: 'none', backgroundColor: '#e74c3c', color: '#fff',
+                    cursor: deleteLoading ? 'not-allowed' : 'pointer',
+                    fontSize: '14px', fontWeight: 'bold',
+                    opacity: deleteLoading ? 0.6 : 1 }}
+                >
+                  {deleteLoading ? 'Deleting...' : '🗑 Delete'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

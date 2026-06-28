@@ -90,7 +90,7 @@ router.get('/bill/:orderId', (req, res) => {
             const wmBoxY = 105
             const wmBoxH = doc.page.height - wmBoxY - FOOTER_H_RESERVED
 
-            doc.opacity(0.5)
+            doc.opacity(0.65)
             doc.image(SHOP.watermarkPath, MARGIN, wmBoxY, {
               fit: [CONTENT, wmBoxH],
               align: 'center',
