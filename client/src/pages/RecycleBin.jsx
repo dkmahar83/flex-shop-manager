@@ -39,7 +39,7 @@ function RecycleBin() {
     <div>
       <h2 style={{ marginBottom: '8px' }}>🗑️ Recycle Bin</h2>
       <p style={{ color: '#888', marginBottom: '20px', fontSize: '14px' }}>
-        Items deleted in last 24 hours. After 24 hours they are permanently gone.
+        Items deleted in last 30 days. After 30 days they are permanently gone.
       </p>
 
       {message && (
