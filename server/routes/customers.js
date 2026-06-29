@@ -37,10 +37,20 @@ router.get('/:id', (req, res) => {
     db.all(`SELECT * FROM orders WHERE customer_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [id], (err, orders) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      db.all(`SELECT id, amount, payment_date as date, note as source, 'Order Payment' as payment_type, created_at FROM payments WHERE customer_id = ?`, [id], (err, orderPayments) => {
+      db.all(`
+        SELECT id, amount, payment_date as date,
+          CASE
+            WHEN payment_mode = 'upi' AND upi_account IS NOT NULL THEN upi_account
+            WHEN payment_mode = 'upi' THEN 'UPI'
+            WHEN payment_mode = 'cash' OR payment_mode IS NULL THEN 'Cash'
+            ELSE payment_mode
+          END as source,
+          'Order Payment' as payment_type, payment_mode, upi_account, note, created_at
+        FROM payments WHERE customer_id = ?
+      `, [id], (err, orderPayments) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type, created_at FROM upi_transactions WHERE customer_id = ? AND order_id IS NULL`, [id], (err, upiPayments) => {
+        db.all(`SELECT id, amount, transaction_date as date, upi_account as source, 'UPI' as payment_type, created_at FROM upi_transactions WHERE customer_id = ? AND order_id IS NULL AND (notes NOT LIKE 'EXPENSE:%' OR notes IS NULL)`, [id], (err, upiPayments) => {
           if (err) return res.status(500).json({ error: err.message });
 
           db.all(`SELECT id, amount, received_date as date, bank_name as source, status, cheque_number, 'Cheque' as payment_type FROM cheques WHERE customer_id = ?`, [id], (err, chequePayments) => {
@@ -65,6 +75,7 @@ router.get('/:id', (req, res) => {
               WHERE customer_id = ?
               AND (notes NOT IN ('Order Advance Payment', 'Order Payment') OR notes IS NULL)
               AND (notes NOT LIKE 'Cheque Cleared%')
+              AND (notes NOT LIKE 'Galla Opening Balance%')
             `, [id], (err, cashIncomePayments) => {
               if (err) return res.status(500).json({ error: err.message });
 
@@ -94,7 +105,7 @@ router.get('/:id', (req, res) => {
                 const totalDiscount = orders.reduce((sum, o) => sum + Number(o.discount_amount || 0), 0);
                 const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0);
                 const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-                const totalUpi = [...upiPayments, ...cashIncomePayments.filter(p => p.payment_type === 'UPI')].reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const totalUpi = upiPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
                 const totalChequeCleared = chequePayments
                   .filter(p => p.status === 'cleared')
                   .reduce((sum, p) => sum + Number(p.amount || 0), 0);
@@ -116,7 +127,7 @@ router.get('/:id', (req, res) => {
                   ...orderPayments,
                   ...upiPayments,
                   ...chequePayments,
-                  ...cashIncomePayments,
+                  ...cashIncomePayments.filter(p => p.payment_type !== 'UPI'),
                   ...commissionPayments
                 ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
@@ -176,7 +187,7 @@ router.delete('/:id', (req, res) => {
   db.run(`UPDATE customers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: 'Customer not found' });
-    res.json({ message: 'Customer deleted (recoverable for 24 hours)' });
+    res.json({ message: 'Customer deleted (recoverable for 30 days)' });
   });
 });
 
@@ -194,7 +205,7 @@ router.get('/deleted/recent', (req, res) => {
   db.all(`
     SELECT * FROM customers 
     WHERE deleted_at IS NOT NULL 
-    AND deleted_at > datetime('now', '-24 hours')
+    AND deleted_at > datetime('now', '-30 days')
     ORDER BY deleted_at DESC
   `, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });

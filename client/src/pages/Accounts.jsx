@@ -5,7 +5,7 @@ import {
   getUpiTransactions, getUpiSummary, addUpiTransaction,
   getVendors, getVendor, addVendor, updateVendor, deleteVendor,
   addVendorPurchase, addVendorPayment,
-  getCustomers, getExpenses
+  getCustomers, getExpenses, deleteLedgerEntry
 } from '../services/api'
 
 const UPI_ACCOUNTS = [
@@ -231,6 +231,9 @@ function Accounts() {
   const [upiForm, setUpiForm]                 = useState({ upi_account: '', customer_name: '', customer_id: '', amount: '', transaction_date: '', utr_number: '', order_id: '', notes: '' })
   const [showUpiForm, setShowUpiForm]         = useState(false)
   const [upiFilter, setUpiFilter]             = useState('')
+  const [upiDeleteModal, setUpiDeleteModal]       = useState(null) // { type, id, label }
+  const [upiDeletePassword, setUpiDeletePassword] = useState('')
+  const [upiDeleteLoading, setUpiDeleteLoading]   = useState(false)
 
   // ── Vendors ──
   const [vendors, setVendors]               = useState([])
@@ -312,6 +315,21 @@ function Accounts() {
       setUpiForm({ upi_account: '', customer_name: '', customer_id: '', amount: '', transaction_date: '', utr_number: '', order_id: '', notes: '' })
       setShowUpiForm(false); fetchUpi()
     }).catch(() => notify('Error recording UPI transaction.'))
+  }
+
+  function handleUpiDelete(e) {
+    e.preventDefault()
+    if (!upiDeletePassword) return notify('Password daalo.')
+    setUpiDeleteLoading(true)
+    deleteLedgerEntry(upiDeletePassword, upiDeleteModal.type, upiDeleteModal.id)
+      .then(() => {
+        notify('Entry delete ho gayi ✅')
+        setUpiDeleteModal(null)
+        setUpiDeletePassword('')
+        fetchUpi()
+      })
+      .catch(err => notify(err.response?.data?.error || 'Delete failed.'))
+      .finally(() => setUpiDeleteLoading(false))
   }
 
   // ── Vendor handlers ──
@@ -589,7 +607,7 @@ function Accounts() {
           )}
           {upiTransactions.length === 0 ? <p style={{ color: '#888' }}>No UPI transactions for this period.</p> : (
             <table style={styles.table}>
-              <thead><tr><th style={styles.th}>Date</th><th style={styles.th}>UPI Account</th><th style={styles.th}>From</th><th style={styles.th}>Amount</th><th style={styles.th}>UTR No.</th><th style={styles.th}>Notes</th><th style={styles.th}>Type</th></tr></thead>
+              <thead><tr><th style={styles.th}>Date</th><th style={styles.th}>UPI Account</th><th style={styles.th}>From</th><th style={styles.th}>Amount</th><th style={styles.th}>UTR No.</th><th style={styles.th}>Notes</th><th style={styles.th}>Type</th><th style={styles.th}>Action</th></tr></thead>
               <tbody>
                 {upiTransactions.map(t => (
                   <tr key={`${t.direction}-${t.id}`} style={styles.tr} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}>
@@ -600,6 +618,22 @@ function Accounts() {
                     <td style={styles.td}><span style={{ fontSize: '12px', color: '#888' }}>{t.utr_number || '—'}</span></td>
                     <td style={styles.td}><span style={{ fontSize: '12px', color: '#888' }}>{t.notes || '—'}</span></td>
                     <td style={styles.td}><span style={{ ...styles.badge, backgroundColor: t.direction === 'debit' ? '#e74c3c' : '#27ae60' }}>{t.direction === 'debit' ? '↑ Paid Out' : '↓ Received'}</span></td>
+                    <td style={styles.td}>
+                      {t.direction === 'credit' && (
+                        <button
+                          onClick={() => setUpiDeleteModal({
+                            type: t.source === 'cash_income' ? 'cash_income' : 'upi_income',
+                            id: t.id,
+                            label: `${t.customer_name || 'Unknown'} — ₹${t.amount} (${t.upi_account})`
+                          })}
+                          style={{
+                            backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c',
+                            borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
+                          }}
+                          title="Delete this entry"
+                        >🗑</button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -851,6 +885,41 @@ function Accounts() {
             </table>
           )}
         </div>
+      )}
+
+      {/* ── UPI Entry Delete Modal ── */}
+      {upiDeleteModal && (
+        <Modal title="🗑 Entry Delete Karo" onClose={() => { setUpiDeleteModal(null); setUpiDeletePassword('') }}>
+          <p style={{ fontSize: '13px', color: '#555', marginBottom: '4px' }}>Entry:</p>
+          <div style={{ backgroundColor: '#fff5f5', border: '1px solid #fdd', borderRadius: '6px', padding: '10px 14px', fontSize: '13px', color: '#c0392b', marginBottom: '16px', fontWeight: 'bold' }}>
+            {upiDeleteModal.label}
+          </div>
+          <p style={{ fontSize: '12px', color: '#e74c3c', marginBottom: '16px' }}>
+            ⚠️ Ye entry permanently delete hogi aur sab jagah se hat jaegi. Password daalo:
+          </p>
+          <form onSubmit={handleUpiDelete}>
+            <input
+              type="password"
+              placeholder="Enter password"
+              value={upiDeletePassword}
+              onChange={e => setUpiDeletePassword(e.target.value)}
+              autoFocus
+              style={{ ...styles.input, marginBottom: '16px', fontSize: '18px', letterSpacing: '4px', textAlign: 'center' }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => { setUpiDeleteModal(null); setUpiDeletePassword('') }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' }}
+              >Cancel</button>
+              <button
+                type="submit"
+                disabled={upiDeleteLoading}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#e74c3c', color: '#fff', cursor: upiDeleteLoading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: upiDeleteLoading ? 0.6 : 1 }}
+              >{upiDeleteLoading ? 'Deleting...' : '🗑 Delete'}</button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* ── Add Vendor Modal ── */}

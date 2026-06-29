@@ -1227,8 +1227,12 @@ function DailySales() {
                         <button
                           onClick={() => setDeleteModal({
                             type: item.type === 'Order Payment' && item.id
-                              ? (item.is_advance ? 'order_advance' : 'order_payment')
-                              : 'cash_income',
+                              ? (item.is_advance
+                                  ? (item.payment_mode === 'cash' ? 'order_advance_cash' : 'order_advance_upi')
+                                  : 'order_payment')
+                              : (item.type === 'UPI Payment'
+                                  ? (item.source === 'cash_income' ? 'cash_income' : 'upi_income')
+                                  : 'cash_income'),
                             id: item.id,
                             label: `${item.party_name} — ₹${item.amount} (${item.type})`
                           })}

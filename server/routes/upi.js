@@ -27,7 +27,7 @@ router.get('/', (req, res) => {
 
   const query = `
     SELECT id, upi_account, customer_name, customer_id, amount, transaction_date,
-          utr_number, notes, 'credit' as direction, created_at
+          utr_number, notes, 'credit' as direction, created_at, 'upi_transactions' as source
     FROM upi_transactions
     WHERE 1=1 ${dateFilter} ${accountFilter}
 
@@ -37,7 +37,7 @@ router.get('/', (req, res) => {
        customers.firm_name as customer_name,
        cash_income.customer_id, cash_income.amount, 
        cash_income.income_date as transaction_date,
-       NULL as utr_number, cash_income.notes, 'credit' as direction, cash_income.created_at
+       NULL as utr_number, cash_income.notes, 'credit' as direction, cash_income.created_at, 'cash_income' as source
     FROM cash_income
     LEFT JOIN customers ON cash_income.customer_id = customers.id
     WHERE cash_income.payment_mode = 'upi' AND cash_income.upi_account IS NOT NULL
@@ -49,7 +49,7 @@ router.get('/', (req, res) => {
            COALESCE(vendors.name, employees.name, expenses.category) as customer_name,
           NULL as customer_id, expenses.amount * -1 as amount,
           expenses.expense_date as transaction_date,
-          NULL as utr_number, expenses.description as notes, 'debit' as direction, expenses.created_at
+          NULL as utr_number, expenses.description as notes, 'debit' as direction, expenses.created_at, 'expense' as source
     FROM expenses
     LEFT JOIN vendors ON expenses.paid_to_type = 'vendor' AND expenses.paid_to_id = vendors.id
     LEFT JOIN employees ON expenses.paid_to_type = 'employee' AND expenses.paid_to_id = employees.id

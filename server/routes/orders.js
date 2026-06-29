@@ -460,7 +460,7 @@ router.delete('/:id', (req, res) => {
         });
       }
 
-      res.json({ message: 'Order deleted (recoverable for 24 hours)' });
+      res.json({ message: 'Order deleted (recoverable for 30 days)' });
     });
   });
 });
@@ -485,7 +485,7 @@ router.get('/deleted/recent', (req, res) => {
     FROM orders
     JOIN customers ON orders.customer_id = customers.id
     WHERE orders.deleted_at IS NOT NULL
-    AND orders.deleted_at > datetime('now', '-24 hours')
+    AND orders.deleted_at > datetime('now', '-30 days')
     ORDER BY orders.deleted_at DESC
   `, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
