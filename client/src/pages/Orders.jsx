@@ -58,7 +58,7 @@ function Orders() {
   })
 
   const [items, setItems] = useState([
-    { item_name: '', length: '', breadth: '', pieces: '', quantity: '', unit_price: '', useSize: false }
+    { item_name: '', length: '', breadth: '', pieces: '', quantity: '', unit_price: '', useSize: false, item_date: new Date().toISOString().split('T')[0] }
   ])
 
   useEffect(() => {
@@ -116,7 +116,7 @@ function Orders() {
   }
 
   function addItemRow() {
-    setItems([...items, { item_name: '', length: '', breadth: '', pieces: '', quantity: '', unit_price: '', useSize: false }])
+    setItems([...items, { item_name: '', length: '', breadth: '', pieces: '', quantity: '', unit_price: '', useSize: false, item_date: new Date().toISOString().split('T')[0] }])
   }
 
   function removeItemRow(index) {
@@ -153,7 +153,7 @@ function Orders() {
             length: '', breadth: '', useSize: false
           })))
         } else {
-          setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
+          setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false, item_date: new Date().toISOString().split('T')[0] }])
         }
       })
     setShowForm(true)
@@ -191,7 +191,10 @@ function Orders() {
         items: validItems.map(i => ({
           item_name: i.item_name,
           quantity: parseFloat(i.quantity) || 1,
-          unit_price: parseFloat(i.unit_price) || 0
+          unit_price: parseFloat(i.unit_price) || 0,
+          length: i.useSize ? parseFloat(i.length) || null : null,
+          breadth: i.useSize ? parseFloat(i.breadth) || null : null,
+          item_date: i.item_date || null
         }))
       }).then(() => {
         return api.put(`/orders/${editingOrder.id}`, {
@@ -228,7 +231,10 @@ function Orders() {
       items: items.map(i => ({
         item_name: i.item_name,
         quantity: parseFloat(i.quantity) || 1,
-        unit_price: parseFloat(i.unit_price) || 0
+        unit_price: parseFloat(i.unit_price) || 0,
+        length: i.useSize ? parseFloat(i.length) || null : null,
+        breadth: i.useSize ? parseFloat(i.breadth) || null : null,
+        item_date: i.item_date || null
       }))
     }
 
@@ -460,6 +466,12 @@ function Orders() {
                       placeholder="Item name (e.g. Flex 180GSM, Pipe 3kg, Labour)"
                       value={item.item_name}
                       onChange={e => handleItemChange(index, 'item_name', e.target.value)}
+                    />
+                    <input
+                      type="date"
+                      style={{ ...styles.input, maxWidth: '150px', flex: 'none' }}
+                      value={item.item_date || ''}
+                      onChange={e => handleItemChange(index, 'item_date', e.target.value)}
                     />
                     <button
                       type="button"

@@ -245,12 +245,14 @@ router.post('/', (req, res) => {
         const order_id = this.lastID;
 
         const insertItem = db.prepare(`
-          INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal, length, breadth, item_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
         items.forEach(item => {
           insertItem.run([order_id, item.item_name, item.quantity, item.unit_price,
-                          item.quantity * item.unit_price]);
+                          item.quantity * item.unit_price,
+                          item.length || null, item.breadth || null,
+                          item.item_date || today]);
         });
         insertItem.finalize();
 
@@ -515,12 +517,14 @@ router.put('/:id/items', (req, res) => {
       if (err) return res.status(500).json({ error: err.message });
 
       const stmt = db.prepare(`
-        INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, item_name, quantity, unit_price, subtotal, length, breadth, item_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       items.forEach(item => {
         const subtotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0);
-        stmt.run([id, item.item_name, item.quantity, item.unit_price, subtotal]);
+        stmt.run([id, item.item_name, item.quantity, item.unit_price, subtotal,
+                  item.length || null, item.breadth || null,
+                  item.item_date || todayIST()]);
       });
       stmt.finalize();
 

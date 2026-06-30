@@ -7,14 +7,16 @@ const PDFDocument = require('pdfkit')
 //  SHOP CONFIG — apni details yahan bharo
 // ══════════════════════════════════════════
 const SHOP = {
-  name        : 'Vijay Flex & Offset',       // Shop ka naam
-  ownerName   : 'Vijay Singh',    // Owner ka naam
-  mobile      : '+91 9950580621',        // Mobile number
-  mobile2     : '+91 8824387294',                       // 2nd number (optional, khali chhod do)
-  address     : 'Near New Bus Stand, Pilibangan, Rajasthan (335803)',  // Address
-  tagline     : 'All Type of Printing Solutions',  // Tagline (optional, khali chhod do)
-  logoPath    : './assets/Logo.png',   // Logo file ka path, e.g. './assets/logo.png'
+  nameFontPath: './assets/fonts/Algerian.ttf',
+  name        : 'Vijay Flex & Offset',
+  ownerName   : 'Vijay Singh',
+  mobile      : '+91 9950580621',
+  mobile2     : '+91 8824387294',
+  address     : 'Near New Bus Stand, Aggarwal Dharamshala Road, Pilibangan, Rajasthan (335803)',
+  tagline     : 'All Type of Printing Solutions',
+  logoPath    : './assets/Logo.png',
   watermarkPath : './assets/Watermark.png',
+  signaturePath : './assets/Signature.png',
 }
 
 // GET /api/pdf/bill/:orderId
@@ -33,392 +35,549 @@ router.get('/bill/:orderId', (req, res) => {
     db.all(`SELECT * FROM order_items WHERE order_id = ?`, [orderId], (err, items) => {
       if (err) return res.status(500).json({ error: err.message })
 
-      db.all(`SELECT * FROM payments WHERE order_id = ? ORDER BY payment_date ASC`, [orderId], (err, payments) => {
+      db.all(`SELECT * FROM payments WHERE order_id = ? ORDER BY payment_date ASC, id ASC`, [orderId], (err, payments) => {
         if (err) return res.status(500).json({ error: err.message })
 
-        const doc = new PDFDocument({ 
-          size: 'A4', 
-          margin: 50,
-          bufferPages: true  // extra auto-pages rokta hai
+        db.all(`SELECT * FROM cheques WHERE order_id = ? ORDER BY received_date ASC`, [orderId], (err, cheques) => {
+          if (err) return res.status(500).json({ error: err.message })
+
+          renderBill(res, order, items, payments, cheques || [])
         })
-
-        res.setHeader('Content-Type', 'application/pdf')
-        res.setHeader('Content-Disposition', `attachment; filename=${order.order_number || `bill-${orderId}`}.pdf`)
-        doc.pipe(res)
-
-        // ── COLORS ──
-        const PRIMARY    = '#1a1a2e'
-        const ACCENT     = '#2ecc71'
-        const GREEN      = '#27ae60'
-        const RED        = '#e74c3c'
-        const GRAY       = '#888888'
-        const LIGHT_GRAY = '#f4f4f4'
-        const WHITE      = '#ffffff'
-
-        const PAGE_W  = doc.page.width
-        const MARGIN  = 50
-        const CONTENT = PAGE_W - MARGIN * 2   // 495pt usable width
-
-        // ── HELPER: currency (pdfkit built-in fonts don't render ₹) ──
-        const rs = (val) => `Rs. ${parseFloat(val || 0).toFixed(0)}`
-
-        // ── HELPER: draw horizontal rule ──
-        const hRule = (y, color = '#dddddd', width = 1) => {
-          doc.moveTo(MARGIN, y)
-             .lineTo(MARGIN + CONTENT, y)
-             .strokeColor(color)
-             .lineWidth(width)
-             .stroke()
-        }
-
-        // ── HELPER: safe text (truncate to fit column) ──
-        const safeText = (text, maxChars) =>
-          text && text.length > maxChars ? text.substring(0, maxChars - 1) + '…' : (text || '—')
-
-        // ══════════════════════════════════════════
-        //  HEADER BAND
-        // ══════════════════════════════════════════
-        doc.rect(0, 0, PAGE_W, 95).fill(PRIMARY)
-        doc.rect(0, 92, PAGE_W, 3).fill(ACCENT)   // accent stripe
-
-        // ══════════════════════════════════════════
-        //  WATERMARK — centered in white space, header to footer
-        // ══════════════════════════════════════════
-        if (SHOP.watermarkPath) {
-          try {
-            const FOOTER_H_RESERVED = 72   // must match FOOTER_H used later in this file
-            const wmBoxY = 105
-            const wmBoxH = doc.page.height - wmBoxY - FOOTER_H_RESERVED
-
-            doc.opacity(0.65)
-            doc.image(SHOP.watermarkPath, MARGIN, wmBoxY, {
-              fit: [CONTENT, wmBoxH],
-              align: 'center',
-              valign: 'center'
-            })
-            doc.opacity(1)
-          } catch (e) {
-            // watermark not found — skip silently, bill still works fine
-          }
-        }
-
-        // Logo (agar path set hai toh show karo)
-        let textStartX = MARGIN
-        if (SHOP.logoPath) {
-          try {
-            doc.image(SHOP.logoPath, MARGIN, 10, { width: 60, height: 60 })
-            textStartX = MARGIN + 70   // text logo ke baad start hoga
-          } catch (e) {
-            // logo load na ho toh ignore karo, text se hi kaam chalega
-          }
-        }
-
-        // Shop name
-        doc.fill(WHITE)
-           .fontSize(22)
-           .font('Helvetica-Bold')
-           .text(SHOP.name, textStartX, 14)
-
-        // Owner name + mobile
-        const contactLine = SHOP.mobile2
-          ? `${SHOP.ownerName}  |  ${SHOP.mobile}  /  ${SHOP.mobile2}`
-          : `${SHOP.ownerName}  |  ${SHOP.mobile}`
-
-        doc.fill(ACCENT)
-           .fontSize(9)
-           .font('Helvetica-Bold')
-           .text(contactLine, textStartX, 42)
-
-        // Address + tagline
-        doc.fill('#aaaaaa')
-           .fontSize(9)
-           .font('Helvetica')
-           .text(`${SHOP.address}  |  ${SHOP.tagline}`, textStartX, 57)
-
-        // Invoice number (top-right)
-        doc.fill(ACCENT)
-           .fontSize(13)
-           .font('Helvetica-Bold')
-           .text(`INVOICE #${order.order_number || orderId}`, 0, 18, { align: 'right', width: PAGE_W - MARGIN })
-
-        // Date (top-right)
-        const orderDate = order.created_at
-          ? new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-          : new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-
-        doc.fill('#aaaaaa')
-           .fontSize(9)
-           .font('Helvetica')
-           .text(orderDate, 0, 40, { align: 'right', width: PAGE_W - MARGIN })
-
-        // ══════════════════════════════════════════
-        //  CUSTOMER + ORDER INFO
-        // ══════════════════════════════════════════
-        const INFO_TOP = 110
-        const INFO_H   = 95
-        doc.rect(MARGIN, INFO_TOP, CONTENT, INFO_H)
-           .fill(LIGHT_GRAY)
-        hRule(INFO_TOP + INFO_H, '#dddddd')
-
-        // Left: Bill To
-        doc.fill(GRAY)
-           .fontSize(8)
-           .font('Helvetica-Bold')
-           .text('BILL TO', MARGIN + 14, INFO_TOP + 12)
-
-        doc.fill(PRIMARY)
-           .fontSize(15)
-           .font('Helvetica-Bold')
-           .text(safeText(order.firm_name, 35), MARGIN + 14, INFO_TOP + 26)
-
-        let infoLineY = INFO_TOP + 48
-        if (order.contact_name) {
-          doc.fill(GRAY).fontSize(9).font('Helvetica')
-             .text(`Contact : ${order.contact_name}`, MARGIN + 14, infoLineY)
-          infoLineY += 14
-        }
-        if (order.phone) {
-          doc.fill(GRAY).fontSize(9)
-             .text(`Phone   : ${order.phone}`, MARGIN + 14, infoLineY)
-        }
-
-        // Right: Order Details
-        const META_X = MARGIN + CONTENT * 0.58
-        doc.fill(GRAY)
-           .fontSize(8)
-           .font('Helvetica-Bold')
-           .text('ORDER DETAILS', META_X, INFO_TOP + 12)
-
-        const statusText = (order.status || 'pending').replace(/_/g, ' ').toUpperCase()
-        const statusColor = order.status === 'delivered' ? GREEN
-                          : order.status === 'cancelled' ? RED
-                          : '#e67e22'
-
-        doc.fill(PRIMARY).fontSize(10).font('Helvetica')
-           .text(`Order # : ${order.order_number || orderId}`, META_X, INFO_TOP + 26)
-
-        doc.fill(statusColor).fontSize(10).font('Helvetica-Bold')
-           .text(`Status  : ${statusText}`, META_X, INFO_TOP + 40)
-
-        doc.fill(GRAY).fontSize(9).font('Helvetica-Bold')
-        if (order.description) {
-          doc.fill(PRIMARY).fontSize(11).font('Helvetica-Bold')
-             .text(safeText(order.description, 40), META_X, INFO_TOP + 56, { width: 180 })
-        }
-
-        // ══════════════════════════════════════════
-        //  ITEMS TABLE
-        // ══════════════════════════════════════════
-        const TBL_TOP  = INFO_TOP + INFO_H + 18
-        const ROW_H    = 28
-        const COL_ITEM = MARGIN + 10
-        const COL_QTY  = MARGIN + 240
-        const COL_RATE = MARGIN + 330
-        const COL_AMT  = MARGIN + 410
-
-        // Table header band
-        doc.rect(MARGIN, TBL_TOP, CONTENT, 28).fill(PRIMARY)
-
-        doc.fill(WHITE).fontSize(9).font('Helvetica-Bold')
-        doc.text('ITEM / DESCRIPTION',     COL_ITEM, TBL_TOP + 10)
-        doc.text('QTY / SQ.FT',            COL_QTY,  TBL_TOP + 10)
-        doc.text('RATE (Rs.)',              COL_RATE, TBL_TOP + 10)
-        doc.text('AMOUNT (Rs.)',            COL_AMT,  TBL_TOP + 10)
-
-        // Rows
-        let rowY        = TBL_TOP + 28
-        let totalAmount = 0
-
-        items.forEach((item, index) => {
-          const subtotal = parseFloat(item.subtotal) || (parseFloat(item.quantity) * parseFloat(item.unit_price))
-          totalAmount += subtotal
-
-          // Check if we need a new page
-          if (rowY + ROW_H > doc.page.height - 180) {
-            doc.addPage()
-            rowY = 60
-            // Redraw mini header on new page
-            doc.rect(MARGIN, rowY - 28, CONTENT, 28).fill(PRIMARY)
-            doc.fill(WHITE).fontSize(9).font('Helvetica-Bold')
-            doc.text('ITEM / DESCRIPTION', COL_ITEM, rowY - 18)
-            doc.text('QTY / SQ.FT',        COL_QTY,  rowY - 18)
-            doc.text('RATE (Rs.)',          COL_RATE, rowY - 18)
-            doc.text('AMOUNT (Rs.)',        COL_AMT,  rowY - 18)
-          }
-
-          // Alternating row background
-          if (index % 2 === 0) {
-            doc.rect(MARGIN, rowY, CONTENT, ROW_H).fill('#fafafa')
-          }
-
-          doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold')
-             .text(safeText(item.item_name, 30), COL_ITEM, rowY + 9, { width: 220 })
-
-          doc.fill(GRAY).fontSize(9).font('Helvetica')
-             .text(String(item.quantity),                    COL_QTY,  rowY + 9)
-             .text(`Rs. ${parseFloat(item.unit_price).toFixed(0)}`, COL_RATE, rowY + 9)
-
-          doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold')
-             .text(rs(subtotal), COL_AMT, rowY + 9)
-
-          hRule(rowY + ROW_H, '#eeeeee')
-          rowY += ROW_H
-        })
-
-        // ══════════════════════════════════════════
-        //  TOTALS SECTION
-        // ══════════════════════════════════════════
-        const TOT_TOP  = rowY + 16
-        const LBL_X    = MARGIN + CONTENT - 220
-        const VAL_X    = MARGIN + CONTENT - 90
-
-        const drawTotalRow = (label, value, y, bold = false, color = PRIMARY) => {
-          doc.fill(GRAY)
-             .fontSize(10)
-             .font('Helvetica')
-             .text(label, LBL_X, y, { width: 120, align: 'right' })
-
-          doc.fill(color)
-             .fontSize(bold ? 12 : 10)
-             .font(bold ? 'Helvetica-Bold' : 'Helvetica')
-             .text(value, VAL_X, y, { width: 85, align: 'right' })
-        }
-
-        drawTotalRow('Subtotal :', rs(totalAmount), TOT_TOP)
-        let curY = TOT_TOP + 20
-
-        // Advance payment
-        if (parseFloat(order.advance_paid) > 0) {
-          const modeLabel = order.advance_payment_mode === 'upi' ? ' (UPI)' : ' (Cash)'
-          drawTotalRow(`Advance${modeLabel} :`, `- ${rs(order.advance_paid)}`, curY, false, GREEN)
-          curY += 20
-        }
-
-        // Additional payments
-        if (payments && payments.length > 0) {
-          const paymentsTotal = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
-          drawTotalRow('Payments :', `- ${rs(paymentsTotal)}`, curY, false, GREEN)
-          curY += 20
-        }
-
-        // Discount / Round-off
-        if (parseFloat(order.discount_amount) > 0) {
-          const dLabel = order.discount_note
-            ? `Discount (${order.discount_note}) :`
-            : 'Discount / Round-off :'
-          drawTotalRow(dLabel, `- ${rs(order.discount_amount)}`, curY, false, GREEN)
-          curY += 20
-        }
-
-        // Divider before balance
-        doc.moveTo(LBL_X, curY)
-           .lineTo(MARGIN + CONTENT, curY)
-           .strokeColor(PRIMARY)
-           .lineWidth(1.2)
-           .stroke()
-        curY += 10
-
-        // Balance due box
-        const balanceDue   = parseFloat(order.balance_due || 0)
-        const balanceColor = balanceDue > 0 ? RED : GREEN
-        const balanceBg    = balanceDue > 0 ? '#fff0f0' : '#f0fff4'
-
-        doc.rect(LBL_X - 10, curY, CONTENT - (LBL_X - MARGIN) + 10, 38)
-           .fill(balanceBg)
-
-        doc.fill(balanceColor)
-           .fontSize(13)
-           .font('Helvetica-Bold')
-           .text('BALANCE DUE :', LBL_X, curY + 12, { width: 120, align: 'right' })
-           .text(rs(balanceDue),  VAL_X,  curY + 12, { width: 85,  align: 'right' })
-
-        curY += 56
-
-        // ══════════════════════════════════════════
-        //  NOTES
-        // ══════════════════════════════════════════
-        if (order.notes) {
-          doc.fill(GRAY).fontSize(9).font('Helvetica-Bold')
-             .text('NOTES:', MARGIN, curY)
-          doc.fill(GRAY).fontSize(9).font('Helvetica')
-             .text(order.notes, MARGIN, curY + 14, { width: CONTENT })
-          curY += 40
-        }
-
-        // ══════════════════════════════════════════
-        //  PAYMENT HISTORY
-        // ══════════════════════════════════════════
-        const hasAdvance  = parseFloat(order.advance_paid) > 0
-        const hasPayments = payments && payments.length > 0
-
-        if (hasAdvance || hasPayments) {
-          curY += 10
-          hRule(curY, '#dddddd')
-          curY += 12
-
-          doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold')
-             .text('Payment History', MARGIN, curY)
-          curY += 18
-
-          if (hasAdvance) {
-            doc.fill(GREEN).fontSize(9).font('Helvetica')
-               .text(
-                 `+  Advance : ${rs(order.advance_paid)}  [${(order.advance_payment_mode || 'cash').toUpperCase()}]`,
-                 MARGIN + 14, curY
-               )
-            curY += 14
-          }
-
-          if (hasPayments) {
-            payments.forEach(p => {
-              const dateStr = p.payment_date
-                ? new Date(p.payment_date).toLocaleDateString('en-IN')
-                : '—'
-              const note = p.note ? `  —  ${p.note}` : ''
-              doc.fill(GREEN).fontSize(9).font('Helvetica')
-                 .text(`+  ${dateStr} : ${rs(p.amount)}${note}`, MARGIN + 14, curY)
-              curY += 14
-            })
-          }
-
-          if (parseFloat(order.discount_amount) > 0) {
-            doc.fill('#e67e22').fontSize(9).font('Helvetica')
-               .text(
-                 `✂  Discount : ${rs(order.discount_amount)}${order.discount_note ? '  —  ' + order.discount_note : '  (Round-off)'}`,
-                 MARGIN + 14, curY
-               )
-            curY += 14
-          }
-        }
-
-        // ══════════════════════════════════════════
-        //  FOOTER — absolute bottom, no new page
-        // ══════════════════════════════════════════
-        const FOOTER_H = 72
-        const FOOTER_Y = doc.page.height - FOOTER_H
-
-        // Agar content footer se overlap kar raha hai toh upar compress karo
-        // (sirf check — footer hamesha last page ke bottom pe rahega)
-        doc.rect(0, FOOTER_Y, PAGE_W, FOOTER_H).fill(PRIMARY)
-        doc.rect(0, FOOTER_Y, PAGE_W, 3).fill(ACCENT)
-
-        doc.fill(WHITE).fontSize(12).font('Helvetica-Bold')
-           .text('Thank you for your business!', MARGIN, FOOTER_Y + 14, { lineBreak: false })
-
-        doc.fill(ACCENT).fontSize(9).font('Helvetica-Bold')
-           .text(`${SHOP.name}  |  ${SHOP.ownerName}  |  ${SHOP.mobile}`, MARGIN, FOOTER_Y + 34, { lineBreak: false })
-
-        doc.fill('#aaaaaa').fontSize(9).font('Helvetica')
-           .text(SHOP.address, MARGIN, FOOTER_Y + 50, { lineBreak: false })
-
-        doc.fill('#aaaaaa').fontSize(8)
-           .text('Page 1', PAGE_W - MARGIN - 30, FOOTER_Y + 50, { lineBreak: false })
-
-        doc.flushPages()
-        doc.end()
       })
     })
   })
 })
+
+function renderBill(res, order, items, payments, cheques) {
+  const doc = new PDFDocument({
+    size: 'A4',
+    margin: 0,
+    bufferPages: true
+  })
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename=${order.order_number || `bill-${order.id}`}.pdf`)
+  doc.pipe(res)
+
+  // ── COLORS ──
+  const PRIMARY    = '#1a1a2e'
+  const ACCENT     = '#2ecc71'
+  const GREEN      = '#27ae60'
+  const RED        = '#e74c3c'
+  const PURPLE     = '#8e44ad'
+  const ORANGE     = '#e67e22'
+  const GRAY       = '#888888'
+  const LIGHT_GRAY = '#f4f4f4'
+  const WHITE      = '#ffffff'
+
+  const PAGE_W  = doc.page.width
+  const MARGIN  = 50
+  const CONTENT = PAGE_W - MARGIN * 2   // 495pt usable width
+
+  const FOOTER_H = 72
+  const BODY_LIMIT = doc.page.height - FOOTER_H - 16   // keep 16pt breathing room above footer
+
+  const rs = (val) => `Rs. ${parseFloat(val || 0).toFixed(0)}`
+
+  const hRule = (y, color = '#dddddd', width = 1) => {
+    doc.moveTo(MARGIN, y).lineTo(MARGIN + CONTENT, y)
+       .strokeColor(color).lineWidth(width).stroke()
+  }
+
+  const safeText = (text, maxChars) =>
+    text && text.length > maxChars ? text.substring(0, maxChars - 1) + '…' : (text || '—')
+
+  // Format a datetime (or date) string into "DD Mon YYYY" + "HH:MM" pieces
+  const fmtDateTime = (raw) => {
+    if (!raw) return { date: '—', time: '' }
+    const d = new Date(String(raw).replace(' ', 'T'))
+    if (isNaN(d)) return { date: String(raw).split(' ')[0], time: '' }
+    const date = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    return { date, time }
+  }
+
+  // ══════════════════════════════════════════
+  //  HEADER — Jai Mata Di banner, logo left, big name, decorative tagline, address w/ pin
+  // ══════════════════════════════════════════
+  const HEADER_H = 150
+  doc.rect(0, 0, PAGE_W, HEADER_H).fill(PRIMARY)
+  doc.rect(0, HEADER_H - 3, PAGE_W, 3).fill(ACCENT)
+
+  let logoW = 0
+  if (SHOP.logoPath) {
+    try {
+      doc.image(SHOP.logoPath, MARGIN, 26, { width: 95, height: 95 })
+      logoW = 108
+    } catch (e) { /* logo missing — skip */ }
+  }
+
+  let nameFont = 'Helvetica-Bold'
+  if (SHOP.nameFontPath) {
+    try {
+      doc.registerFont('ShopNameFont', SHOP.nameFontPath)
+      nameFont = 'ShopNameFont'
+    } catch (e) { /* font file missing — fallback used */ }
+  }
+
+  const nameX = MARGIN + logoW
+  const nameW = PAGE_W - nameX - MARGIN
+  const centerX = nameX + nameW / 2
+
+  const diamond = (cx, cy, r, color) => {
+    doc.polygon([cx, cy - r], [cx + r, cy], [cx, cy + r], [cx - r, cy]).fill(color)
+  }
+
+  const decorLine = (text, y, fontSize, font, color, lineColor) => {
+    doc.fontSize(fontSize).font(font)
+    const w = doc.widthOfString(text)
+    const textStartX = centerX - w / 2
+    const textEndX = centerX + w / 2
+    const gap = 14
+
+    doc.moveTo(nameX + 6, y).lineTo(textStartX - gap, y).strokeColor(lineColor).lineWidth(1).stroke()
+    diamond(textStartX - gap + 7, y, 3, lineColor)
+    doc.circle(textStartX - gap - 3, y, 1.3).fill(lineColor)
+
+    doc.moveTo(textEndX + gap, y).lineTo(nameX + nameW - 6, y).strokeColor(lineColor).lineWidth(1).stroke()
+    diamond(textEndX + gap - 7, y, 3, lineColor)
+    doc.circle(textEndX + gap + 3, y, 1.3).fill(lineColor)
+
+    doc.fill(color).text(text, textStartX, y - fontSize / 2 - 1, { lineBreak: false })
+  }
+
+  decorLine('JAI MATA DI', 22, 11, 'Helvetica-Bold', WHITE, ACCENT)
+
+  const contactLine = SHOP.mobile2
+    ? `${SHOP.ownerName}  |  ${SHOP.mobile}  /  ${SHOP.mobile2}`
+    : `${SHOP.ownerName}  |  ${SHOP.mobile}`
+  doc.fill(ACCENT).fontSize(10).font('Helvetica-Bold')
+     .text(contactLine, nameX, 44, { align: 'right', width: nameW, lineBreak: false })
+
+  // Auto-shrink shop name font so it always fits on one line in the available width
+  let shopNameSize = 44
+  doc.font(nameFont)
+  while (shopNameSize > 18 && doc.fontSize(shopNameSize).widthOfString(SHOP.name) > nameW - 10) {
+    shopNameSize -= 1
+  }
+  doc.fill(WHITE).fontSize(shopNameSize).font(nameFont)
+     .text(SHOP.name, nameX, 60, { align: 'center', width: nameW, lineBreak: false })
+
+  decorLine(SHOP.tagline.toUpperCase(), 118, 13, 'Helvetica-Bold', ACCENT, ACCENT)
+
+  doc.fontSize(10).font('Helvetica')
+  const addrW = doc.widthOfString(SHOP.address)
+  const pinX = centerX - addrW / 2 - 12
+  const pinY = 135
+
+  // teardrop map-pin icon
+  const pr = 4.5
+  doc.save()
+  doc.path(`M ${pinX} ${pinY - pr - 3}
+            C ${pinX + pr + 2} ${pinY - pr - 3} ${pinX + pr + 2} ${pinY + pr - 1} ${pinX} ${pinY + pr + 4}
+            C ${pinX - pr - 2} ${pinY + pr - 1} ${pinX - pr - 2} ${pinY - pr - 3} ${pinX} ${pinY - pr - 3}
+            Z`)
+     .fill(ACCENT)
+  doc.circle(pinX, pinY - 2, 1.6).fill(PRIMARY)
+  doc.restore()
+
+  doc.fill('#dddddd').fontSize(10).font('Helvetica')
+     .text(SHOP.address, centerX - addrW / 2, pinY - 5, { lineBreak: false })
+
+  // ══════════════════════════════════════════
+  //  INVOICE STRIP — icon-style badges for invoice # and date
+  // ══════════════════════════════════════════
+  const STRIP_TOP = HEADER_H + 16
+  const STRIP_H   = 32
+
+  const iconBoxW = 30
+  doc.rect(MARGIN, STRIP_TOP, iconBoxW, STRIP_H).fill(PRIMARY)
+
+  // hand-drawn document/page icon with folded top-right corner
+  const docCX = MARGIN + iconBoxW / 2, docCY = STRIP_TOP + STRIP_H / 2
+  const dw = 12, dh = 15, fold = 4
+  const dLeft = docCX - dw / 2, dTop = docCY - dh / 2
+  doc.save()
+  doc.path(`M ${dLeft} ${dTop}
+            L ${dLeft + dw - fold} ${dTop}
+            L ${dLeft + dw} ${dTop + fold}
+            L ${dLeft + dw} ${dTop + dh}
+            L ${dLeft} ${dTop + dh}
+            Z`)
+     .strokeColor(ACCENT).lineWidth(1.1).stroke()
+  doc.path(`M ${dLeft + dw - fold} ${dTop} L ${dLeft + dw - fold} ${dTop + fold} L ${dLeft + dw} ${dTop + fold}`)
+     .strokeColor(ACCENT).lineWidth(1).stroke()
+  // text lines inside the page
+  doc.moveTo(dLeft + 2.5, dTop + 7).lineTo(dLeft + dw - 2, dTop + 7).strokeColor(ACCENT).lineWidth(0.8).stroke()
+  doc.moveTo(dLeft + 2.5, dTop + 10).lineTo(dLeft + dw - 2, dTop + 10).strokeColor(ACCENT).lineWidth(0.8).stroke()
+  doc.moveTo(dLeft + 2.5, dTop + 13).lineTo(dLeft + dw - 5, dTop + 13).strokeColor(ACCENT).lineWidth(0.8).stroke()
+  doc.restore()
+
+  const invoiceLabel = `INVOICE #${order.order_number || order.id}`
+  doc.fontSize(13).font('Helvetica-Bold')
+  const invW = doc.widthOfString(invoiceLabel)
+  doc.fill(LIGHT_GRAY).rect(MARGIN + iconBoxW, STRIP_TOP, invW + 36, STRIP_H).fill(LIGHT_GRAY)
+  doc.fill(PRIMARY).fontSize(13).font('Helvetica-Bold')
+     .text(invoiceLabel, MARGIN + iconBoxW + 16, STRIP_TOP + 9, { lineBreak: false })
+
+  const dateText = order.created_at
+    ? new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+    : new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  doc.fontSize(11).font('Helvetica')
+  const dateValW = doc.widthOfString(dateText)
+  const dateLabelW = doc.widthOfString('Date : ', { font: 'Helvetica-Bold', fontSize: 11 })
+  const dateBoxW = 30 + 14 + dateLabelW + dateValW + 16
+  const dateBoxX = MARGIN + CONTENT - dateBoxW
+
+  doc.moveTo(dateBoxX - 14, STRIP_TOP).lineTo(dateBoxX - 14, STRIP_TOP + STRIP_H)
+     .strokeColor('#cccccc').lineWidth(1).stroke()
+
+  doc.fill(PRIMARY).rect(dateBoxX, STRIP_TOP, 30, STRIP_H).fill(PRIMARY)
+  const calX = dateBoxX + 15, calY = STRIP_TOP + STRIP_H / 2
+  const cw = 16, ch = 14
+  const cLeft = calX - cw / 2, cTop = calY - ch / 2 + 2
+
+  // body
+  doc.roundedRect(cLeft, cTop, cw, ch, 2).strokeColor(ACCENT).lineWidth(1.1).stroke()
+  // header bar
+  doc.rect(cLeft, cTop, cw, 4).fill(ACCENT)
+  // top ring tabs
+  doc.rect(cLeft + 3, cTop - 2.5, 1.6, 4).fill(ACCENT)
+  doc.rect(cLeft + cw - 4.6, cTop - 2.5, 1.6, 4).fill(ACCENT)
+  // grid dots
+  doc.fill(ACCENT)
+  doc.circle(cLeft + 4, cTop + 8, 0.8).fill(ACCENT)
+  doc.circle(cLeft + 8, cTop + 8, 0.8).fill(ACCENT)
+  doc.circle(cLeft + 12, cTop + 8, 0.8).fill(ACCENT)
+  doc.circle(cLeft + 4, cTop + 11.5, 0.8).fill(ACCENT)
+  doc.circle(cLeft + 8, cTop + 11.5, 0.8).fill(ACCENT)
+
+  doc.fill(LIGHT_GRAY).rect(dateBoxX + 30, STRIP_TOP, dateBoxW - 30, STRIP_H).fill(LIGHT_GRAY)
+  doc.fill(PRIMARY).fontSize(11).font('Helvetica-Bold')
+     .text('Date : ', dateBoxX + 46, STRIP_TOP + 11, { continued: true, lineBreak: false })
+  doc.fill(GREEN).font('Helvetica-Bold').text(dateText, { lineBreak: false })
+
+  hRule(STRIP_TOP + STRIP_H + 14, '#dddddd')
+
+  // ══════════════════════════════════════════
+  //  WATERMARK
+  // ══════════════════════════════════════════
+  if (SHOP.watermarkPath) {
+    try {
+      const FOOTER_H_RESERVED = 72
+      const wmBoxY = STRIP_TOP + STRIP_H + 10
+      const wmBoxH = doc.page.height - wmBoxY - FOOTER_H_RESERVED
+      doc.opacity(0.6)
+      doc.image(SHOP.watermarkPath, MARGIN, wmBoxY, { fit: [CONTENT, wmBoxH], align: 'center', valign: 'center' })
+      doc.opacity(1)
+    } catch (e) { /* skip */ }
+  }
+
+  // ══════════════════════════════════════════
+  //  CUSTOMER + ORDER INFO
+  // ══════════════════════════════════════════
+  const INFO_TOP = STRIP_TOP + STRIP_H + 24
+  const INFO_H   = 78
+  doc.rect(MARGIN, INFO_TOP, CONTENT, INFO_H).fill(LIGHT_GRAY)
+  hRule(INFO_TOP + INFO_H, '#dddddd')
+
+  doc.fill(GRAY).fontSize(8).font('Helvetica-Bold')
+     .text('BILL TO', MARGIN + 14, INFO_TOP + 12)
+
+  doc.fill(PRIMARY).fontSize(15).font('Helvetica-Bold')
+     .text(safeText(order.firm_name, 35), MARGIN + 14, INFO_TOP + 26)
+
+  let infoLineY = INFO_TOP + 48
+  if (order.contact_name) {
+    doc.fill(GRAY).fontSize(9).font('Helvetica')
+       .text(`Contact : ${order.contact_name}`, MARGIN + 14, infoLineY)
+    infoLineY += 14
+  }
+  if (order.phone) {
+    doc.fill(GRAY).fontSize(9).text(`Phone   : ${order.phone}`, MARGIN + 14, infoLineY)
+  }
+
+  const META_X = MARGIN + CONTENT * 0.58
+  doc.fill(GRAY).fontSize(8).font('Helvetica-Bold')
+     .text('ORDER DETAILS', META_X, INFO_TOP + 12)
+
+  const statusText  = (order.status || 'pending').replace(/_/g, ' ').toUpperCase()
+  const statusColor = order.status === 'delivered' ? GREEN
+                     : order.status === 'cancelled' ? RED
+                     : '#e67e22'
+
+  doc.fill(PRIMARY).fontSize(10).font('Helvetica')
+     .text(`Order # : ${order.order_number || order.id}`, META_X, INFO_TOP + 26)
+
+  doc.fill(statusColor).fontSize(10).font('Helvetica-Bold')
+     .text(`Status  : ${statusText}`, META_X, INFO_TOP + 40)
+
+  if (order.description) {
+    doc.fill(PRIMARY).fontSize(11).font('Helvetica-Bold')
+       .text(safeText(order.description, 40), META_X, INFO_TOP + 56, { width: 180 })
+  }
+
+  // ══════════════════════════════════════════
+  //  ITEMS TABLE — # | Item | Date | L | B | Qty | Rate | Amount
+  // ══════════════════════════════════════════
+  const COL_NO   = MARGIN + 6
+  const COL_ITEM = MARGIN + 28
+  const COL_DATE = MARGIN + 162
+  const COL_L    = MARGIN + 222
+  const COL_B    = MARGIN + 258
+  const COL_QTY  = MARGIN + 296
+  const COL_RATE = MARGIN + 350
+  const COL_AMT  = MARGIN + 415
+
+  const TBL_TOP = INFO_TOP + INFO_H + 18
+
+  const TBL_HEADER_H = 20
+  const drawTableHeader = (y) => {
+    doc.rect(MARGIN, y, CONTENT, TBL_HEADER_H).fill(PRIMARY)
+    doc.fill(WHITE).fontSize(7.5).font('Helvetica-Bold')
+    doc.text('#',        COL_NO,   y + 6)
+    doc.text('ITEM / DESCRIPTION', COL_ITEM, y + 6)
+    doc.text('DATE',     COL_DATE, y + 6)
+    doc.text('L(ft)',    COL_L,    y + 6)
+    doc.text('B(ft)',    COL_B,    y + 6)
+    doc.text('QTY/SQFT', COL_QTY,  y + 6)
+    doc.text('RATE',     COL_RATE, y + 6)
+    doc.text('AMOUNT',   COL_AMT,  y + 6)
+  }
+
+  drawTableHeader(TBL_TOP)
+
+  let rowY = TBL_TOP + 26
+  let totalAmount = 0
+
+  items.forEach((item, index) => {
+    const subtotal = parseFloat(item.subtotal) || (parseFloat(item.quantity) * parseFloat(item.unit_price))
+    totalAmount += subtotal
+
+    const ROW_H = 16
+
+    if (rowY + ROW_H > BODY_LIMIT) {
+      doc.addPage()
+      rowY = 60
+      drawTableHeader(rowY - TBL_HEADER_H)
+    }
+
+    if (index % 2 === 0) doc.rect(MARGIN, rowY, CONTENT, ROW_H).fill('#fafafa')
+
+    const itemDate = item.item_date
+      ? new Date(item.item_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+      : (order.created_at ? new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—')
+
+    doc.fill(GRAY).fontSize(8).font('Helvetica')
+       .text(String(index + 1), COL_NO, rowY + 5)
+
+    doc.fill(PRIMARY).fontSize(9).font('Helvetica-Bold')
+       .text(safeText(item.item_name, 22), COL_ITEM, rowY + 5, { width: 130 })
+
+    doc.fill(GRAY).fontSize(7.5).font('Helvetica')
+       .text(itemDate, COL_DATE, rowY + 5, { width: 56 })
+
+    doc.fill(GRAY).fontSize(8).font('Helvetica')
+       .text(item.length ? String(item.length) : '—', COL_L, rowY + 5)
+       .text(item.breadth ? String(item.breadth) : '—', COL_B, rowY + 5)
+       .text(String(item.quantity), COL_QTY, rowY + 5)
+       .text(`${parseFloat(item.unit_price).toFixed(0)}`, COL_RATE, rowY + 5)
+
+    doc.fill(PRIMARY).fontSize(9).font('Helvetica-Bold')
+       .text(rs(subtotal), COL_AMT, rowY + 5)
+
+    hRule(rowY + ROW_H, '#eeeeee')
+    rowY += ROW_H
+  })
+
+  // ══════════════════════════════════════════
+  //  TOTALS SECTION
+  // ══════════════════════════════════════════
+  const TOT_TOP = rowY + 16
+  const LBL_X   = MARGIN + CONTENT - 220
+  const VAL_X   = MARGIN + CONTENT - 90
+
+  const drawTotalRow = (label, value, y, bold = false, color = PRIMARY) => {
+    doc.fill(GRAY).fontSize(10).font('Helvetica')
+       .text(label, LBL_X, y, { width: 120, align: 'right' })
+    doc.fill(color).fontSize(bold ? 12 : 10).font(bold ? 'Helvetica-Bold' : 'Helvetica')
+       .text(value, VAL_X, y, { width: 85, align: 'right' })
+  }
+
+  drawTotalRow('Subtotal :', rs(totalAmount), TOT_TOP)
+  let curY = TOT_TOP + 20
+
+  if (parseFloat(order.advance_paid) > 0) {
+    const modeLabel = order.advance_payment_mode === 'upi' ? ' (UPI)' : ' (Cash)'
+    drawTotalRow(`Advance${modeLabel} :`, `- ${rs(order.advance_paid)}`, curY, false, GREEN)
+    curY += 20
+  }
+
+  if (payments && payments.length > 0) {
+    const paymentsTotal = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+    drawTotalRow('Payments :', `- ${rs(paymentsTotal)}`, curY, false, GREEN)
+    curY += 20
+  }
+
+  const clearedCheques = cheques.filter(c => c.status === 'cleared')
+  if (clearedCheques.length > 0) {
+    const clearedTotal = clearedCheques.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+    drawTotalRow('Cheques (cleared) :', `- ${rs(clearedTotal)}`, curY, false, GREEN)
+    curY += 20
+  }
+
+  if (parseFloat(order.discount_amount) > 0) {
+    const dLabel = order.discount_note ? `Discount (${order.discount_note}) :` : 'Discount / Round-off :'
+    drawTotalRow(dLabel, `- ${rs(order.discount_amount)}`, curY, false, GREEN)
+    curY += 20
+  }
+
+  doc.moveTo(LBL_X, curY).lineTo(MARGIN + CONTENT, curY)
+     .strokeColor(PRIMARY).lineWidth(1.2).stroke()
+  curY += 10
+
+  const balanceDue   = parseFloat(order.balance_due || 0)
+  const balanceColor = balanceDue > 0 ? RED : GREEN
+  const balanceBg    = balanceDue > 0 ? '#fff0f0' : '#f0fff4'
+
+  doc.rect(LBL_X - 10, curY, CONTENT - (LBL_X - MARGIN) + 10, 38).fill(balanceBg)
+  doc.fill(balanceColor).fontSize(13).font('Helvetica-Bold')
+     .text('BALANCE DUE :', LBL_X, curY + 12, { width: 120, align: 'right' })
+     .text(rs(balanceDue), VAL_X, curY + 12, { width: 85, align: 'right' })
+
+  curY += 56
+
+  // ══════════════════════════════════════════
+  //  NOTES
+  // ══════════════════════════════════════════
+  if (order.notes) {
+    doc.fill(GRAY).fontSize(9).font('Helvetica-Bold').text('NOTES:', MARGIN, curY)
+    doc.fill(GRAY).fontSize(9).font('Helvetica')
+       .text(order.notes, MARGIN, curY + 14, { width: CONTENT })
+    curY += 40
+  }
+
+  // ══════════════════════════════════════════
+  //  PAYMENT HISTORY — date+time, mode, UPI/cheque details
+  // ══════════════════════════════════════════
+  const hasAdvance  = parseFloat(order.advance_paid) > 0
+  const hasPayments = payments && payments.length > 0
+  const hasCheques  = cheques && cheques.length > 0
+
+  if (hasAdvance || hasPayments || hasCheques) {
+    // page-break check for the section header
+    if (curY > BODY_LIMIT - 30) {
+      doc.addPage()
+      curY = 60
+    }
+
+    curY += 6
+    hRule(curY, '#dddddd')
+    curY += 12
+
+    doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold')
+       .text('Payment History', MARGIN, curY)
+    curY += 18
+
+    const checkPageBreak = (lineH = 19) => {
+      if (curY + lineH > BODY_LIMIT) {
+        doc.addPage()
+        curY = 60
+      }
+    }
+
+    const drawPaymentLine = (label, amount, dt, modeText, color) => {
+      checkPageBreak()
+      doc.fill(color).fontSize(9).font('Helvetica-Bold')
+         .text(`+  ${rs(amount)}`, MARGIN + 14, curY, { continued: false })
+      doc.fill(GRAY).fontSize(7.5).font('Helvetica')
+         .text(`${label}   |   ${dt.date}${dt.time ? ', ' + dt.time : ''}`, MARGIN + 14, curY + 11)
+      doc.fill('#555555').fontSize(7.5).font('Helvetica')
+         .text(modeText, MARGIN + 280, curY + 11, { width: 215 })
+      curY += 19
+    }
+
+    if (hasAdvance) {
+      const dt = fmtDateTime(order.created_at)
+      const modeText = order.advance_payment_mode === 'upi'
+        ? `UPI`
+        : `Cash`
+      drawPaymentLine('Advance Payment', order.advance_paid, dt, modeText, GREEN)
+    }
+
+    if (hasPayments) {
+      payments.forEach(p => {
+        const dt = fmtDateTime(p.created_at || p.payment_date)
+        let modeText = 'Cash'
+        if (p.payment_mode === 'upi') modeText = `UPI — ${p.upi_account || 'account n/a'}`
+        const noteText = p.note ? `Payment — ${p.note}` : 'Payment'
+        drawPaymentLine(noteText, p.amount, dt, modeText, GREEN)
+      })
+    }
+
+    if (hasCheques) {
+      cheques.forEach(c => {
+        const dt = fmtDateTime(c.received_date)
+        const statusLabel = c.status === 'cleared' ? 'Cleared'
+                           : c.status === 'bounced' ? 'Bounced'
+                           : c.status === 'deposited' ? 'Deposited' : 'Received'
+        const modeText = `Cheque${c.cheque_number ? ' #' + c.cheque_number : ''}${c.bank_name ? ' — ' + c.bank_name : ''}  [${statusLabel}]`
+        const color = c.status === 'cleared' ? GREEN : (c.status === 'bounced' ? RED : ORANGE)
+        drawPaymentLine('Cheque Payment', c.amount, dt, modeText, color)
+      })
+    }
+
+    if (parseFloat(order.discount_amount) > 0) {
+      checkPageBreak()
+      doc.fill(ORANGE).fontSize(9).font('Helvetica')
+         .text(
+           `\u2702  Discount : ${rs(order.discount_amount)}${order.discount_note ? '  —  ' + order.discount_note : '  (Round-off)'}`,
+           MARGIN + 14, curY
+         )
+      curY += 16
+    }
+  }
+
+  // ══════════════════════════════════════════
+  //  FOOTER — absolute bottom on every page
+  // ══════════════════════════════════════════
+  const range = doc.bufferedPageRange()
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i)
+    const FOOTER_Y = doc.page.height - FOOTER_H
+
+    // Signature — bottom-right, just above the footer band, last page only
+    if (i === range.start + range.count - 1 && SHOP.signaturePath) {
+      try {
+        const sigW = 100, sigH = 42
+        const sigX = PAGE_W - MARGIN - sigW
+        const sigY = FOOTER_Y - sigH - 22
+        doc.image(SHOP.signaturePath, sigX, sigY, { width: sigW, height: sigH })
+        doc.moveTo(sigX, sigY + sigH + 4).lineTo(sigX + sigW, sigY + sigH + 4)
+           .strokeColor('#aaaaaa').lineWidth(0.8).stroke()
+        doc.fill(GRAY).fontSize(8).font('Helvetica')
+           .text('Authorized Signatory', sigX, sigY + sigH + 8, { width: sigW, align: 'center', lineBreak: false })
+      } catch (e) { /* signature missing — skip silently */ }
+    }
+
+    doc.rect(0, FOOTER_Y, PAGE_W, FOOTER_H).fill(PRIMARY)
+    doc.rect(0, FOOTER_Y, PAGE_W, 3).fill(ACCENT)
+
+    doc.fill(WHITE).fontSize(12).font('Helvetica-Bold')
+       .text('Thank you for your business!', MARGIN, FOOTER_Y + 14, { lineBreak: false })
+
+    doc.fill(ACCENT).fontSize(9).font('Helvetica-Bold')
+       .text(`${SHOP.name}  |  ${SHOP.ownerName}  |  ${SHOP.mobile}`, MARGIN, FOOTER_Y + 34, { lineBreak: false })
+
+    doc.fill('#aaaaaa').fontSize(9).font('Helvetica')
+       .text(SHOP.address, MARGIN, FOOTER_Y + 50, { lineBreak: false })
+
+    doc.fill('#aaaaaa').fontSize(8)
+       .text(`Page ${i - range.start + 1} of ${range.count}`, PAGE_W - MARGIN - 90, FOOTER_Y + 50, { width: 90, align: 'right', lineBreak: false })
+  }
+
+  doc.end()
+}
 
 module.exports = router
