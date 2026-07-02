@@ -149,6 +149,29 @@ _VijayFlex Pro, Pilibangan_`
   // Send text message first
   await client.sendMessage(chatId, message)
 
+
+  // UPI payment — deep link (>2000) ya QR (<=2000)
+  if (balanceDue > 0 && upiId) {
+    const upiString = `upi://pay?pa=${upiId}&pn=VijayFlex%20Pro&am=${balanceDue}&cu=INR&tn=Bill%20${orderId}`
+
+    if (balanceDue > 2000) {
+      await client.sendMessage(
+        chatId,
+        `💳 *Payment Request — Bill #${orderId}*\n\n` +
+        `Balance Due: *₹${balanceDue}*\n\n` +
+        `Use the link below to complete your payment 👇\n\n` +
+        `${upiString}\n\n` +
+        `_VijayFlex Pro, Pilibangan_`
+      )
+    } else {
+      const QRCode = require('qrcode')
+      const qrBuffer = await QRCode.toBuffer(upiString, { type: 'png', width: 400 })
+      const qrMedia = new MessageMedia('image/png', qrBuffer.toString('base64'), `PayNow-${orderId}.png`)
+      await client.sendMessage(chatId, qrMedia)
+      await client.sendMessage(chatId, `📲 *Scan to Pay the Balance ₹${balanceDue}*`)
+    }
+  }
+
   // Send PDF if buffer provided
   if (pdfBuffer) {
     const media = new MessageMedia(
@@ -158,25 +181,6 @@ _VijayFlex Pro, Pilibangan_`
     )
     await client.sendMessage(chatId, media)
   }
-
-  // UPI QR send karo agar balance hai aur upiId diya gaya
-  // New:
-if (balanceDue > 0 && upiId) {
-  if (balanceDue > 2000) {
-    // Balance bada hai — UPI ID text se bhejo (QR nahi)
-    await client.sendMessage(
-      chatId,
-      `📲 *Pay Balance ₹${balanceDue} via UPI*\n\nUPI ID: \`${upiId}\`\n\nPlease pay using any UPI app (GPay / PhonePe / Paytm) using the above ID.`
-    )
-  } else {
-    const QRCode = require('qrcode')
-    const upiString = `upi://pay?pa=${upiId}&am=${balanceDue}&cu=INR`
-    const qrBuffer = await QRCode.toBuffer(upiString, { type: 'png', width: 400 })
-    const qrMedia = new MessageMedia('image/png', qrBuffer.toString('base64'), `PayNow-${orderId}.png`)
-    await client.sendMessage(chatId, qrMedia)
-    await client.sendMessage(chatId, `📲 *Scan to Pay the Balance ₹${balanceDue}*`)
-  }
-}
 
   return { success: true, phone: formattedPhone }
 }
