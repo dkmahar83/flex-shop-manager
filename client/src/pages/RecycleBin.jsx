@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
-
-const BASE = 'http://localhost:5000/api'
+import api from '../services/api'
 
 function RecycleBin() {
   const [deletedCustomers, setDeletedCustomers] = useState([])
@@ -13,14 +11,16 @@ function RecycleBin() {
   }, [])
 
   function fetchDeleted() {
-    axios.get(`${BASE}/customers/deleted/recent`)
+    api.get('/customers/deleted/recent')
       .then(res => setDeletedCustomers(res.data))
-    axios.get(`${BASE}/orders/deleted/recent`)
+      .catch(() => {})
+    api.get('/orders/deleted/recent')
       .then(res => setDeletedOrders(res.data))
+      .catch(() => {})
   }
 
   function restoreCustomer(id) {
-    axios.put(`${BASE}/customers/${id}/restore`)
+    api.put(`/customers/${id}/restore`)
       .then(() => {
         setMessage('Customer restored!')
         fetchDeleted()
@@ -28,7 +28,7 @@ function RecycleBin() {
   }
 
   function restoreOrder(id) {
-    axios.put(`${BASE}/orders/${id}/restore`)
+    api.put(`/orders/${id}/restore`)
       .then(() => {
         setMessage('Order restored!')
         fetchDeleted()

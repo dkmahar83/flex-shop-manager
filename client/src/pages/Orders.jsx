@@ -257,7 +257,7 @@ function Orders() {
     const label = order.order_number
       ? `${order.order_number} — ${order.description || 'this order'}`
       : (order.description || 'This order')
-    if (!window.confirm(`"${label}" delete karna chahte ho?\n(24 ghante tak restore ho sakta hai Bin se)`)) return
+    if (!window.confirm(`"${label}" delete karna chahte ho?\n(30 din tak restore ho sakta hai Bin se)`)) return
     deleteOrder(order.id)
       .then(() => {
         setMessage('Order deleted. Bin se restore ho sakta hai 24 ghante mein.')
