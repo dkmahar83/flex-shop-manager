@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto } from '../services/api'
+import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto, generateCustomerStatement, sendStatementWhatsApp } from '../services/api'
 import PageLock from '../components/PageLock'
 
 function CustomerProfile() {
@@ -16,6 +16,11 @@ function CustomerProfile() {
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoMsg, setPhotoMsg] = useState('')
   const [showPhotoModal, setShowPhotoModal] = useState(false)
+  const [stmtLoading, setStmtLoading]     = useState(false)
+  const [waStmtModal, setWaStmtModal]     = useState(false)
+  const [waStmtUpi, setWaStmtUpi]         = useState('')
+  const [waStmtSending, setWaStmtSending] = useState(false)
+  const [stmtMsg, setStmtMsg]             = useState('')
 
   useEffect(() => {
     getCustomerProfile(id)
@@ -54,6 +59,39 @@ function CustomerProfile() {
   const min = String(d.getMinutes()).padStart(2,'0')
   const ss = String(d.getSeconds()).padStart(2,'0')
   return `${hh}:${min}:${ss}  ${dd}.${mm}.${yyyy}`
+}
+async function handleDownloadStatement() {
+  setStmtLoading(true)
+  try {
+    const res = await generateCustomerStatement(id)
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url
+    a.download = `Statement-${customer.firm_name}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error(err)
+    setStmtMsg('Error generating statement.')
+  } finally {
+    setStmtLoading(false)
+  }
+}
+
+async function handleSendStatementWA() {
+  if (!waStmtUpi) return setStmtMsg('UPI account select karo.')
+  setWaStmtSending(true)
+  try {
+    await sendStatementWhatsApp(id, waStmtUpi)
+    setStmtMsg('Statement WhatsApp par send ho gayi ✅')
+    setWaStmtModal(false)
+    setWaStmtUpi('')
+  } catch (err) {
+    setStmtMsg(err.response?.data?.error || 'WhatsApp send failed.')
+  } finally {
+    setWaStmtSending(false)
+  }
 }
 function handleOpeningBalance(e) {
   e.preventDefault()
@@ -287,6 +325,28 @@ function handlePhotoRemove() {
           </form>
         </div>
       )}
+      {/* STATEMENT BUTTONS */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <button
+          onClick={handleDownloadStatement}
+          disabled={stmtLoading}
+          style={{ backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: stmtLoading ? 0.6 : 1 }}
+        >
+          {stmtLoading ? '⏳ Generating...' : '📄 Download Statement'}
+        </button>
+        <button
+          onClick={() => setWaStmtModal(true)}
+          style={{ backgroundColor: '#25D366', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+        >
+          📲 Send Statement on WhatsApp
+        </button>
+        {stmtMsg && (
+          <p style={{ fontSize: '13px', color: stmtMsg.includes('✅') ? '#27ae60' : '#e74c3c', alignSelf: 'center', margin: 0 }}
+            onClick={() => setStmtMsg('')}>
+            {stmtMsg}
+          </p>
+        )}
+      </div>
       {/* DUE ALERT */}
       {totalDue > 0 && (
         <div style={styles.dueAlert}>
@@ -497,7 +557,38 @@ function handlePhotoRemove() {
           </tfoot>
         </table>
       )}
-
+      {/* STATEMENT WHATSAPP MODAL */}
+      {waStmtModal && (
+        <div onClick={() => setWaStmtModal(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px', width: '360px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ marginBottom: '8px', color: '#25D366' }}>📲 Send Statement via WhatsApp</h3>
+            <p style={{ fontSize: '13px', color: '#555', marginBottom: '16px' }}>
+              Customer: <strong>{customer.firm_name}</strong>
+              {totalDue > 0 && <><br/>Balance Due: <strong style={{ color: '#e74c3c' }}>₹{totalDue}</strong> — UPI QR bhi jayega</>}
+            </p>
+            {totalDue > 0 && (
+              <>
+                <label style={{ fontSize: '12px', color: '#888', display: 'block', marginBottom: '6px' }}>UPI Account for Payment QR</label>
+                <select value={waStmtUpi} onChange={e => setWaStmtUpi(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', marginBottom: '16px', boxSizing: 'border-box' }}>
+                  <option value=''>Select UPI Account</option>
+                  <option value='boism-9950580621@boi'>BOI Shop Account</option>
+                  <option value='gpay-11263065173@okbizaxis'>Google Pay - Rampratap Painter</option>
+                  <option value='q214575569@ybl'>PhonePe - Bhavya Printers</option>
+                  <option value='7073580621@yapl'>Amazon Pay - Deepak</option>
+                </select>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setWaStmtModal(false)} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSendStatementWA} disabled={waStmtSending || (totalDue > 0 && !waStmtUpi)}
+                style={{ flex: 2, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#25D366', color: '#fff', cursor: 'pointer', fontWeight: 'bold', opacity: (waStmtSending || (totalDue > 0 && !waStmtUpi)) ? 0.6 : 1 }}>
+                {waStmtSending ? 'Sending...' : '📲 Send Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* PHOTO MODAL */}
       {showPhotoModal && customer.photo_path && (
         <div

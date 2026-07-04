@@ -580,4 +580,394 @@ function renderBill(res, order, items, payments, cheques) {
   doc.end()
 }
 
+// ══════════════════════════════════════════
+// GET /api/pdf/statement/:customerId
+// ══════════════════════════════════════════
+router.get('/statement/:customerId', (req, res) => {
+  const { customerId } = req.params
+
+  db.get(`SELECT * FROM customers WHERE id = ? AND deleted_at IS NULL`, [customerId], (err, customer) => {
+    if (err) return res.status(500).json({ error: err.message })
+    if (!customer) return res.status(404).json({ error: 'Customer not found' })
+
+    db.all(`
+      SELECT * FROM orders
+      WHERE customer_id = ? AND deleted_at IS NULL
+      ORDER BY created_at ASC
+    `, [customerId], (err, orders) => {
+      if (err) return res.status(500).json({ error: err.message })
+      if (!orders || orders.length === 0)
+        return res.status(400).json({ error: 'No orders found' })
+
+      const orderIds = orders.map(o => o.id)
+      const ph = orderIds.map(() => '?').join(',')
+
+      db.all(`SELECT * FROM order_items WHERE order_id IN (${ph}) ORDER BY order_id, id`, orderIds, (err, allItems) => {
+        if (err) return res.status(500).json({ error: err.message })
+
+        db.all(`
+          SELECT p.*, o.description as order_desc, o.order_number
+          FROM payments p
+          LEFT JOIN orders o ON p.order_id = o.id
+          WHERE p.customer_id = ?
+          ORDER BY p.payment_date ASC, p.id ASC
+        `, [customerId], (err, allPayments) => {
+          if (err) return res.status(500).json({ error: err.message })
+
+          db.all(`
+            SELECT * FROM cash_income
+            WHERE customer_id = ?
+              AND (notes NOT IN ('Order Advance Payment', 'Galla Opening Balance') OR notes IS NULL)
+            ORDER BY income_date ASC
+          `, [customerId], (err, cashIncomes) => {
+            if (err) return res.status(500).json({ error: err.message })
+
+            renderCustomerStatement(res, customer, orders, allItems, allPayments, cashIncomes || [])
+          })
+        })
+      })
+    })
+  })
+})
+
+function renderCustomerStatement(res, customer, orders, allItems, allPayments, cashIncomes) {
+  const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true })
+  const filename = `Statement-${customer.firm_name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`)
+  doc.pipe(res)
+
+  const PRIMARY    = '#1a1a2e'
+  const ACCENT     = '#2ecc71'
+  const GREEN      = '#27ae60'
+  const RED        = '#e74c3c'
+  const ORANGE     = '#e67e22'
+  const GRAY       = '#888888'
+  const LIGHT_GRAY = '#f4f4f4'
+  const WHITE      = '#ffffff'
+
+  const PAGE_W   = doc.page.width
+  const MARGIN   = 50
+  const CONTENT  = PAGE_W - MARGIN * 2
+  const FOOTER_H = 72
+  const BODY_LIMIT = doc.page.height - FOOTER_H - 16
+
+  const rs = (val) => `Rs. ${parseFloat(val || 0).toFixed(0)}`
+  const hRule = (y, color = '#dddddd', lw = 1) => {
+    doc.moveTo(MARGIN, y).lineTo(MARGIN + CONTENT, y).strokeColor(color).lineWidth(lw).stroke()
+  }
+  const safeText = (t, max) => t && t.length > max ? t.substring(0, max - 1) + '…' : (t || '—')
+  const fmtDate = (raw) => {
+    if (!raw) return '—'
+    const d = new Date(String(raw).replace(' ', 'T'))
+    return isNaN(d) ? String(raw).split(' ')[0] : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  const fmtDateTime = (raw) => {
+    if (!raw) return { date: '—', time: '' }
+    const d = new Date(String(raw).replace(' ', 'T'))
+    if (isNaN(d)) return { date: String(raw).split(' ')[0], time: '' }
+    return {
+      date: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      time: d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    }
+  }
+
+  let currentY = 0
+  const checkPageBreak = (needed = 30) => {
+    if (currentY + needed > BODY_LIMIT) { doc.addPage(); currentY = 60 }
+  }
+
+  // ── HEADER (same as bill) ──
+  const HEADER_H = 150
+  doc.rect(0, 0, PAGE_W, HEADER_H).fill(PRIMARY)
+  doc.rect(0, HEADER_H - 3, PAGE_W, 3).fill(ACCENT)
+
+  let logoW = 0
+  if (SHOP.logoPath) {
+    try { doc.image(SHOP.logoPath, MARGIN, 26, { width: 95, height: 95 }); logoW = 108 } catch (e) {}
+  }
+
+  let nameFont = 'Helvetica-Bold'
+  if (SHOP.nameFontPath) {
+    try { doc.registerFont('ShopNameFont', SHOP.nameFontPath); nameFont = 'ShopNameFont' } catch (e) {}
+  }
+
+  const nameX   = MARGIN + logoW
+  const nameW   = PAGE_W - nameX - MARGIN
+  const centerX = nameX + nameW / 2
+
+  const diamond = (cx, cy, r, color) => {
+    doc.polygon([cx, cy - r], [cx + r, cy], [cx, cy + r], [cx - r, cy]).fill(color)
+  }
+  const decorLine = (text, y, fontSize, font, color, lineColor) => {
+    doc.fontSize(fontSize).font(font)
+    const w = doc.widthOfString(text)
+    const tx = centerX - w / 2, te = centerX + w / 2, gap = 14
+    doc.moveTo(nameX + 6, y).lineTo(tx - gap, y).strokeColor(lineColor).lineWidth(1).stroke()
+    diamond(tx - gap + 7, y, 3, lineColor)
+    doc.circle(tx - gap - 3, y, 1.3).fill(lineColor)
+    doc.moveTo(te + gap, y).lineTo(nameX + nameW - 6, y).strokeColor(lineColor).lineWidth(1).stroke()
+    diamond(te + gap - 7, y, 3, lineColor)
+    doc.circle(te + gap + 3, y, 1.3).fill(lineColor)
+    doc.fill(color).text(text, tx, y - fontSize / 2 - 1, { lineBreak: false })
+  }
+
+  decorLine('JAI MATA DI', 22, 11, 'Helvetica-Bold', WHITE, ACCENT)
+  const contactLine = SHOP.mobile2
+    ? `${SHOP.ownerName}  |  ${SHOP.mobile}  /  ${SHOP.mobile2}`
+    : `${SHOP.ownerName}  |  ${SHOP.mobile}`
+  doc.fill(ACCENT).fontSize(10).font('Helvetica-Bold')
+     .text(contactLine, nameX, 44, { align: 'right', width: nameW, lineBreak: false })
+
+  let shopNameSize = 44
+  doc.font(nameFont)
+  while (shopNameSize > 18 && doc.fontSize(shopNameSize).widthOfString(SHOP.name) > nameW - 10) shopNameSize--
+  doc.fill(WHITE).fontSize(shopNameSize).font(nameFont)
+     .text(SHOP.name, nameX, 60, { align: 'center', width: nameW, lineBreak: false })
+
+  decorLine(SHOP.tagline.toUpperCase(), 118, 13, 'Helvetica-Bold', ACCENT, ACCENT)
+
+  doc.fontSize(10).font('Helvetica')
+  const addrW = doc.widthOfString(SHOP.address)
+  const pinX  = centerX - addrW / 2 - 12, pinY = 135, pr = 4.5
+  doc.save()
+  doc.path(`M ${pinX} ${pinY-pr-3} C ${pinX+pr+2} ${pinY-pr-3} ${pinX+pr+2} ${pinY+pr-1} ${pinX} ${pinY+pr+4} C ${pinX-pr-2} ${pinY+pr-1} ${pinX-pr-2} ${pinY-pr-3} ${pinX} ${pinY-pr-3} Z`).fill(ACCENT)
+  doc.circle(pinX, pinY - 2, 1.6).fill(PRIMARY)
+  doc.restore()
+  doc.fill('#dddddd').fontSize(10).font('Helvetica')
+     .text(SHOP.address, centerX - addrW / 2, pinY - 5, { lineBreak: false })
+
+  // ── STATEMENT TITLE STRIP ──
+  const STRIP_TOP = HEADER_H + 16
+  doc.rect(MARGIN, STRIP_TOP, CONTENT, 32).fill(LIGHT_GRAY)
+  doc.fill(PRIMARY).fontSize(14).font('Helvetica-Bold')
+     .text('ACCOUNT STATEMENT', MARGIN + 14, STRIP_TOP + 8, { lineBreak: false })
+  doc.fill(GRAY).fontSize(10).font('Helvetica')
+     .text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+           MARGIN, STRIP_TOP + 10, { align: 'right', width: CONTENT - 14, lineBreak: false })
+  hRule(STRIP_TOP + 32 + 8)
+
+  // ── WATERMARK ──
+  if (SHOP.watermarkPath) {
+    try {
+      doc.opacity(0.06)
+      doc.image(SHOP.watermarkPath, MARGIN, STRIP_TOP + 40, { fit: [CONTENT, doc.page.height - STRIP_TOP - 40 - FOOTER_H], align: 'center', valign: 'center' })
+      doc.opacity(1)
+    } catch (e) {}
+  }
+
+  // ── CUSTOMER INFO + SUMMARY ──
+  const INFO_TOP = STRIP_TOP + 32 + 18
+  doc.rect(MARGIN, INFO_TOP, CONTENT, 80).fill(LIGHT_GRAY)
+
+  doc.fill(GRAY).fontSize(8).font('Helvetica-Bold').text('CUSTOMER', MARGIN + 14, INFO_TOP + 10)
+  doc.fill(PRIMARY).fontSize(15).font('Helvetica-Bold')
+     .text(safeText(customer.firm_name, 35), MARGIN + 14, INFO_TOP + 24)
+  let cY = INFO_TOP + 46
+  if (customer.contact_name) { doc.fill(GRAY).fontSize(9).font('Helvetica').text(`Contact : ${customer.contact_name}`, MARGIN + 14, cY); cY += 14 }
+  if (customer.phone) doc.fill(GRAY).fontSize(9).text(`Phone   : ${customer.phone}`, MARGIN + 14, cY)
+
+  const totalBilled   = orders.reduce((s, o) => s + parseFloat(o.total_amount || 0), 0)
+  const totalAdvance  = orders.reduce((s, o) => s + parseFloat(o.advance_paid || 0), 0)
+  const totalPayments = allPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+  const totalCash     = cashIncomes.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+  const totalPaid     = totalAdvance + totalPayments + totalCash
+  const totalDue      = orders.reduce((s, o) => s + parseFloat(o.balance_due || 0), 0)
+
+  const sumX = MARGIN + CONTENT - 190
+  doc.fill(GRAY).fontSize(8).font('Helvetica-Bold').text('SUMMARY', sumX, INFO_TOP + 10)
+  ;[
+    { label: 'Total Billed', value: rs(totalBilled), color: PRIMARY, bold: false },
+    { label: 'Total Paid',   value: rs(totalPaid),   color: GREEN,   bold: false },
+    { label: 'Balance Due',  value: rs(totalDue),     color: totalDue > 0 ? RED : GREEN, bold: true }
+  ].forEach((row, i) => {
+    const ry = INFO_TOP + 24 + i * 18
+    doc.fill(GRAY).fontSize(9).font('Helvetica').text(row.label + ' :', sumX, ry, { width: 90 })
+    doc.fill(row.color).fontSize(row.bold ? 11 : 9).font(row.bold ? 'Helvetica-Bold' : 'Helvetica')
+       .text(row.value, sumX + 95, ry, { width: 95, align: 'right' })
+  })
+
+  hRule(INFO_TOP + 80)
+  currentY = INFO_TOP + 80 + 20
+
+  // ══════════════════════════════════════════
+  // ORDERS
+  // ══════════════════════════════════════════
+  orders.forEach((order, orderIdx) => {
+    const orderItems    = allItems.filter(i => i.order_id === order.id)
+    const orderPayments = allPayments.filter(p => p.order_id === order.id)
+
+    checkPageBreak(80)
+
+    // Order header bar
+    const statusText  = (order.status || 'pending').replace(/_/g, ' ').toUpperCase()
+    const statusColor = order.status === 'delivered' ? GREEN : order.status === 'cancelled' ? RED : ORANGE
+
+    doc.rect(MARGIN, currentY, CONTENT, 26).fill(order.status === 'delivered' ? '#f0fff4' : '#f8f8f8')
+    doc.rect(MARGIN, currentY, 4, 26).fill(statusColor)
+
+    doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold')
+       .text(`Order ${order.order_number || '#' + order.id}`, MARGIN + 12, currentY + 7, { lineBreak: false })
+    if (order.description) {
+      doc.fill(GRAY).fontSize(9).font('Helvetica')
+         .text(`  —  ${safeText(order.description, 38)}`, MARGIN + 12 + doc.widthOfString(`Order ${order.order_number || '#' + order.id}`) + 4, currentY + 8, { lineBreak: false })
+    }
+    doc.fill(GRAY).fontSize(8).font('Helvetica')
+       .text(fmtDate(order.created_at), MARGIN + CONTENT - 120, currentY + 9, { width: 110, align: 'right', lineBreak: false })
+    doc.fill(statusColor).fontSize(8).font('Helvetica-Bold')
+       .text(statusText, MARGIN + CONTENT - 120, currentY + 18, { width: 110, align: 'right', lineBreak: false })
+
+    currentY += 30
+
+    // Items mini-table
+    if (orderItems.length > 0) {
+      doc.rect(MARGIN, currentY, CONTENT, 16).fill(PRIMARY)
+      doc.fill(WHITE).fontSize(7).font('Helvetica-Bold')
+      doc.text('ITEM', MARGIN + 6, currentY + 5)
+      doc.text('QTY', MARGIN + 265, currentY + 5)
+      doc.text('RATE', MARGIN + 330, currentY + 5)
+      doc.text('AMOUNT', MARGIN + 415, currentY + 5)
+      currentY += 16
+
+      orderItems.forEach((item, i) => {
+        checkPageBreak(18)
+        const subtotal = parseFloat(item.subtotal) || (parseFloat(item.quantity) * parseFloat(item.unit_price))
+        if (i % 2 === 0) doc.rect(MARGIN, currentY, CONTENT, 16).fill('#fafafa')
+        doc.fill(PRIMARY).fontSize(8.5).font('Helvetica-Bold')
+           .text(safeText(item.item_name, 40), MARGIN + 6, currentY + 4, { width: 255 })
+        doc.fill(GRAY).fontSize(8).font('Helvetica')
+           .text(String(item.quantity), MARGIN + 265, currentY + 4)
+           .text(parseFloat(item.unit_price).toFixed(0), MARGIN + 330, currentY + 4)
+        doc.fill(PRIMARY).fontSize(8.5).font('Helvetica-Bold')
+           .text(rs(subtotal), MARGIN + 415, currentY + 4)
+        hRule(currentY + 16, '#eeeeee', 0.5)
+        currentY += 16
+      })
+    } else {
+      doc.fill(GRAY).fontSize(9).font('Helvetica').text('(No items)', MARGIN + 6, currentY + 4)
+      currentY += 18
+    }
+
+    // Order financial summary bar
+    checkPageBreak(32)
+    const oTotal    = parseFloat(order.total_amount || 0)
+    const oAdvance  = parseFloat(order.advance_paid || 0)
+    const oPmts     = orderPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+    const oDiscount = parseFloat(order.discount_amount || 0)
+    const oBalance  = parseFloat(order.balance_due || 0)
+
+    const sumCols = [
+      { label: 'Total',    value: rs(oTotal),                               color: PRIMARY },
+      { label: 'Advance',  value: oAdvance  > 0 ? `- ${rs(oAdvance)}`  : '—', color: oAdvance  > 0 ? GREEN  : GRAY },
+      { label: 'Payments', value: oPmts     > 0 ? `- ${rs(oPmts)}`     : '—', color: oPmts     > 0 ? GREEN  : GRAY },
+      { label: 'Discount', value: oDiscount > 0 ? `- ${rs(oDiscount)}` : '—', color: oDiscount > 0 ? ORANGE : GRAY },
+      { label: 'Balance',  value: rs(oBalance),                             color: oBalance  > 0 ? RED    : GREEN },
+    ]
+    const colW = CONTENT / sumCols.length
+    doc.rect(MARGIN, currentY, CONTENT, 30).fill(oBalance > 0 ? '#fff8f8' : '#f8fff8')
+    sumCols.forEach((col, i) => {
+      const cx = MARGIN + i * colW
+      doc.fill(GRAY).fontSize(7.5).font('Helvetica').text(col.label, cx + 6, currentY + 5, { width: colW - 6 })
+      doc.fill(col.color).fontSize(9).font('Helvetica-Bold').text(col.value, cx + 6, currentY + 17, { width: colW - 10 })
+      if (i < sumCols.length - 1) {
+        doc.moveTo(cx + colW, currentY + 4).lineTo(cx + colW, currentY + 26).strokeColor('#dddddd').lineWidth(0.5).stroke()
+      }
+    })
+    currentY += 34
+
+    // Order payment detail lines
+    if (oAdvance > 0 || orderPayments.length > 0) {
+      checkPageBreak(20)
+      doc.fill(GRAY).fontSize(7.5).font('Helvetica-Bold')
+         .text('Payment history for this order:', MARGIN + 6, currentY + 2)
+      currentY += 14
+
+      if (oAdvance > 0) {
+        checkPageBreak(14)
+        const advMode = order.advance_payment_mode === 'upi' ? 'UPI' : 'Cash'
+        const advDt   = fmtDateTime(order.created_at)
+        doc.fill(GREEN).fontSize(8).font('Helvetica-Bold').text(`+ ${rs(oAdvance)}`, MARGIN + 10, currentY + 2)
+        doc.fill(GRAY).fontSize(7.5).font('Helvetica')
+           .text(`Advance (${advMode})  |  ${advDt.date}${advDt.time ? ', ' + advDt.time : ''}`, MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
+        currentY += 13
+      }
+
+      orderPayments.forEach(p => {
+        checkPageBreak(14)
+        const dt       = fmtDateTime(p.created_at || p.payment_date)
+        const modeText = p.payment_mode === 'upi' ? `UPI${p.upi_account ? ' — ' + p.upi_account : ''}` : 'Cash'
+        doc.fill(GREEN).fontSize(8).font('Helvetica-Bold').text(`+ ${rs(p.amount)}`, MARGIN + 10, currentY + 2)
+        doc.fill(GRAY).fontSize(7.5).font('Helvetica')
+           .text(`${modeText}  |  ${dt.date}${dt.time ? ', ' + dt.time : ''}${p.note ? '  |  ' + p.note : ''}  [Order ${p.order_number || '#' + p.order_id}]`,
+                 MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
+        currentY += 13
+      })
+    }
+
+    currentY += orderIdx < orders.length - 1 ? 10 : 16
+    if (orderIdx < orders.length - 1) { hRule(currentY, '#cccccc', 0.8); currentY += 14 }
+  })
+
+  // ── OTHER CASH INCOME ──
+  if (cashIncomes.length > 0) {
+    checkPageBreak(40)
+    hRule(currentY); currentY += 12
+    doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold').text('Other Payments Received', MARGIN, currentY)
+    currentY += 18
+    cashIncomes.forEach(c => {
+      checkPageBreak(14)
+      const dt   = fmtDateTime(c.income_date || c.created_at)
+      const mode = c.payment_mode === 'upi' ? `UPI${c.upi_account ? ' — ' + c.upi_account : ''}` : 'Cash'
+      doc.fill(GREEN).fontSize(8).font('Helvetica-Bold').text(`+ ${rs(c.amount)}`, MARGIN + 10, currentY + 2)
+      doc.fill(GRAY).fontSize(7.5).font('Helvetica')
+         .text(`${mode}  |  ${dt.date}${c.notes ? '  |  ' + c.notes : ''}`, MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
+      currentY += 13
+    })
+    currentY += 10
+  }
+
+  // ── FINAL BALANCE BOX ──
+  checkPageBreak(60)
+  hRule(currentY, PRIMARY, 1.5); currentY += 14
+
+  const balColor = totalDue > 0 ? RED : GREEN
+  doc.rect(MARGIN, currentY, CONTENT, 42).fill(totalDue > 0 ? '#fff0f0' : '#f0fff4')
+
+  const thirdW = CONTENT / 3
+  ;[
+    { label: 'Total Billed', value: rs(totalBilled), color: PRIMARY, x: MARGIN + 14 },
+    { label: 'Total Paid',   value: rs(totalPaid),   color: GREEN,   x: MARGIN + thirdW + 14 },
+    { label: 'Balance Due',  value: rs(totalDue),    color: balColor, x: MARGIN + thirdW * 2 + 14 },
+  ].forEach(col => {
+    doc.fill(GRAY).fontSize(9).font('Helvetica').text(col.label, col.x, currentY + 8)
+    doc.fill(col.color).fontSize(13).font('Helvetica-Bold').text(col.value, col.x, currentY + 22)
+  })
+  currentY += 56
+
+  // ── FOOTER ──
+  const range = doc.bufferedPageRange()
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i)
+    const FOOTER_Y = doc.page.height - FOOTER_H
+
+    if (i === range.start + range.count - 1 && SHOP.signaturePath) {
+      try {
+        const sigW = 100, sigH = 42
+        const sigX = PAGE_W - MARGIN - sigW, sigY = FOOTER_Y - sigH - 22
+        doc.image(SHOP.signaturePath, sigX, sigY, { width: sigW, height: sigH })
+        doc.moveTo(sigX, sigY + sigH + 4).lineTo(sigX + sigW, sigY + sigH + 4).strokeColor('#aaaaaa').lineWidth(0.8).stroke()
+        doc.fill(GRAY).fontSize(8).font('Helvetica').text('Authorized Signatory', sigX, sigY + sigH + 8, { width: sigW, align: 'center', lineBreak: false })
+      } catch (e) {}
+    }
+
+    doc.rect(0, FOOTER_Y, PAGE_W, FOOTER_H).fill(PRIMARY)
+    doc.rect(0, FOOTER_Y, PAGE_W, 3).fill(ACCENT)
+    doc.fill(WHITE).fontSize(12).font('Helvetica-Bold').text('Thank you for your business!', MARGIN, FOOTER_Y + 14, { lineBreak: false })
+    doc.fill(ACCENT).fontSize(9).font('Helvetica-Bold').text(`${SHOP.name}  |  ${SHOP.ownerName}  |  ${SHOP.mobile}`, MARGIN, FOOTER_Y + 34, { lineBreak: false })
+    doc.fill('#aaaaaa').fontSize(9).font('Helvetica').text(SHOP.address, MARGIN, FOOTER_Y + 50, { lineBreak: false })
+    doc.fill('#aaaaaa').fontSize(8).text(`Page ${i - range.start + 1} of ${range.count}`, PAGE_W - MARGIN - 90, FOOTER_Y + 50, { width: 90, align: 'right', lineBreak: false })
+  }
+
+  doc.end()
+}
 module.exports = router

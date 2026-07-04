@@ -77,12 +77,16 @@ router.post('/', (req, res) => {
 
       const payment_id = this.lastID;
 
-      // ✅ FIX: balance_due stale value se nahi, fresh SUM se calculate karo
+      // ✅ FIX: balance_due hamesha is formula se banega — SINGLE SOURCE OF TRUTH
+      // balance_due = total_amount - advance_paid - discount_amount - SUM(payments)
+      // Ye formula HAR route (orders.js PUT, payments.js POST, cheques.js) mein
+      // same hona chahiye, warna discount ya advance change hote hi balance galat ho jayega.
       db.get('SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE order_id = ?',
       [order_id], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
-        const already_paid = result.total_paid; // includes current payment just inserted
-        const new_balance = Math.max(0, order.total_amount - order.advance_paid - already_paid);
+        const already_paid   = result.total_paid; // includes current payment just inserted
+        const discount       = parseFloat(order.discount_amount) || 0;
+        const new_balance = Math.max(0, order.total_amount - order.advance_paid - discount - already_paid);
 
         db.run(`
           UPDATE orders SET balance_due = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?

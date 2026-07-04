@@ -203,6 +203,8 @@ export const getWhatsAppQR = () => api.get('/whatsapp/qr')
 
 // PDF
 export const generatePDF = (orderId) => api.get(`/pdf/bill/${orderId}`, { responseType: 'blob' })
+export const generateCustomerStatement = (customerId) => api.get(`/pdf/statement/${customerId}`, { responseType: 'blob' })
+export const sendStatementWhatsApp = (customerId, upiId) => api.post(`/whatsapp/send-statement/${customerId}`, { upiId })
 
 // Recycle Bin
 export const getRecycleBin = () => api.get('/customers/deleted/recent')
