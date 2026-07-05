@@ -129,7 +129,11 @@ async function sendBillToCustomer({ phone, customerName, orderId, totalAmount, a
   if (!formattedPhone.startsWith('91')) {
     formattedPhone = '91' + formattedPhone
   }
-  const chatId = `${formattedPhone}@c.us`
+  const numberId = await client.getNumberId(formattedPhone)
+  if (!numberId) {
+    throw new Error(`WhatsApp account nahi mila: ${formattedPhone}`)
+  }
+  const chatId = numberId._serialized   
 
   // Compose message
   const paidSoFar = advancePaid + (totalAmount - advancePaid - balanceDue)

@@ -165,7 +165,8 @@ function Orders() {
       customer_id: '', description: '', advance_paid: '',
       advance_payment_mode: 'cash', advance_upi_account: '',
       follow_up_date: '', notes: '',
-      discount_amount: '', discount_note: ''
+      discount_amount: '', discount_note: '',
+      advance_payment_date: ''
     })
     setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false }])
     setEditingOrder(null)
@@ -226,6 +227,7 @@ function Orders() {
         ? form.advance_upi_account : null,
       advance_denomination_breakdown: advanceAmt > 0 && form.advance_payment_mode === 'cash' && Object.keys(advanceDenomination).length > 0
         ? advanceDenomination : null,
+      advance_payment_date: form.advance_payment_date || null,
       discount_amount: parseFloat(form.discount_amount) || 0,
       discount_note: form.discount_note || null,
       items: items.map(i => ({
@@ -260,7 +262,7 @@ function Orders() {
     if (!window.confirm(`"${label}" delete karna chahte ho?\n(30 din tak restore ho sakta hai Bin se)`)) return
     deleteOrder(order.id)
       .then(() => {
-        setMessage('Order deleted. Bin se restore ho sakta hai 24 ghante mein.')
+        setMessage('Order deleted. Bin se restore ho sakta hai 30 din mein.')
         fetchOrders()
       })
       .catch(() => setMessage('Error deleting order.'))
@@ -552,6 +554,19 @@ function Orders() {
                   value={form.advance_paid} onChange={handleFormChange}
                 />
               </div>
+
+              {advance > 0 && (
+                <div style={styles.totalRow}>
+                  <span>Advance Date:</span>
+                  <input
+                    type="date"
+                    style={{ ...styles.input, width: '150px', flex: 'none' }}
+                    name="advance_payment_date"
+                    value={form.advance_payment_date}
+                    onChange={handleFormChange}
+                  />
+                </div>
+              )}
 
               {advance > 0 && (
                 <>
@@ -919,7 +934,7 @@ function Orders() {
                                   <td style={styles.innerTd}>1</td>
                                   <td style={styles.innerTd}>
                                     {orderDetail.created_at ? (() => {
-                                      const d = new Date(orderDetail.created_at)
+                                      const d = new Date(orderDetail.advance_payment_date || orderDetail.created_at)
                                       const date = d.toLocaleDateString('en-GB').replace(/\//g, '.')
                                       const time = d.toLocaleTimeString('en-GB', { hour12: false })
                                       return <span>{time}<br /><span style={{ fontSize: '11px', color: '#888' }}>{date}</span></span>

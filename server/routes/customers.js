@@ -184,7 +184,7 @@ router.put('/:id', (req, res) => {
 // DELETE /api/customers/:id — soft delete
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  db.run(`UPDATE customers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id], function(err) {
+  db.run(`UPDATE customers SET deleted_at = datetime('now', '+5 hours', '+30 minutes') WHERE id = ?`, [id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: 'Customer not found' });
     res.json({ message: 'Customer deleted (recoverable for 30 days)' });

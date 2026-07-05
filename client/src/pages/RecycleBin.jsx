@@ -66,7 +66,7 @@ function RecycleBin() {
                 <tr key={c.id}>
                   <td style={styles.td}>{c.firm_name}</td>
                   <td style={styles.td}>{c.phone || '—'}</td>
-                  <td style={styles.td}>{new Date(c.deleted_at).toLocaleString('en-IN')}</td>
+                  <td style={styles.td}>{new Date(c.deleted_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                   <td style={styles.td}>
                     <button onClick={() => restoreCustomer(c.id)} style={styles.restoreBtn}>
                       ↩ Restore
@@ -101,7 +101,7 @@ function RecycleBin() {
                   <td style={styles.td}>#{o.id}</td>
                   <td style={styles.td}>{o.firm_name}</td>
                   <td style={styles.td}>₹{o.total_amount}</td>
-                  <td style={styles.td}>{new Date(o.deleted_at).toLocaleString('en-IN')}</td>
+                  <td style={styles.td}>{new Date(o.deleted_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                   <td style={styles.td}>
                     <button onClick={() => restoreOrder(o.id)} style={styles.restoreBtn}>
                       ↩ Restore

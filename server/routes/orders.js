@@ -194,7 +194,8 @@ router.post('/', (req, res) => {
     items,
     discount_amount,
     discount_note,
-    advance_denomination_breakdown
+    advance_denomination_breakdown,
+    advance_payment_date
   } = req.body;
 
   if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
@@ -264,7 +265,7 @@ router.post('/', (req, res) => {
             payment_mode: advance_payment_mode,
             upi_account: advance_upi_account,
             order_id,
-            date: today
+            date: advance_payment_date || today
           }, (err, entry) => {
             if (err) return res.status(500).json({ error: 'Order created but advance entry failed: ' + err.message });
 
@@ -434,7 +435,7 @@ router.delete('/:id', (req, res) => {
   db.get(`SELECT advance_entry_table, advance_entry_id FROM orders WHERE id = ?`, [id], (err, order) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    db.run(`UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id], function(err) {
+    db.run(`UPDATE orders SET deleted_at = datetime('now', '+5 hours', '+30 minutes') WHERE id = ?`, [id], function(err) {
       if (err) return res.status(500).json({ error: err.message });
       if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
 
