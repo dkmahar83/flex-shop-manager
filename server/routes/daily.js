@@ -603,16 +603,7 @@ router.get('/ledger/date', (req, res) => {
         `, [date], (err, cashIncome) => {
           if (err) return res.status(500).json({ error: err.message });
 
-          // Non-order UPI payments
-          db.all(`
-            SELECT upi_transactions.id, amount, upi_account as payment_mode,
-              COALESCE(customers.firm_name, 'Unknown') as party_name, 'UPI Payment' as type
-            FROM upi_transactions
-            LEFT JOIN customers ON upi_transactions.customer_id = customers.id
-            WHERE transaction_date = ?
-              AND (notes NOT LIKE 'EXPENSE:%' OR notes IS NULL)
-              AND order_id IS NULL
-          `, [date], (err, upiPayments) => {// Non-order UPI payments (from upi_transactions table)
+          // Non-order UPI payments (from upi_transactions table)
           db.all(`
             SELECT upi_transactions.id, amount, upi_account as payment_mode,
               COALESCE(customers.firm_name, 'Unknown') as party_name, 'UPI Payment' as type,
@@ -670,39 +661,6 @@ router.get('/ledger/date', (req, res) => {
                   total_expenses: totalExpenses,
                   net: totalIncome - totalExpenses
                 });
-              });
-            });
-          });
-            if (err) return res.status(500).json({ error: err.message });
-
-            db.all(`
-                SELECT expenses.id, expenses.amount, expenses.payment_mode, expenses.category,
-                  expenses.upi_account,
-                  CASE
-                    WHEN expenses.category = 'Commission' AND expenses.customer_name IS NOT NULL
-                      THEN 'Commission'
-                    WHEN paid_to_type = 'employee' THEN employees.name
-                    WHEN paid_to_type = 'vendor' THEN vendors.name
-                    ELSE expenses.category
-                  END as party_name,
-                  expenses.description, expenses.created_at,
-                  expenses.customer_id, expenses.customer_name
-                FROM expenses
-                LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
-                LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id
-                WHERE expense_date = ?
-              `, [date], (err, expenses) => {
-              if (err) return res.status(500).json({ error: err.message });
-
-              const income = [...orderPayments, ...advanceUpiPayments, ...advanceCashPayments, ...cashIncome, ...upiPayments];
-              const totalIncome = income.reduce((s, i) => s + i.amount, 0);
-              const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
-
-              res.json({
-                date, income, expenses,
-                total_income: totalIncome,
-                total_expenses: totalExpenses,
-                net: totalIncome - totalExpenses
               });
             });
           });

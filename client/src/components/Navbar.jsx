@@ -349,7 +349,7 @@ const styles = {
     fontSize: '13.5px',
   },
   navLinkActive: {
-    backgroundColor: '#e94560',
+    backgroundColor: '#2563eb',
     color: '#fff',
   },
   linkIcon: {
