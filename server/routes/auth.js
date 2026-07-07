@@ -8,18 +8,12 @@ const USERS = [
   {
     id: 1,
     username: 'flexshop',
-    // bcrypt hash of your password
-    // Default password: flex@2026
-    passwordHash: bcrypt.hashSync('flex@2026', 10),
+    passwordHash: '$2b$10$S6bR5vKB5gD0aMVZStAa2eBfjfhVqe0bUtwjwhiMu3Lr5.U8Tua8O',
     name: 'FlexShop Manager'
-  },
-  {
-    id: 2,
-    username: 'admin',
-    passwordHash: bcrypt.hashSync('admin@2026', 10),
-    name: 'Admin'
   }
 ]
+
+const JWT_SECRET = process.env.JWT_SECRET
 
 const JWT_SECRET = 'flexshop_manager_secret_2026_pilibangan'
 const JWT_EXPIRES = '7d' // token valid for 7 days
