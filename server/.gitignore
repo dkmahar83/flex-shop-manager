@@ -1,0 +1,4 @@
+db/flexshop.db
+backups/
+.env
+uploads/
