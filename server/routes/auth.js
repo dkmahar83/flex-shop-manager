@@ -8,14 +8,12 @@ const USERS = [
   {
     id: 1,
     username: 'flexshop',
-    passwordHash: '$2b$10$S6bR5vKB5gD0aMVZStAa2eBfjfhVqe0bUtwjwhiMu3Lr5.U8Tua8O',
+    passwordHash: '$2b$10$GqZeCJBXUAWj9z1CRBLgLeLNN7NCTlxrSSosrlzpG2JhNpL3l3AnW',
     name: 'FlexShop Manager'
   }
 ]
 
-const JWT_SECRET = process.env.JWT_SECRET
-
-const JWT_SECRET = 'flexshop_manager_secret_2026_pilibangan'
+const JWT_SECRET = process.env.JWT_SECRET || 'flexshop_manager_secret_2026_pilibangan'
 const JWT_EXPIRES = '7d' // token valid for 7 days
 
 // POST /api/auth/login
