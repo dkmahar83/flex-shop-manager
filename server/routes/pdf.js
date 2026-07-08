@@ -771,8 +771,14 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
   const totalAdvance  = orders.reduce((s, o) => s + parseFloat(o.advance_paid || 0), 0)
   const totalPayments = allPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
   const totalCash     = cashIncomes.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+  const totalDiscount = orders.reduce((s, o) => s + parseFloat(o.discount_amount || 0), 0)
   const totalPaid     = totalAdvance + totalPayments + totalCash
-  const totalDue      = orders.reduce((s, o) => s + parseFloat(o.balance_due || 0), 0)
+  // ✅ FIX: Balance Due must be Total Billed − Total Paid − Discount.
+  // Previously this summed each order's own balance_due, which only reflects
+  // advances/payments tied to that specific order — it never subtracted
+  // "Other Payments Received" (unallocated cash_income against the customer),
+  // so the statement overstated Balance Due by exactly that amount.
+  const totalDue      = totalBilled - totalPaid - totalDiscount
 
   const sumX = MARGIN + CONTENT - 190
   doc.fill(GRAY).fontSize(8).font('Helvetica-Bold').text('SUMMARY', sumX, INFO_TOP + 10)
