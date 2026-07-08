@@ -184,59 +184,77 @@ router.post('/send-statement/:customerId', async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found' })
     if (!customer.phone) return res.status(400).json({ error: 'Customer ka phone number nahi hai' })
 
-    db.get(`SELECT COALESCE(SUM(balance_due),0) as total_due FROM orders WHERE customer_id = ? AND deleted_at IS NULL`, [customerId], async (err, row) => {
+    db.all(`SELECT * FROM orders WHERE customer_id = ? AND deleted_at IS NULL`, [customerId], (err, orders) => {
       if (err) return res.status(500).json({ error: err.message })
-      const totalDue = row?.total_due || 0
 
-      try {
-        const pdfResponse = await axios.get(
-          `http://localhost:5000/api/pdf/statement/${customerId}`,
-          { responseType: 'arraybuffer', headers: { Authorization: req.headers.authorization } }
-        )
-        const pdfBuffer = Buffer.from(pdfResponse.data)
-        const { upiId } = req.body
+      db.all(`SELECT * FROM payments WHERE customer_id = ?`, [customerId], (err, allPayments) => {
+        if (err) return res.status(500).json({ error: err.message })
 
-        let formattedPhone = customer.phone.replace(/\D/g, '')
-        if (formattedPhone.startsWith('0')) formattedPhone = '91' + formattedPhone.substring(1)
-        if (!formattedPhone.startsWith('91')) formattedPhone = '91' + formattedPhone
-        const chatId = `${formattedPhone}@c.us`
+        db.all(`
+          SELECT * FROM cash_income
+          WHERE customer_id = ?
+            AND (notes NOT IN ('Order Advance Payment', 'Galla Opening Balance') OR notes IS NULL)
+        `, [customerId], async (err, cashIncomes) => {
+          if (err) return res.status(500).json({ error: err.message })
 
-        const { getClient, getStatus } = require('../whatsapp')
-        const { MessageMedia } = require('whatsapp-web.js')
-        const QRCode = require('qrcode')
-        const status = getStatus()
-        if (!status.ready) throw new Error('WhatsApp not connected. Please scan QR code first.')
-        const waClient = getClient()
+          const totalBilled   = orders.reduce((s, o) => s + parseFloat(o.total_amount || 0), 0)
+          const totalAdvance  = orders.reduce((s, o) => s + parseFloat(o.advance_paid || 0), 0)
+          const totalPayments = allPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+          const totalCash     = cashIncomes.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+          const totalDiscount = orders.reduce((s, o) => s + parseFloat(o.discount_amount || 0), 0)
+          const totalDue      = totalBilled - (totalAdvance + totalPayments + totalCash) - totalDiscount
 
-        const message = `📋 *Account Statement — ${customer.firm_name}*\n\n` +
-          `Generated: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}\n\n` +
-          (totalDue > 0 ? `⚠️ *Balance Due: ₹${totalDue}*\n\n` : `✅ *Account is Clear*\n\n`) +
-          `Please find your complete account statement attached.\n\n_VijayFlex Pro, Pilibangan_`
-
-        await waClient.sendMessage(chatId, message)
-
-        if (totalDue > 0 && upiId) {
-          const upiString = `upi://pay?pa=${upiId}&pn=VijayFlex%20Pro&am=${totalDue}&cu=INR&tn=Account%20Balance`
-          if (totalDue > 2000) {
-            await waClient.sendMessage(chatId,
-              `💳 *Payment Link — ₹${totalDue}*\n\n${upiString}\n\n_VijayFlex Pro, Pilibangan_`
+          try {
+            const pdfResponse = await axios.get(
+              `http://localhost:5000/api/pdf/statement/${customerId}`,
+              { responseType: 'arraybuffer', headers: { Authorization: req.headers.authorization } }
             )
-          } else {
-            const qrBuffer = await QRCode.toBuffer(upiString, { type: 'png', width: 400 })
-            const qrMedia  = new MessageMedia('image/png', qrBuffer.toString('base64'), `PayNow.png`)
-            await waClient.sendMessage(chatId, qrMedia)
-            await waClient.sendMessage(chatId, `📲 *Scan to Pay Balance ₹${totalDue}*`)
+            const pdfBuffer = Buffer.from(pdfResponse.data)
+            const { upiId } = req.body
+
+            let formattedPhone = customer.phone.replace(/\D/g, '')
+            if (formattedPhone.startsWith('0')) formattedPhone = '91' + formattedPhone.substring(1)
+            if (!formattedPhone.startsWith('91')) formattedPhone = '91' + formattedPhone
+            const chatId = `${formattedPhone}@c.us`
+
+            const { getClient, getStatus } = require('../whatsapp')
+            const { MessageMedia } = require('whatsapp-web.js')
+            const QRCode = require('qrcode')
+            const status = getStatus()
+            if (!status.ready) throw new Error('WhatsApp not connected. Please scan QR code first.')
+            const waClient = getClient()
+
+            const message = `📋 *Account Statement — ${customer.firm_name}*\n\n` +
+              `Generated: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}\n\n` +
+              (totalDue > 0 ? `⚠️ *Balance Due: ₹${totalDue.toFixed(0)}*\n\n` : `✅ *Account is Clear*\n\n`) +
+              `Please find your complete account statement attached.\n\n_VijayFlex Pro, Pilibangan_`
+
+            await waClient.sendMessage(chatId, message)
+
+            if (totalDue > 0 && upiId) {
+              const upiString = `upi://pay?pa=${upiId}&pn=VijayFlex%20Pro&am=${totalDue.toFixed(0)}&cu=INR&tn=Account%20Balance`
+              if (totalDue > 2000) {
+                await waClient.sendMessage(chatId,
+                  `💳 *Payment Link — ₹${totalDue.toFixed(0)}*\n\n${upiString}\n\n_VijayFlex Pro, Pilibangan_`
+                )
+              } else {
+                const qrBuffer = await QRCode.toBuffer(upiString, { type: 'png', width: 400 })
+                const qrMedia  = new MessageMedia('image/png', qrBuffer.toString('base64'), `PayNow.png`)
+                await waClient.sendMessage(chatId, qrMedia)
+                await waClient.sendMessage(chatId, `📲 *Scan to Pay Balance ₹${totalDue.toFixed(0)}*`)
+              }
+            }
+
+            const media = new MessageMedia('application/pdf', pdfBuffer.toString('base64'), `Statement-${customer.firm_name}.pdf`)
+            await waClient.sendMessage(chatId, media)
+
+            res.json({ success: true, message: `Statement sent to ${customer.firm_name} ✅`, phone: formattedPhone })
+
+          } catch (err) {
+            res.status(500).json({ error: err.message })
           }
-        }
-
-        const media = new MessageMedia('application/pdf', pdfBuffer.toString('base64'), `Statement-${customer.firm_name}.pdf`)
-        await waClient.sendMessage(chatId, media)
-
-        res.json({ success: true, message: `Statement sent to ${customer.firm_name} ✅`, phone: formattedPhone })
-
-      } catch (err) {
-        res.status(500).json({ error: err.message })
-      }
+        })
+      })
     })
   })
 })
