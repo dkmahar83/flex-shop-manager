@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getDashboard, sendBillWhatsApp, getWhatsAppStatus } from '../services/api'
 import { useNavigate } from 'react-router-dom'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 function Dashboard() {
   const [data, setData]       = useState(null)
@@ -10,7 +11,11 @@ function Dashboard() {
   const [waSendModal, setWaSendModal] = useState(null)
   const [selectedUpiForWA, setSelectedUpiForWA] = useState('')
   const [waMessage, setWaMessage] = useState('')
+  const [collapsed, setCollapsed] = useState({ stats: true, lowStock: true, todayOrders: true, dues: true })
   const navigate = useNavigate()
+
+  const toggleSection = (key) =>
+    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
 
   useEffect(() => {
     getDashboard()
@@ -44,148 +49,194 @@ function Dashboard() {
       <h2 style={styles.heading}>Dashboard — {data.date}</h2>
 
       {/* STATS ROW */}
-      <div style={styles.statsRow}>
-        <div style={styles.card}>
-          <div style={styles.cardNumber}>{data.pending_orders}</div>
-          <div style={styles.cardLabel}>Pending Orders</div>
-        </div>
-        <div style={{ ...styles.card, cursor: 'pointer' }} onClick={() => document.getElementById('dues-section').scrollIntoView({ behavior: 'smooth' })}>
-          <div style={{ ...styles.cardNumber, color: '#e74c3c' }}>₹{data.total_outstanding}</div>
-          <div style={styles.cardLabel}>Total Outstanding</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardNumber, color: data.due_reminders.length > 0 ? '#e74c3c' : '#27ae60' }}>
-            {data.due_reminders.length}
-          </div>
-          <div style={styles.cardLabel}>Due Reminders Today</div>
-        </div>
-        <div style={styles.card}>
-          <div style={styles.cardNumber}>{data.today_orders_list.length}</div>
-          <div style={styles.cardLabel}>Today's Orders</div>
-        </div>
-        <div
-          style={{ ...styles.card, cursor: 'pointer' }}
-          onClick={() => document.getElementById('low-stock-section')?.scrollIntoView({ behavior: 'smooth' })}
+      <div style={{ marginBottom: collapsed.stats ? '20px' : '12px' }}>
+        <button
+          onClick={() => toggleSection('stats')}
+          style={styles.sectionHeaderBtn}
+          aria-expanded={!collapsed.stats}
         >
-          <div style={{ ...styles.cardNumber, color: (data.low_stock_alerts?.length || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
-            {data.low_stock_alerts?.length || 0}
-          </div>
-          <div style={styles.cardLabel}>Low Stock Items</div>
-        </div>
+          <span style={styles.sectionTitle}>📊 Summary Stats</span>
+          {collapsed.stats ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
+        </button>
       </div>
+
+      {!collapsed.stats && (
+        <div style={styles.statsRow}>
+          <div style={styles.card}>
+            <div style={styles.cardNumber}>{data.pending_orders}</div>
+            <div style={styles.cardLabel}>Pending Orders</div>
+          </div>
+          <div style={{ ...styles.card, cursor: 'pointer' }} onClick={() => { setCollapsed(prev => ({ ...prev, dues: false })); document.getElementById('dues-section').scrollIntoView({ behavior: 'smooth' }) }}>
+            <div style={{ ...styles.cardNumber, color: '#e74c3c' }}>₹{data.total_outstanding}</div>
+            <div style={styles.cardLabel}>Total Outstanding</div>
+          </div>
+          <div style={styles.card}>
+            <div style={{ ...styles.cardNumber, color: data.due_reminders.length > 0 ? '#e74c3c' : '#27ae60' }}>
+              {data.due_reminders.length}
+            </div>
+            <div style={styles.cardLabel}>Due Reminders Today</div>
+          </div>
+          <div style={styles.card}>
+            <div style={styles.cardNumber}>{data.today_orders_list.length}</div>
+            <div style={styles.cardLabel}>Today's Orders</div>
+          </div>
+          <div
+            style={{ ...styles.card, cursor: 'pointer' }}
+            onClick={() => { setCollapsed(prev => ({ ...prev, lowStock: false })); document.getElementById('low-stock-section')?.scrollIntoView({ behavior: 'smooth' }) }}
+          >
+            <div style={{ ...styles.cardNumber, color: (data.low_stock_alerts?.length || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
+              {data.low_stock_alerts?.length || 0}
+            </div>
+            <div style={styles.cardLabel}>Low Stock Items</div>
+          </div>
+        </div>
+      )}
 
       {/* LOW STOCK ALERTS */}
       {data.low_stock_alerts && data.low_stock_alerts.length > 0 && (
         <div style={styles.section} id="low-stock-section">
-          <h3 style={styles.sectionTitle}>📦 Low Stock Alerts</h3>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Category</th>
-                <th style={styles.th}>Item</th>
-                <th style={styles.th}>Remaining</th>
-                <th style={styles.th}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.low_stock_alerts.map((item, i) => (
-                <tr key={i} style={styles.tr}
-                  onClick={() => navigate('/inventory')}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
-                >
-                  <td style={styles.td}>{item.category}</td>
-                  <td style={{ ...styles.td, fontWeight: 'bold' }}>{item.item_name}</td>
-                  <td style={styles.td}>{item.quantity} {item.unit}</td>
-                  <td style={styles.td}>
-                    <span style={{
-                      ...styles.badge,
-                      backgroundColor: item.status === 'out' ? '#e74c3c' : '#f39c12'
-                    }}>
-                      {item.status === 'out' ? '🚨 Out of Stock' : '⚠️ Low Stock'}
-                    </span>
-                  </td>
+          <div style={{ marginBottom: collapsed.lowStock ? 0 : '12px' }}>
+            <button
+              onClick={() => toggleSection('lowStock')}
+              style={styles.sectionHeaderBtn}
+              aria-expanded={!collapsed.lowStock}
+            >
+              <span style={styles.sectionTitle}>📦 Low Stock Alerts ({data.low_stock_alerts.length})</span>
+              {collapsed.lowStock ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
+            </button>
+          </div>
+
+          {!collapsed.lowStock && (
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Category</th>
+                  <th style={styles.th}>Item</th>
+                  <th style={styles.th}>Remaining</th>
+                  <th style={styles.th}>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.low_stock_alerts.map((item, i) => (
+                  <tr key={i} style={styles.tr}
+                    onClick={() => navigate('/inventory')}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                  >
+                    <td style={styles.td}>{item.category}</td>
+                    <td style={{ ...styles.td, fontWeight: 'bold' }}>{item.item_name}</td>
+                    <td style={styles.td}>{item.quantity} {item.unit}</td>
+                    <td style={styles.td}>
+                      <span style={{
+                        ...styles.badge,
+                        backgroundColor: item.status === 'out' ? '#e74c3c' : '#f39c12'
+                      }}>
+                        {item.status === 'out' ? '🚨 Out of Stock' : '⚠️ Low Stock'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
       {/* TODAY'S ORDERS */}
       <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>📋 Today's Orders</h3>
-        {data.today_orders_list.length === 0 ? (
-          <p style={{ color: '#888' }}>No orders today yet.</p>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Order ID</th>
-                <th style={styles.th}>Firm</th>
-                <th style={styles.th}>Description</th>
-                <th style={styles.th}>Status</th>
-                <th style={styles.th}>Amount</th>
-                <th style={styles.th}>Balance Due</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.today_orders_list.map(o => (
-                <tr key={o.id} style={styles.tr}
-                  onClick={() => navigate('/orders')}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
-                >
-                  <td style={styles.td}>#{o.id}</td>
-                  <td style={styles.td}>{o.firm_name}</td>
-                  <td style={styles.td}>{o.description}</td>
-                  <td style={styles.td}>
-                    <span style={{ ...styles.badge, backgroundColor: statusColor(o.status) }}>
-                      {o.status?.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td style={styles.td}>₹{o.total_amount}</td>
-                  <td style={styles.td}>
-                    <span style={{ color: o.balance_due > 0 ? '#e74c3c' : '#27ae60', fontWeight: 'bold' }}>
-                      ₹{o.balance_due}
-                    </span>
-                  </td>
+        <div style={{ marginBottom: collapsed.todayOrders ? 0 : '12px' }}>
+          <button
+            onClick={() => toggleSection('todayOrders')}
+            style={styles.sectionHeaderBtn}
+            aria-expanded={!collapsed.todayOrders}
+          >
+            <span style={styles.sectionTitle}>📋 Today's Orders ({data.today_orders_list.length})</span>
+            {collapsed.todayOrders ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
+          </button>
+        </div>
+
+        {!collapsed.todayOrders && (
+          data.today_orders_list.length === 0 ? (
+            <p style={{ color: '#888' }}>No orders today yet.</p>
+          ) : (
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Order ID</th>
+                  <th style={styles.th}>Firm</th>
+                  <th style={styles.th}>Description</th>
+                  <th style={styles.th}>Status</th>
+                  <th style={styles.th}>Amount</th>
+                  <th style={styles.th}>Balance Due</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.today_orders_list.map(o => (
+                  <tr key={o.id} style={styles.tr}
+                    onClick={() => navigate('/orders')}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                  >
+                    <td style={styles.td}>#{o.id}</td>
+                    <td style={styles.td}>{o.firm_name}</td>
+                    <td style={styles.td}>{o.description}</td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.badge, backgroundColor: statusColor(o.status) }}>
+                        {o.status?.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td style={styles.td}>₹{o.total_amount}</td>
+                    <td style={styles.td}>
+                      <span style={{ color: o.balance_due > 0 ? '#e74c3c' : '#27ae60', fontWeight: 'bold' }}>
+                        ₹{o.balance_due}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
         )}
       </div>
 
       {/* DUE PAYMENTS */}
       <div style={styles.section} id="dues-section">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
-          <h3 style={styles.sectionTitle}>💰 Due Payments — ₹{data.total_outstanding}</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: collapsed.dues ? 0 : '12px', flexWrap: 'wrap', gap: '10px' }}>
+          <button
+            onClick={() => toggleSection('dues')}
+            style={styles.sectionHeaderBtn}
+            aria-expanded={!collapsed.dues}
+          >
+            <span style={styles.sectionTitle}>💰 Due Payments — ₹{data.total_outstanding}</span>
+            {collapsed.dues ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
+          </button>
 
-          {/* Filter buttons */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {[
-              { key: 'overdue', label: '🔴 Overdue' },
-              { key: 'today',   label: '🟡 Today' },
-              { key: 'week',    label: '📅 This Week' },
-              { key: 'all',     label: '📋 All' }
-            ].map(f => (
-              <button key={f.key}
-                onClick={() => setDueDateFilter(f.key)}
-                style={{
-                  padding: '6px 14px', borderRadius: '6px', border: '1px solid #ddd',
-                  backgroundColor: dueDateFilter === f.key ? '#1a1a2e' : '#fff',
-                  color: dueDateFilter === f.key ? '#fff' : '#555',
-                  cursor: 'pointer', fontSize: '13px', fontWeight: dueDateFilter === f.key ? 'bold' : 'normal'
-                }}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          {/* Filter buttons — sirf tab dikhein jab expanded ho */}
+          {!collapsed.dues && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[
+                { key: 'overdue', label: '🔴 Overdue' },
+                { key: 'today',   label: '🟡 Today' },
+                { key: 'week',    label: '📅 This Week' },
+                { key: 'all',     label: '📋 All' }
+              ].map(f => (
+                <button key={f.key}
+                  onClick={() => setDueDateFilter(f.key)}
+                  style={{
+                    padding: '6px 14px', borderRadius: '6px', border: '1px solid #ddd',
+                    backgroundColor: dueDateFilter === f.key ? '#1a1a2e' : '#fff',
+                    color: dueDateFilter === f.key ? '#fff' : '#555',
+                    cursor: 'pointer', fontSize: '13px', fontWeight: dueDateFilter === f.key ? 'bold' : 'normal'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {filteredDues.length === 0 ? (
+        {!collapsed.dues && (filteredDues.length === 0 ? (
           <div style={{ padding: '24px', textAlign: 'center', color: '#888', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             ✅ No dues for this filter.
           </div>
@@ -275,7 +326,7 @@ function Dashboard() {
               </tr>
             </tfoot>
           </table>
-        )}
+        ))}
       </div>
     {waMessage && (
         <p
@@ -369,7 +420,12 @@ const styles = {
   cardNumber: { fontSize: '28px', fontWeight: 'bold', color: '#e94560' },
   cardLabel:  { fontSize: '13px', color: '#888', marginTop: '4px' },
   section:    { marginBottom: '30px' },
-  sectionTitle: { marginBottom: '12px', fontSize: '18px', fontWeight: 'bold' },
+  sectionTitle: { fontSize: '18px', fontWeight: 'bold', flex: 1, textAlign: 'left' },
+  sectionHeaderBtn: {
+    display: 'inline-flex', alignItems: 'center', gap: '8px',
+    background: 'none', border: 'none', cursor: 'pointer',
+    padding: 0, color: '#1a1a2e', fontFamily: 'inherit',
+  },
   table:      { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th:         { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td:         { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
