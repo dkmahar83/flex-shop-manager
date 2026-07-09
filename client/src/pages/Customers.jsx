@@ -118,6 +118,7 @@ function Customers() {
       ) : customers.length === 0 ? (
         <p style={{ color: '#888' }}>No customers found.</p>
       ) : (
+        <div style={styles.tableScroll}>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -158,6 +159,7 @@ function Customers() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
@@ -172,7 +174,8 @@ const styles = {
   input: { padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', flex: '1', minWidth: '200px' },
   submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   searchInput: { width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', marginBottom: '16px', boxSizing: 'border-box' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table: { width: '100%', minWidth: '650px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff', transition: 'background 0.15s' },

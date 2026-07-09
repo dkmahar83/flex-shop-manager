@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getWhatsAppStatus, getWhatsAppQR } from '../services/api'
+import { Smartphone, CheckCircle2, Clock, XCircle } from 'lucide-react'
 
 function WhatsAppSetup() {
   const [status, setStatus] = useState('checking')
@@ -28,7 +29,7 @@ function WhatsAppSetup() {
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <h2 style={{ marginBottom: '20px' }}>📱 WhatsApp Setup</h2>
+      <h2 style={{ marginBottom: '20px' }}>📱 WhatsApp Setup</h2><h2 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}><Smartphone size={20} /> WhatsApp Setup</h2>
 
       {/* Status badge */}
       <div style={{
@@ -43,17 +44,17 @@ function WhatsAppSetup() {
             width: '12px', height: '12px', borderRadius: '50%',
             backgroundColor: status === 'ready' ? '#27ae60' : status === 'qr_pending' ? '#f39c12' : '#ccc'
           }} />
-          <strong>
-            {status === 'ready' ? '✅ WhatsApp Connected — Ready to send bills'
-              : status === 'qr_pending' ? '⏳ Scan QR Code to connect'
-              : status === 'initializing' ? '⏳ Starting WhatsApp...'
-              : status === 'authenticated' ? '⏳ Authenticating...'
-              : '❌ WhatsApp Disconnected'}
+          <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {status === 'ready' ? <><CheckCircle2 size={15} /> WhatsApp Connected — Ready to send bills</>
+              : status === 'qr_pending' ? <><Clock size={15} /> Scan QR Code to connect</>
+              : status === 'initializing' ? <><Clock size={15} /> Starting WhatsApp...</>
+              : status === 'authenticated' ? <><Clock size={15} /> Authenticating...</>
+              : <><XCircle size={15} /> WhatsApp Disconnected</>}
           </strong>
         </div>
         {status === 'ready' && (
           <p style={{ fontSize: '13px', color: '#888', marginTop: '8px', marginLeft: '22px' }}>
-            You can now send bills directly from the Orders page using the 📱 WA button.
+            You can now send bills directly from the Orders page using the <Smartphone size={12} style={{ verticalAlign: 'middle' }} /> WA button.
           </p>
         )}
       </div>
@@ -82,7 +83,7 @@ function WhatsAppSetup() {
           <ol style={{ color: '#555', lineHeight: '2', fontSize: '14px', paddingLeft: '20px' }}>
             <li>Go to <strong>Orders</strong> page</li>
             <li>Find the order you want to bill</li>
-            <li>Click the <strong style={{ color: '#25D366' }}>📱 WA</strong> button</li>
+            <li>Click the <strong style={{ color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Smartphone size={13} /> WA</strong> button</li>
             <li>Bill is automatically sent to customer's WhatsApp</li>
           </ol>
         </div>

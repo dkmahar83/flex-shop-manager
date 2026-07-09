@@ -1,7 +1,22 @@
 import { useState, useEffect } from 'react'
 import { getDashboard, sendBillWhatsApp, getWhatsAppStatus } from '../services/api'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  Package,
+  PackageX,
+  AlertTriangle,
+  ClipboardList,
+  Wallet,
+  CalendarDays,
+  ListFilter,
+  Bell,
+  Smartphone,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Send,
+  BarChart3,
+} from 'lucide-react'
 
 function Dashboard() {
   const [data, setData]       = useState(null)
@@ -48,14 +63,15 @@ function Dashboard() {
     <div>
       <h2 style={styles.heading}>Dashboard — {data.date}</h2>
 
-      {/* STATS ROW */}
+      {/* STATS ROW — collapsed by default so sensitive numbers (dues etc.) don't sit exposed on screen */}
       <div style={{ marginBottom: collapsed.stats ? '20px' : '12px' }}>
         <button
           onClick={() => toggleSection('stats')}
           style={styles.sectionHeaderBtn}
           aria-expanded={!collapsed.stats}
         >
-          <span style={styles.sectionTitle}>📊 Summary Stats</span>
+          <BarChart3 size={17} />
+          <span style={styles.sectionTitle}>Summary Stats</span>
           {collapsed.stats ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
         </button>
       </div>
@@ -101,12 +117,14 @@ function Dashboard() {
               style={styles.sectionHeaderBtn}
               aria-expanded={!collapsed.lowStock}
             >
-              <span style={styles.sectionTitle}>📦 Low Stock Alerts ({data.low_stock_alerts.length})</span>
+              <Package size={17} />
+              <span style={styles.sectionTitle}>Low Stock Alerts ({data.low_stock_alerts.length})</span>
               {collapsed.lowStock ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
             </button>
           </div>
 
           {!collapsed.lowStock && (
+            <div style={styles.tableScroll}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -129,15 +147,18 @@ function Dashboard() {
                     <td style={styles.td}>
                       <span style={{
                         ...styles.badge,
-                        backgroundColor: item.status === 'out' ? '#e74c3c' : '#f39c12'
+                        backgroundColor: item.status === 'out' ? '#e74c3c' : '#f39c12',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px'
                       }}>
-                        {item.status === 'out' ? '🚨 Out of Stock' : '⚠️ Low Stock'}
+                        {item.status === 'out' ? <PackageX size={12} /> : <AlertTriangle size={12} />}
+                        {item.status === 'out' ? 'Out of Stock' : 'Low Stock'}
                       </span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -150,7 +171,8 @@ function Dashboard() {
             style={styles.sectionHeaderBtn}
             aria-expanded={!collapsed.todayOrders}
           >
-            <span style={styles.sectionTitle}>📋 Today's Orders ({data.today_orders_list.length})</span>
+            <ClipboardList size={17} />
+            <span style={styles.sectionTitle}>Today's Orders ({data.today_orders_list.length})</span>
             {collapsed.todayOrders ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
           </button>
         </div>
@@ -159,6 +181,7 @@ function Dashboard() {
           data.today_orders_list.length === 0 ? (
             <p style={{ color: '#888' }}>No orders today yet.</p>
           ) : (
+            <div style={styles.tableScroll}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -195,6 +218,7 @@ function Dashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           )
         )}
       </div>
@@ -207,7 +231,8 @@ function Dashboard() {
             style={styles.sectionHeaderBtn}
             aria-expanded={!collapsed.dues}
           >
-            <span style={styles.sectionTitle}>💰 Due Payments — ₹{data.total_outstanding}</span>
+            <Wallet size={17} />
+            <span style={styles.sectionTitle}>Due Payments — ₹{data.total_outstanding}</span>
             {collapsed.dues ? <ChevronRight size={17} /> : <ChevronDown size={17} />}
           </button>
 
@@ -215,32 +240,37 @@ function Dashboard() {
           {!collapsed.dues && (
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {[
-                { key: 'overdue', label: '🔴 Overdue' },
-                { key: 'today',   label: '🟡 Today' },
-                { key: 'week',    label: '📅 This Week' },
-                { key: 'all',     label: '📋 All' }
-              ].map(f => (
-                <button key={f.key}
-                  onClick={() => setDueDateFilter(f.key)}
-                  style={{
-                    padding: '6px 14px', borderRadius: '6px', border: '1px solid #ddd',
-                    backgroundColor: dueDateFilter === f.key ? '#1a1a2e' : '#fff',
-                    color: dueDateFilter === f.key ? '#fff' : '#555',
-                    cursor: 'pointer', fontSize: '13px', fontWeight: dueDateFilter === f.key ? 'bold' : 'normal'
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
+                { key: 'overdue', label: 'Overdue',   icon: AlertTriangle },
+                { key: 'today',   label: 'Today',      icon: Bell },
+                { key: 'week',    label: 'This Week',  icon: CalendarDays },
+                { key: 'all',     label: 'All',        icon: ListFilter }
+              ].map(f => {
+                const FIcon = f.icon
+                return (
+                  <button key={f.key}
+                    onClick={() => setDueDateFilter(f.key)}
+                    style={{
+                      padding: '6px 14px', borderRadius: '6px', border: '1px solid #ddd',
+                      backgroundColor: dueDateFilter === f.key ? '#1a1a2e' : '#fff',
+                      color: dueDateFilter === f.key ? '#fff' : '#555',
+                      cursor: 'pointer', fontSize: '13px', fontWeight: dueDateFilter === f.key ? 'bold' : 'normal',
+                      display: 'inline-flex', alignItems: 'center', gap: '6px'
+                    }}
+                  >
+                    <FIcon size={13} /> {f.label}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
 
         {!collapsed.dues && (filteredDues.length === 0 ? (
-          <div style={{ padding: '24px', textAlign: 'center', color: '#888', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            ✅ No dues for this filter.
+          <div style={{ padding: '24px', textAlign: 'center', color: '#888', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <CheckCircle2 size={16} /> No dues for this filter.
           </div>
         ) : (
+          <div style={styles.tableScroll}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -280,9 +310,10 @@ function Dashboard() {
                         padding: '3px 8px', borderRadius: '10px', fontSize: '12px',
                         backgroundColor: isOverdue ? '#fff0f0' : isToday ? '#fff8e1' : '#f0f8ff',
                         color: isOverdue ? '#e74c3c' : isToday ? '#f39c12' : '#3498db',
-                        fontWeight: 'bold'
+                        fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px'
                       }}>
-                        {isOverdue ? '⚠️ ' : isToday ? '🔔 ' : ''}{r.follow_up_date || '—'}
+                        {isOverdue ? <AlertTriangle size={11} /> : isToday ? <Bell size={11} /> : null}
+                        {r.follow_up_date || '—'}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -302,11 +333,11 @@ function Dashboard() {
                             backgroundColor: waStatus === 'ready' ? '#25D366' : '#ccc',
                             color: '#fff', border: 'none', padding: '3px 10px',
                             borderRadius: '4px', cursor: waStatus === 'ready' ? 'pointer' : 'not-allowed',
-                            fontSize: '11px'
+                            fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px'
                           }}
                           title={waStatus === 'ready' ? 'Payment reminder bhejo' : 'WhatsApp connected nahi'}
                         >
-                          📱 WA
+                          <Smartphone size={12} /> WA
                         </button>
                       )}
                     </td>
@@ -326,6 +357,7 @@ function Dashboard() {
               </tr>
             </tfoot>
           </table>
+          </div>
         ))}
       </div>
     {waMessage && (
@@ -351,12 +383,14 @@ function Dashboard() {
             style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px',
               width: '380px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
           >
-            <h3 style={{ marginBottom: '6px', fontSize: '16px' }}>📱 Payment Reminder</h3>
+            <h3 style={{ marginBottom: '6px', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Smartphone size={16} /> Payment Reminder
+            </h3>
             <p style={{ fontSize: '13px', color: '#888', marginBottom: '12px' }}>
               {waSendModal.firm_name} — Order #{waSendModal.order_id}
             </p>
-            <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '16px', fontWeight: 'bold' }}>
-              ⚠️ Balance Due: ₹{waSendModal.balance_due}
+            <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AlertTriangle size={14} /> Balance Due: ₹{waSendModal.balance_due}
             </p>
             <label style={{ fontSize: '13px', color: '#555', display: 'block', marginBottom: '6px' }}>
               UPI QR bhejna hai? Account select karo:
@@ -398,8 +432,9 @@ function Dashboard() {
                 }}
                 style={{ flex: 1, padding: '10px', borderRadius: '6px',
                   border: 'none', backgroundColor: '#25D366', color: '#fff',
-                  cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
-              >📤 Send</button>
+                  cursor: 'pointer', fontSize: '14px', fontWeight: 'bold',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              ><Send size={14} /> Send</button>
             </div>
           </div>
         </div>
@@ -426,7 +461,8 @@ const styles = {
     background: 'none', border: 'none', cursor: 'pointer',
     padding: 0, color: '#1a1a2e', fontFamily: 'inherit',
   },
-  table:      { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table:      { width: '100%', minWidth: '600px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th:         { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td:         { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr:         { backgroundColor: '#fff', cursor: 'pointer' },

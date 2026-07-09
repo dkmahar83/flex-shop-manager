@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import QRCode from 'qrcode'
 import { getUpiQrHistory, addUpiQrHistory, toggleUpiQrPaid, deleteUpiQrHistory, clearUpiQrHistory } from '../services/api'
+import {
+  Smartphone, Printer, ClipboardList, Check, Zap, Download,
+  RefreshCw, StickyNote, Trash2, X, CheckCircle2, Calendar,
+} from 'lucide-react'
 
 const UPI_ACCOUNTS = [
   { label: 'BOI Shop Account',               upi: 'boism-9950580621@boi',        name: 'Vijay Flex' },
@@ -126,12 +130,12 @@ export default function UpiQR() {
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '0 0 40px' }}>
 
       <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ margin: 0, fontSize: '22px', color: '#1a1a2e' }}>📲 UPI QR Generator</h2>
+        <h2 style={{ margin: 0, fontSize: '22px', color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: '8px' }}><Smartphone size={20} /> UPI QR Generator</h2>
       </div>
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
         {[
-          { label: "Today Received (Marked ✓)", val: `₹${todayTotal.toFixed(0)}`, color: '#27ae60', bg: '#f0fdf4' },
+          { label: "Today Received (Marked)", val: `₹${todayTotal.toFixed(0)}`, color: '#27ae60', bg: '#f0fdf4' },
           { label: "Pending Confirmations",   val: pendingCount,                 color: '#f39c12', bg: '#fffbeb' },
           { label: "Total QRs Today",         val: todayHistory.length,          color: '#3b82f6', bg: '#eff6ff' },
         ].map(({ label, val, color, bg }) => (
@@ -143,7 +147,7 @@ export default function UpiQR() {
       </div>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-        {[['generator','🖨️ Generate QR'],['history','📋 Payment History']].map(([key, label]) => (
+        {[['generator',<><Printer size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Generate QR</>],['history',<><ClipboardList size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Payment History</>]].map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key)} style={{
             padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
             fontWeight: 600, fontSize: '14px',
@@ -185,8 +189,8 @@ export default function UpiQR() {
                   <div style={{ fontSize: '11px', color: '#888' }}>Selected UPI ID</div>
                   <div style={{ fontWeight: 700, fontSize: '14px', color: '#1a1a2e' }}>{acc.upi}</div>
                 </div>
-                <button onClick={copyUpiId} style={{ background: copied ? '#27ae60' : '#1a1a2e', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}>
-                  {copied ? '✓ Copied' : 'Copy'}
+                <button onClick={copyUpiId} style={{ background: copied ? '#27ae60' : '#1a1a2e', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  {copied ? <><Check size={12} /> Copied</> : 'Copy'}
                 </button>
               </div>
 
@@ -212,7 +216,7 @@ export default function UpiQR() {
                 background: !amount ? '#ccc' : '#1a1a2e', color: '#fff',
                 fontSize: '16px', fontWeight: 700, cursor: !amount ? 'not-allowed' : 'pointer'
               }}>
-                {generating ? 'Generating…' : '⚡ Generate QR Code'}
+                {generating ? 'Generating…' : <><Zap size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Generate QR Code</>}
               </button>
 
               <div style={{ marginTop: '16px', textAlign: 'center', color: '#aaa', fontSize: '11px' }}>
@@ -225,24 +229,24 @@ export default function UpiQR() {
             <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', textAlign: 'center', minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               {!qrUrl ? (
                 <div style={{ color: '#ccc' }}>
-                  <div style={{ fontSize: '60px', marginBottom: '12px' }}>📱</div>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}><Smartphone size={56} /></div>
                   <div style={{ fontSize: '14px' }}>UPI ID aur amount choose karo,<br/>phir Generate karo</div>
                 </div>
               ) : (
                 <>
-                  <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 700, color: '#27ae60' }}>✅ QR Ready </div>
+                  <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 700, color: '#27ae60', display: 'flex', alignItems: 'center', gap: '5px' }}><CheckCircle2 size={14} /> QR Ready</div>
                   <img src={qrUrl} alt="UPI QR Code" style={{ width: '240px', height: '240px', borderRadius: '12px', border: '2px solid #eee' }} />
                   <div style={{ marginTop: '12px', fontSize: '12px', color: '#888' }}>
                     {acc.label}<br/>
                     <span style={{ color: '#555', fontWeight: 600 }}>{acc.upi}</span>
                   </div>
-                  {remarks && <div style={{ fontSize: '12px', color: '#3b82f6', marginTop: '4px' }}>📝 {remarks}</div>}
+                  {remarks && <div style={{ fontSize: '12px', color: '#3b82f6', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><StickyNote size={11} /> {remarks}</div>}
                   <div style={{ display: 'flex', gap: '10px', marginTop: '16px', width: '100%', maxWidth: '280px' }}>
-                    <button onClick={downloadQR} style={{ flex: 1, padding: '10px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                      ⬇️ Download PNG
+                    <button onClick={downloadQR} style={{ flex: 1, padding: '10px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                      <Download size={13} /> Download PNG
                     </button>
-                    <button onClick={() => { setQrUrl(''); setAmount(''); setRemarks('') }} style={{ flex: 1, padding: '10px', background: '#f3f4f6', color: '#555', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                      🔄 New QR
+                    <button onClick={() => { setQrUrl(''); setAmount(''); setRemarks('') }} style={{ flex: 1, padding: '10px', background: '#f3f4f6', color: '#555', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                      <RefreshCw size={13} /> New QR
                     </button>
                   </div>
                 </>
@@ -257,8 +261,8 @@ export default function UpiQR() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ fontSize: '14px', color: '#666' }}>{history.length} total entries</div>
             {history.length > 0 && (
-              <button onClick={clearAll} style={{ background: '#fff', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', cursor: 'pointer' }}>
-                🗑️ Clear All
+              <button onClick={clearAll} style={{ background: '#fff', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                <Trash2 size={12} /> Clear All
               </button>
             )}
           </div>
@@ -267,7 +271,7 @@ export default function UpiQR() {
             <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>Loading…</div>
           ) : history.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px', color: '#aaa', background: '#fff', borderRadius: '12px' }}>
-              <div style={{ fontSize: '40px', marginBottom: '12px' }}>📋</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}><ClipboardList size={36} /></div>
               <div>Abhi koi QR generate nahi hua.<br/>Generator se pehla QR banao!</div>
             </div>
           ) : (
@@ -285,8 +289,8 @@ export default function UpiQR() {
                   return (
                     <div key={date} style={{ marginBottom: '24px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <div style={{ fontWeight: 700, fontSize: '14px', color: '#1a1a2e' }}>
-                          {date === todayStr ? '📅 Today' : date}
+                        <div style={{ fontWeight: 700, fontSize: '14px', color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          {date === todayStr ? <><Calendar size={13} /> Today</> : date}
                         </div>
                         <div style={{ fontSize: '12px', color: '#666' }}>
                           Received: <strong style={{ color: '#27ae60' }}>₹{dayTotal}</strong>
@@ -295,7 +299,8 @@ export default function UpiQR() {
                       </div>
 
                       <div style={{ background: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                        <table style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr style={{ background: '#f8f8f8' }}>
                               {['Time','UPI Account','Amount','Remarks','Status','Action'].map(h => (
@@ -324,17 +329,18 @@ export default function UpiQR() {
                                       background: e.paid ? '#27ae60' : '#f3f4f6',
                                       color: e.paid ? '#fff' : '#555'
                                     }}>
-                                      {e.paid ? '✓ Received' : 'Mark Paid'}
+                                      {e.paid ? <><Check size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Received</> : 'Mark Paid'}
                                     </button>
                                   </td>
                                   <td style={{ padding: '10px 14px' }}>
-                                    <button onClick={() => deleteEntry(e.id)} style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+                                    <button onClick={() => deleteEntry(e.id)} style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: '16px', display: 'inline-flex', alignItems: 'center' }}><X size={15} /></button>
                                   </td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     </div>
                   )

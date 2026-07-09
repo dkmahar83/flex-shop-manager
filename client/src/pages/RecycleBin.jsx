@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import api from '../services/api'
+import { Trash2, Undo2 } from 'lucide-react'
 
 function RecycleBin() {
   const [deletedCustomers, setDeletedCustomers] = useState([])
@@ -37,7 +38,7 @@ function RecycleBin() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: '8px' }}>🗑️ Recycle Bin</h2>
+      <h2 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={20} /> Recycle Bin</h2>
       <p style={{ color: '#888', marginBottom: '20px', fontSize: '14px' }}>
         Items deleted in last 30 days. After 30 days they are permanently gone.
       </p>
@@ -52,6 +53,7 @@ function RecycleBin() {
         {deletedCustomers.length === 0 ? (
           <p style={styles.empty}>No recently deleted customers.</p>
         ) : (
+          <div style={styles.tableScroll}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -68,14 +70,15 @@ function RecycleBin() {
                   <td style={styles.td}>{c.phone || '—'}</td>
                   <td style={styles.td}>{new Date(c.deleted_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                   <td style={styles.td}>
-                    <button onClick={() => restoreCustomer(c.id)} style={styles.restoreBtn}>
-                      ↩ Restore
+                    <button onClick={() => restoreCustomer(c.id)} style={{ ...styles.restoreBtn, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <Undo2 size={13} /> Restore
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -85,6 +88,7 @@ function RecycleBin() {
         {deletedOrders.length === 0 ? (
           <p style={styles.empty}>No recently deleted orders.</p>
         ) : (
+          <div style={styles.tableScroll}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -103,14 +107,15 @@ function RecycleBin() {
                   <td style={styles.td}>₹{o.total_amount}</td>
                   <td style={styles.td}>{new Date(o.deleted_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                   <td style={styles.td}>
-                    <button onClick={() => restoreOrder(o.id)} style={styles.restoreBtn}>
-                      ↩ Restore
+                    <button onClick={() => restoreOrder(o.id)} style={{ ...styles.restoreBtn, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <Undo2 size={13} /> Restore
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
@@ -122,7 +127,8 @@ const styles = {
   sectionTitle: { marginBottom: '12px', fontSize: '16px' },
   empty: { color: '#888', fontSize: '14px' },
   message: { backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '10px 16px', borderRadius: '6px', marginBottom: '16px', cursor: 'pointer' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table: { width: '100%', minWidth: '500px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '10px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '10px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   restoreBtn: { backgroundColor: '#fff', color: '#27ae60', border: '1px solid #27ae60', padding: '5px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }

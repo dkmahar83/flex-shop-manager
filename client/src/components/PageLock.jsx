@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
+import { Lock, KeyRound, AlertTriangle, CheckCircle2, Delete } from 'lucide-react';
 
 // ─── PageLock wrapper ─────────────────────────────────────────────────────────
 // Usage: wrap your page with <PageLock pageKey="accounts" pageTitle="Accounts"> ... </PageLock>
@@ -29,7 +30,7 @@ export default function PageLock({ pageKey, pageTitle, children }) {
   }
 
   async function handleVerify() {
-    if (pin.length < 4) { setError('4 digit PIN daalo'); return; }
+    if (pin.length !== 4) { setError('4 digit PIN daalo'); return; }
     setVerifying(true);
     setError('');
     try {
@@ -91,8 +92,8 @@ export default function PageLock({ pageKey, pageTitle, children }) {
       }}>
 
         {/* Lock icon */}
-        <div style={{ fontSize: '48px', marginBottom: '12px' }}>
-          {status === 'no-pin' ? '🔐' : '🔒'}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px', color: '#e65100' }}>
+          {status === 'no-pin' ? <KeyRound size={44} /> : <Lock size={44} />}
         </div>
 
         <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: '#333' }}>
@@ -131,15 +132,15 @@ function PinEntry({ pin, setPin, error, verifying, inputRef, onVerify, onKeyDown
   const handleDigit = (d) => {
     if (d === '⌫') { setPin(p => p.slice(0, -1)); return; }
     if (d === '') return;
-    if (pin.length >= 6) return;
+    if (pin.length >= 4) return;
     setPin(p => p + String(d));
   };
 
   return (
     <>
       {/* PIN dots display */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
-        {[0,1,2,3,4,5].map(i => (
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginBottom: '20px' }}>
+        {[0,1,2,3].map(i => (
           <div key={i} style={{
             width: '14px', height: '14px', borderRadius: '50%',
             background: i < pin.length ? '#e65100' : '#e0e0e0',
@@ -154,8 +155,9 @@ function PinEntry({ pin, setPin, error, verifying, inputRef, onVerify, onKeyDown
         type="password"
         inputMode="numeric"
         pattern="[0-9]*"
+        maxLength={4}
         value={pin}
-        onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0,6))}
+        onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0,4))}
         onKeyDown={onKeyDown}
         style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
       />
@@ -170,35 +172,36 @@ function PinEntry({ pin, setPin, error, verifying, inputRef, onVerify, onKeyDown
             key={i}
             onClick={() => handleDigit(d)}
             style={{
-              padding: '14px', fontSize: d === '⌫' ? '18px' : '20px',
+              padding: '14px', fontSize: '20px',
               fontWeight: '500', border: '1px solid #eee', borderRadius: '10px',
               background: d === '' ? 'transparent' : '#fafafa',
               cursor: d === '' ? 'default' : 'pointer',
               color: '#333', transition: 'background 0.1s',
-              visibility: d === '' ? 'hidden' : 'visible'
+              visibility: d === '' ? 'hidden' : 'visible',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}
             onMouseEnter={e => { if (d !== '') e.target.style.background = '#fff3e0'; }}
             onMouseLeave={e => { if (d !== '') e.target.style.background = '#fafafa'; }}
           >
-            {d}
+            {d === '⌫' ? <Delete size={18} /> : d}
           </button>
         ))}
       </div>
 
       {error && (
-        <div style={{ color: '#c62828', fontSize: '13px', marginBottom: '12px', fontWeight: '500' }}>
-          ⚠ {error}
+        <div style={{ color: '#c62828', fontSize: '13px', marginBottom: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+          <AlertTriangle size={14} /> {error}
         </div>
       )}
 
       <button
         onClick={onVerify}
-        disabled={verifying || pin.length < 4}
+        disabled={verifying || pin.length !== 4}
         style={{
           width: '100%', padding: '12px',
-          background: pin.length >= 4 ? '#e65100' : '#ccc',
+          background: pin.length === 4 ? '#e65100' : '#ccc',
           color: '#fff', border: 'none', borderRadius: '8px',
-          fontSize: '14px', fontWeight: '600', cursor: pin.length >= 4 ? 'pointer' : 'not-allowed'
+          fontSize: '14px', fontWeight: '600', cursor: pin.length === 4 ? 'pointer' : 'not-allowed'
         }}
       >
         {verifying ? 'Verify ho raha hai...' : 'Unlock'}
@@ -215,7 +218,7 @@ function SetPinForm({ pageKey, onSuccess }) {
   const [err, setErr] = useState('');
 
   const handleSet = async () => {
-    if (newPin.length < 4) { setErr('Kam se kam 4 digits'); return; }
+    if (newPin.length !== 4) { setErr('4 digit PIN daalo'); return; }
     if (newPin !== confirmPin) { setErr('PIN match nahi kiya'); return; }
     setSaving(true);
     try {
@@ -232,14 +235,14 @@ function SetPinForm({ pageKey, onSuccess }) {
     <div style={{ textAlign: 'left' }}>
       <div style={{ marginBottom: '12px' }}>
         <label style={{ fontSize: '12px', color: '#666', display: 'block', marginBottom: '4px' }}>
-          New PIN (4-6 digits)
+          New PIN (4 digits)
         </label>
         <input
           type="password"
           inputMode="numeric"
-          maxLength={6}
+          maxLength={4}
           value={newPin}
-          onChange={e => setNewPin(e.target.value.replace(/\D/g,''))}
+          onChange={e => setNewPin(e.target.value.replace(/\D/g,'').slice(0,4))}
           style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '18px', letterSpacing: '8px', textAlign: 'center', boxSizing: 'border-box' }}
           placeholder="••••"
         />
@@ -251,20 +254,20 @@ function SetPinForm({ pageKey, onSuccess }) {
         <input
           type="password"
           inputMode="numeric"
-          maxLength={6}
+          maxLength={4}
           value={confirmPin}
-          onChange={e => setConfirmPin(e.target.value.replace(/\D/g,''))}
+          onChange={e => setConfirmPin(e.target.value.replace(/\D/g,'').slice(0,4))}
           style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '18px', letterSpacing: '8px', textAlign: 'center', boxSizing: 'border-box' }}
           placeholder="••••"
         />
       </div>
-      {err && <div style={{ color: '#c62828', fontSize: '13px', marginBottom: '10px' }}>⚠ {err}</div>}
+      {err && <div style={{ color: '#c62828', fontSize: '13px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={14} /> {err}</div>}
       <button
         onClick={handleSet}
         disabled={saving}
-        style={{ width: '100%', padding: '12px', background: '#e65100', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+        style={{ width: '100%', padding: '12px', background: '#e65100', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
       >
-        {saving ? 'Set ho raha hai...' : '🔐 PIN Set Karo'}
+        {saving ? 'Set ho raha hai...' : <><Lock size={15} /> PIN Set Karo</>}
       </button>
     </div>
   );
@@ -278,6 +281,7 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
   const [confirmPin, setConfirmPin] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const handleLockNow = async () => {
     try {
@@ -289,15 +293,17 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
   };
 
   const handleChangePin = async () => {
-    if (newPin !== confirmPin) { setMsg('PIN match nahi kiya'); return; }
-    if (newPin.length < 4) { setMsg('4 digits minimum'); return; }
+    if (newPin !== confirmPin) { setMsg('PIN match nahi kiya'); setSuccess(false); return; }
+    if (newPin.length !== 4) { setMsg('4 digit PIN daalo'); setSuccess(false); return; }
     setSaving(true);
     try {
       await api.post(`/page-locks/${pageKey}/set-pin`, { pin: newPin, current_pin: currentPin });
-      setMsg('✓ PIN change ho gaya');
+      setMsg('PIN change ho gaya');
+      setSuccess(true);
       setCurrentPin(''); setNewPin(''); setConfirmPin('');
     } catch (e) {
       setMsg(e.response?.data?.error || 'Error');
+      setSuccess(false);
     } finally {
       setSaving(false);
     }
@@ -310,10 +316,11 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
         style={{
           background: '#333', color: '#fff', border: 'none', borderRadius: '50px',
           padding: '8px 16px', fontSize: '12px', cursor: 'pointer',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          display: 'flex', alignItems: 'center', gap: '6px'
         }}
       >
-        🔒 Lock Settings
+        <Lock size={14} /> Lock Settings
       </button>
 
       {showPanel && (
@@ -332,10 +339,11 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
             style={{
               width: '100%', padding: '8px', marginBottom: '12px',
               background: '#e65100', color: '#fff', border: 'none',
-              borderRadius: '6px', cursor: 'pointer', fontSize: '13px'
+              borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
             }}
           >
-            🔒 Abhi Lock Karo
+            <Lock size={14} /> Abhi Lock Karo
           </button>
 
           <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', fontWeight: '500' }}>
@@ -351,10 +359,10 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
               key={label}
               type="password"
               inputMode="numeric"
-              maxLength={6}
+              maxLength={4}
               placeholder={label}
               value={val}
-              onChange={e => set(e.target.value.replace(/\D/g,''))}
+              onChange={e => set(e.target.value.replace(/\D/g,'').slice(0,4))}
               style={{
                 width: '100%', marginBottom: '6px', padding: '7px 10px',
                 border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px',
@@ -363,7 +371,11 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
             />
           ))}
 
-          {msg && <div style={{ fontSize: '12px', color: msg.startsWith('✓') ? '#2e7d32' : '#c62828', marginBottom: '8px' }}>{msg}</div>}
+          {msg && (
+            <div style={{ fontSize: '12px', color: success ? '#2e7d32' : '#c62828', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {success ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />} {msg}
+            </div>
+          )}
 
           <button
             onClick={handleChangePin}

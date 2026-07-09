@@ -6,6 +6,12 @@ import {
   getCashDrawer, getDenominationDrawer, setDrawerBaseline, deleteLedgerEntry
 } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
+import {
+  Wallet, ClipboardList, Receipt, NotebookPen, Calculator,
+  BarChart3, CreditCard, Banknote, Smartphone, User, Store,
+  Coins, AlertTriangle, CheckCircle2, Phone, Clock, Trash2,
+  RefreshCw, Settings, Lightbulb, StickyNote, X,
+} from 'lucide-react'
 
 const ALL_DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1]
 
@@ -315,7 +321,7 @@ function DailySales() {
   return (
     <div>
       <div style={styles.header}>
-        <h2>💰 Daily Sales & Expenses</h2>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Wallet size={20} /> Daily Sales & Expenses</h2>
       </div>
 
       {message && (
@@ -398,11 +404,11 @@ function DailySales() {
             }
           }}
           >
-            {tab === 'today' ? '📝 Record Entry'
-            : tab === 'history' ? '💰 Cash Drawer'
-            : tab === 'expenses' ? '🧾 Expense List'
-            : tab === 'ledger' ? '📒 Daily Ledger'
-            : '🧮 Galla Hisaab'}
+            {tab === 'today' ? <><ClipboardList size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Record Entry</>
+            : tab === 'history' ? <><Wallet size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cash Drawer</>
+            : tab === 'expenses' ? <><Receipt size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Expense List</>
+            : tab === 'ledger' ? <><NotebookPen size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Daily Ledger</>
+            : <><Calculator size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Galla Hisaab</>}
           </button>
         ))}
       </div>
@@ -412,12 +418,12 @@ function DailySales() {
         <div>
           {todayData && (
             <div style={styles.todayBox}>
-              <h3 style={{ marginBottom: '16px' }}>
-                📊 Today's Summary — {new Date(today).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+              <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <BarChart3 size={17} /> Today's Summary — {new Date(today).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
               </h3>
               <div style={styles.todayRow}>
                 <div style={styles.todayCard}>
-                  <div style={styles.todayCardLabel}>💳 Payments from Orders</div>
+                  <div style={{ ...styles.todayCardLabel, display: 'flex', alignItems: 'center', gap: '5px' }}><CreditCard size={13} /> Payments from Orders</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#27ae60' }}>
                     ₹{todayData.payments_total || 0}
                   </div>
@@ -439,7 +445,7 @@ function DailySales() {
                 </div>
 
                 <div style={styles.todayCard}>
-                  <div style={styles.todayCardLabel}>💵 Other Cash Received</div>
+                  <div style={{ ...styles.todayCardLabel, display: 'flex', alignItems: 'center', gap: '5px' }}><Banknote size={13} /> Other Cash Received</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#3498db' }}>
                     ₹{todayData.cash_income_total || 0}
                   </div>
@@ -471,7 +477,7 @@ function DailySales() {
                 </div>
 
                 <div style={{ ...styles.todayCard, backgroundColor: '#fff5f5', border: '1px solid #fdd' }}>
-                  <div style={styles.todayCardLabel}>🧾 Expenses Today</div>
+                  <div style={{ ...styles.todayCardLabel, display: 'flex', alignItems: 'center', gap: '5px' }}><Receipt size={13} /> Expenses Today</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#e74c3c' }}>
                     ₹{todayData.total_expenses || 0}
                   </div>
@@ -480,7 +486,7 @@ function DailySales() {
 
               {todayData.upi_by_account && todayData.upi_by_account.length > 0 && (
                 <div style={{ ...styles.todayCard, marginTop: '8px' }}>
-                  <div style={styles.todayCardLabel}>📱 UPI Received Today — ₹{todayData.upi_total}</div>
+                  <div style={{ ...styles.todayCardLabel, display: 'flex', alignItems: 'center', gap: '5px' }}><Smartphone size={13} /> UPI Received Today — ₹{todayData.upi_total}</div>
                   <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' }}>
                     {todayData.upi_by_account.map(u => (
                       <div key={u.upi_account} style={{ backgroundColor: '#fff', padding: '10px 14px', borderRadius: '6px', minWidth: '160px' }}>
@@ -505,7 +511,7 @@ function DailySales() {
 
               {todayData.cheques_today && todayData.cheques_today.length > 0 && (
                 <div style={{ ...styles.todayCard, marginTop: '8px', backgroundColor: '#f5f0ff' }}>
-                  <div style={styles.todayCardLabel}>🧾 Cheques Received Today — ₹{todayData.cheque_total}</div>
+                  <div style={{ ...styles.todayCardLabel, display: 'flex', alignItems: 'center', gap: '5px' }}><Receipt size={13} /> Cheques Received Today — ₹{todayData.cheque_total}</div>
                   {todayData.cheques_today.map(c => (
                     <div key={c.id} style={{ ...styles.paymentLine, marginTop: '6px' }}>
                       <span>{c.firm_name} • {c.bank_name || 'Unknown Bank'} • #{c.cheque_number || 'No number'}</span>
@@ -533,7 +539,7 @@ function DailySales() {
 
           <div style={styles.twoCol}>
             <div style={styles.formBox}>
-              <h3 style={{ marginBottom: '4px', color: '#27ae60' }}>💵 Record Other Payment</h3>
+              <h3 style={{ marginBottom: '4px', color: '#27ae60', display: 'flex', alignItems: 'center', gap: '8px' }}><Banknote size={17} /> Record Other Payment</h3>
               <p style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>
                 Cash received from a customer — not linked to a specific order
               </p>
@@ -579,11 +585,11 @@ function DailySales() {
                     </div>
                   )}
                   {selectedCustomer && (
-                    <div style={styles.selectedCustomerBadge}>
-                      ✅ {selectedCustomer.firm_name}
+                    <div style={{ ...styles.selectedCustomerBadge, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <CheckCircle2 size={13} /> {selectedCustomer.firm_name}
                       {selectedCustomer.phone && (
-                        <span style={{ color: '#888', fontSize: '11px', marginLeft: '8px' }}>
-                          📞 {selectedCustomer.phone}
+                        <span style={{ color: '#888', fontSize: '11px', marginLeft: '8px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <Phone size={11} /> {selectedCustomer.phone}
                         </span>
                       )}
                     </div>
@@ -677,7 +683,7 @@ function DailySales() {
             </div>
 
             <div style={styles.formBox}>
-              <h3 style={{ marginBottom: '4px', color: '#e74c3c' }}>🧾 Add Expense</h3>
+              <h3 style={{ marginBottom: '4px', color: '#e74c3c', display: 'flex', alignItems: 'center', gap: '8px' }}><Receipt size={17} /> Add Expense</h3>
               <p style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>
                 Record any cash going out of shop today
               </p>
@@ -722,8 +728,8 @@ function DailySales() {
 
                 {expenseForm.category === 'Employee Advance' && (
                   <div style={{ marginBottom: '12px', backgroundColor: '#fff9e6', padding: '12px', borderRadius: '8px', border: '1px solid #ffc107' }}>
-                    <label style={{ ...styles.label, color: '#856404' }}>
-                      👤 Select Employee * (required for advance)
+                    <label style={{ ...styles.label, color: '#856404', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <User size={13} /> Select Employee * (required for advance)
                     </label>
                     <select
                       style={styles.input}
@@ -742,8 +748,8 @@ function DailySales() {
 
                 {expenseForm.category === 'Vendor Payment' && (
                   <div style={{ marginBottom: '12px', backgroundColor: '#f0f7ff', padding: '12px', borderRadius: '8px', border: '1px solid #3498db' }}>
-                    <label style={{ ...styles.label, color: '#1a5276' }}>
-                      🏪 Select Vendor * (required for vendor payment)
+                    <label style={{ ...styles.label, color: '#1a5276', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Store size={13} /> Select Vendor * (required for vendor payment)
                     </label>
                     <select
                       style={styles.input}
@@ -761,8 +767,8 @@ function DailySales() {
                 )}
                 {expenseForm.category === 'Commission' && (
                   <div style={{ marginBottom: '12px', backgroundColor: '#fff3e0', padding: '12px', borderRadius: '8px', border: '1px solid #ff9800', position: 'relative' }}>
-                    <label style={{ ...styles.label, color: '#e65100', fontWeight: '600' }}>
-                      💸 Customer Select Karo * (Commission ke liye zaroori)
+                    <label style={{ ...styles.label, color: '#e65100', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Coins size={13} /> Customer Select Karo * (Commission ke liye zaroori)
                     </label>
                     <input
                       style={{
@@ -806,19 +812,19 @@ function DailySales() {
                               }}
                             >
                               <span style={{ fontWeight: 'bold' }}>{c.firm_name}</span>
-                              {c.phone && <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>📞 {c.phone}</span>}
+                              {c.phone && <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Phone size={10} /> {c.phone}</span>}
                             </div>
                           ))
                         }
                       </div>
                     )}
                     {commSelectedCustomer && (
-                      <div style={{ ...styles.selectedCustomerBadge, marginTop: '8px', backgroundColor: '#fff3e0', borderColor: '#ff9800', color: '#e65100' }}>
-                        ✅ {commSelectedCustomer.firm_name}
+                      <div style={{ ...styles.selectedCustomerBadge, marginTop: '8px', backgroundColor: '#fff3e0', borderColor: '#ff9800', color: '#e65100', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <CheckCircle2 size={13} /> {commSelectedCustomer.firm_name}
                       </div>
                     )}
-                    <div style={{ fontSize: '11px', color: '#e65100', marginTop: '6px' }}>
-                      ⚠️ Ye amount customer ko wapas ki gayi hai — Cash Drawer / UPI se deduct hogi
+                    <div style={{ fontSize: '11px', color: '#e65100', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <AlertTriangle size={12} /> Ye amount customer ko wapas ki gayi hai — Cash Drawer / UPI se deduct hogi
                     </div>
                   </div>
                 )}
@@ -839,8 +845,8 @@ function DailySales() {
                     value={expenseForm.payment_mode || 'cash'}
                     onChange={e => setExpenseForm({ ...expenseForm, payment_mode: e.target.value, upi_account: '' })}
                   >
-                    <option value="cash">💵 Cash</option>
-                    <option value="upi">📱 UPI</option>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
                   </select>
                 </div>
 
@@ -915,7 +921,7 @@ function DailySales() {
               }}
               onClick={() => fetchCashDrawer(cashDrawerDate)}
             >
-              💰 Load Cash Drawer
+              <Wallet size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Load Cash Drawer
             </button>
           </div>
 
@@ -933,8 +939,8 @@ function DailySales() {
           {cashDrawer && (
             <div>
               <div style={styles.ledgerDateHeader}>
-                <h3>
-                  💰 Cash Drawer — {new Date(cashDrawer.date).toLocaleDateString('en-IN', {
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Wallet size={17} /> Cash Drawer — {new Date(cashDrawer.date).toLocaleDateString('en-IN', {
                     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
                   })}
                 </h3>
@@ -967,7 +973,7 @@ function DailySales() {
               <div style={styles.ledgerGrid}>
                 <div style={styles.ledgerSection}>
                   <div style={styles.ledgerSectionHeader}>
-                    <span>💵 Cash In</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Banknote size={14} /> Cash In</span>
                     <span style={{ color: '#27ae60', fontWeight: 'bold' }}>₹{cashDrawer.total_cash_in}</span>
                   </div>
                   {cashDrawer.cash_in.length === 0 ? (
@@ -986,8 +992,8 @@ function DailySales() {
                               {item.type}
                             </span>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
-                            🕐 {fmtDT(item.created_at || item.payment_date)}
+                          <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <Clock size={10} /> {fmtDT(item.created_at || item.payment_date)}
                           </div>
                         </div>
                         <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
@@ -1006,7 +1012,7 @@ function DailySales() {
 
                 <div style={styles.ledgerSection}>
                   <div style={{ ...styles.ledgerSectionHeader, borderLeft: '4px solid #e74c3c' }}>
-                    <span>🧾 Cash Out</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Receipt size={14} /> Cash Out</span>
                     <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>₹{cashDrawer.total_cash_out}</span>
                   </div>
                   {cashDrawer.cash_out.length === 0 ? (
@@ -1052,7 +1058,7 @@ function DailySales() {
               }}>
                 <div>
                   <div style={{ fontSize: '14px', color: '#555', marginBottom: '4px', fontWeight: 'bold' }}>
-                    💰 Closing Cash Drawer Balance
+                    <Wallet size={13} style={{ marginRight: '5px', verticalAlign: 'middle' }} />Closing Cash Drawer Balance
                   </div>
                   <div style={{ fontSize: '12px', color: '#888' }}>
                     ₹{cashDrawer.opening_balance} opening + ₹{cashDrawer.total_cash_in} in − ₹{cashDrawer.total_cash_out} out
@@ -1097,12 +1103,12 @@ function DailySales() {
                         {exp.category}
                       </div>
                       {exp.paid_to_name && (
-                        <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>
-                          {exp.paid_to_type === 'employee' ? `👤 ${exp.paid_to_name}` : `🏪 ${exp.paid_to_name}`}
+                        <div style={{ fontSize: '12px', color: '#555', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          {exp.paid_to_type === 'employee' ? <><User size={11} /> {exp.paid_to_name}</> : <><Store size={11} /> {exp.paid_to_name}</>}
                         </div>
                       )}
-                      <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
-                        {exp.payment_mode === 'upi' ? `📱 UPI • ${exp.upi_account || 'Unknown'}` : '💵 Cash'}
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {exp.payment_mode === 'upi' ? <><Smartphone size={10} /> UPI • {exp.upi_account || 'Unknown'}</> : <><Banknote size={10} /> Cash</>}
                       </div>
                       {exp.description && (
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
@@ -1110,15 +1116,15 @@ function DailySales() {
                         </div>
                       )}
                       {exp.created_at && (
-                        <div style={{ fontSize: '11px', color: '#bbb', marginTop: '3px' }}>
-                          🕐 {fmtDT(exp.created_at)}
+                        <div style={{ fontSize: '11px', color: '#bbb', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                          <Clock size={10} /> {fmtDT(exp.created_at)}
                         </div>
                       )}
                     </div>
                     <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px', marginRight: '16px' }}>
                       ₹{exp.amount}
                     </div>
-                    <button onClick={() => handleDeleteExpense(exp.id)} style={styles.deleteBtn}>✕</button>
+                    <button onClick={() => handleDeleteExpense(exp.id)} style={{ ...styles.deleteBtn, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={13} /></button>
                   </div>
                 ))}
               </div>
@@ -1155,7 +1161,7 @@ function DailySales() {
               }}
               onClick={() => fetchLedgerByDate(ledgerDate)}
             >
-              📒 Load Ledger
+              <NotebookPen size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Load Ledger
             </button>
           </div>
 
@@ -1164,8 +1170,8 @@ function DailySales() {
           {ledgerByDate && (
             <div>
               <div style={styles.ledgerDateHeader}>
-                <h3>
-                  📒 Ledger — {new Date(ledgerByDate.date).toLocaleDateString('en-IN', {
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <NotebookPen size={17} /> Ledger — {new Date(ledgerByDate.date).toLocaleDateString('en-IN', {
                     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
                   })}
                 </h3>
@@ -1186,7 +1192,7 @@ function DailySales() {
                 {/* INCOME SECTION */}
                 <div style={styles.ledgerSection}>
                   <div style={styles.ledgerSectionHeader}>
-                    <span>💵 Sales / Income</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Banknote size={14} /> Sales / Income</span>
                     <span style={{ color: '#27ae60', fontWeight: 'bold' }}>₹{ledgerByDate.total_income}</span>
                   </div>
 
@@ -1211,8 +1217,8 @@ function DailySales() {
                             </span>
                           </div>
                           {item.notes && (
-                            <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
-                              📝 {item.notes}
+                            <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <StickyNote size={11} /> {item.notes}
                             </div>
                           )}
                         </div>
@@ -1221,7 +1227,9 @@ function DailySales() {
                             ₹{item.amount}
                           </div>
                           <div style={{ fontSize: '12px', color: '#888' }}>
-                            {item.payment_mode === 'cash' || item.payment_mode === null ? '💵 Cash' : `📱 ${item.payment_mode}`}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              {item.payment_mode === 'cash' || item.payment_mode === null ? <><Banknote size={10} /> Cash</> : <><Smartphone size={10} /> {item.payment_mode}</>}
+                            </span>
                           </div>
                         </div>
                         <button
@@ -1242,7 +1250,7 @@ function DailySales() {
                             cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
                           }}
                           title="Delete this entry"
-                        >🗑</button>
+                        ><Trash2 size={12} /></button>
                       </div>
                     ))
                   )}
@@ -1260,7 +1268,7 @@ function DailySales() {
                 {/* EXPENSE SECTION */}
                 <div style={styles.ledgerSection}>
                   <div style={{ ...styles.ledgerSectionHeader, borderLeft: '4px solid #e74c3c' }}>
-                    <span>🧾 Expenses</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Receipt size={14} /> Expenses</span>
                     <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>₹{ledgerByDate.total_expenses}</span>
                   </div>
 
@@ -1284,8 +1292,8 @@ function DailySales() {
                             </div>
                           )}
                           {exp.notes && (
-                            <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic' }}>
-                              📝 {exp.notes}
+                            <div style={{ fontSize: '12px', color: '#888', marginTop: '3px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <StickyNote size={11} /> {exp.notes}
                             </div>
                           )}
                         </div>
@@ -1294,7 +1302,9 @@ function DailySales() {
                             ₹{exp.amount}
                           </div>
                           <div style={{ fontSize: '12px', color: '#888' }}>
-                            {exp.payment_mode === 'upi' ? `📱 ${exp.upi_account || 'UPI'}` : '💵 Cash'}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              {exp.payment_mode === 'upi' ? <><Smartphone size={10} /> {exp.upi_account || 'UPI'}</> : <><Banknote size={10} /> Cash</>}
+                            </span>
                           </div>
                         </div>
                         <button
@@ -1309,7 +1319,7 @@ function DailySales() {
                             cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
                           }}
                           title="Delete this entry"
-                        >🗑</button>
+                        ><Trash2 size={12} /></button>
                       </div>
                     ))
                   )}
@@ -1357,25 +1367,25 @@ function DailySales() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h3 style={{ marginBottom: '4px' }}>🧮 Galla Hisaab — Live Note Count</h3>
+              <h3 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}><Calculator size={17} /> Galla Hisaab — Live Note Count</h3>
               {drawerData?.baseline_set_at && (
                 <p style={{ fontSize: '12px', color: '#888' }}>
                   Last count set: {drawerData.baseline_set_at}
                 </p>
               )}
               {!drawerData?.baseline_set_at && (
-                <p style={{ fontSize: '12px', color: '#e67e22' }}>
-                  ⚠️ Abhi tak koi starting count set nahi hui — "Set Galla Count" se shuru karo.
+                <p style={{ fontSize: '12px', color: '#e67e22', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <AlertTriangle size={13} /> Abhi tak koi starting count set nahi hui — "Set Galla Count" se shuru karo.
                 </p>
               )}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={fetchDrawer} style={{ ...styles.tab, fontSize: '13px' }}>🔄 Refresh</button>
+              <button onClick={fetchDrawer} style={{ ...styles.tab, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><RefreshCw size={13} /> Refresh</button>
               <button
                 onClick={() => setShowBaselineForm(f => !f)}
-                style={{ backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+                style={{ backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
-                {showBaselineForm ? 'Cancel' : '⚙️ Set Galla Count'}
+                {showBaselineForm ? 'Cancel' : <><Settings size={13} /> Set Galla Count</>}
               </button>
             </div>
           </div>
@@ -1387,8 +1397,8 @@ function DailySales() {
               display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
               <div>
-                <div style={{ fontSize: '12px', color: '#1a5276', fontWeight: 'bold', marginBottom: '2px' }}>
-                  💡 Cash Drawer ki closing balance aaj ki:
+                <div style={{ fontSize: '12px', color: '#1a5276', fontWeight: 'bold', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Lightbulb size={13} /> Cash Drawer ki closing balance aaj ki:
                 </div>
                 <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#2980b9' }}>
                   ₹{suggestedBaseline}
@@ -1405,10 +1415,10 @@ function DailySales() {
                 style={{
                   backgroundColor: '#2980b9', color: '#fff', border: 'none',
                   padding: '10px 18px', borderRadius: '8px', cursor: 'pointer',
-                  fontSize: '13px', fontWeight: 'bold'
+                  fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px'
                 }}
               >
-                ⚙️ Isi se Set Karo
+                <Settings size={13} /> Isi se Set Karo
               </button>
             </div>
           )}
@@ -1489,15 +1499,15 @@ function DailySales() {
             style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px',
               width: '360px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
           >
-            <h3 style={{ marginBottom: '8px', color: '#e74c3c' }}>🗑 Entry Delete Karo</h3>
+            <h3 style={{ marginBottom: '8px', color: '#e74c3c', display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={17} /> Entry Delete Karo</h3>
             <p style={{ fontSize: '13px', color: '#555', marginBottom: '4px' }}>Entry:</p>
             <div style={{ backgroundColor: '#fff5f5', border: '1px solid #fdd',
               borderRadius: '6px', padding: '10px 14px', fontSize: '13px',
               color: '#c0392b', marginBottom: '16px', fontWeight: 'bold' }}>
               {deleteModal.label}
             </div>
-            <p style={{ fontSize: '12px', color: '#e74c3c', marginBottom: '16px' }}>
-              ⚠️ Ye entry permanently delete hogi aur sab jagah se hat jaegi. Password daalo:
+            <p style={{ fontSize: '12px', color: '#e74c3c', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <AlertTriangle size={13} /> Ye entry permanently delete hogi aur sab jagah se hat jaegi. Password daalo:
             </p>
             <form onSubmit={handleLedgerDelete}>
               <input
@@ -1528,7 +1538,7 @@ function DailySales() {
                     fontSize: '14px', fontWeight: 'bold',
                     opacity: deleteLoading ? 0.6 : 1 }}
                 >
-                  {deleteLoading ? 'Deleting...' : '🗑 Delete'}
+                  {deleteLoading ? 'Deleting...' : <><Trash2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delete</>}
                 </button>
               </div>
             </form>

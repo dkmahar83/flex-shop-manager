@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import PageLock from '../components/PageLock'
 import { getMonthlyReport, getYearlyReport } from '../services/api'
+import {
+  BarChart3, Calendar, CalendarDays, AlertTriangle, Receipt,
+  CheckCircle2, XCircle,
+} from 'lucide-react'
 
 function Reports() {
   const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0')
@@ -37,7 +41,7 @@ function Reports() {
   <PageLock pageKey="reports" pageTitle="Reports">
   <div>
     <div style={styles.header}>
-        <h2>📊 Reports</h2>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 size={20} /> Reports</h2>
       </div>
 
       {message && (
@@ -47,9 +51,9 @@ function Reports() {
       {/* TABS */}
       <div style={styles.tabRow}>
         {[
-          { key: 'monthly', label: '📅 Monthly P&L' },
-          { key: 'yearly', label: '📆 Yearly Summary' },
-          { key: 'dues', label: '⚠️ All Dues' }
+          { key: 'monthly', label: <><Calendar size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Monthly P&L</> },
+          { key: 'yearly', label: <><CalendarDays size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Yearly Summary</> },
+          { key: 'dues', label: <><AlertTriangle size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />All Dues</> }
         ].map(t => (
           <button key={t.key}
             style={{ ...styles.tab, ...(activeTab === t.key ? styles.activeTab : {}) }}
@@ -123,8 +127,8 @@ function Reports() {
                     ₹{report.net_profit}
                   </div>
                   <div style={styles.cardLabel}>Net Profit</div>
-                  <div style={styles.cardSub}>
-                    {report.net_profit >= 0 ? '✅ Profitable' : '❌ Loss'}
+                  <div style={{ ...styles.cardSub, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {report.net_profit >= 0 ? <><CheckCircle2 size={12} /> Profitable</> : <><XCircle size={12} /> Loss</>}
                   </div>
                 </div>
                 <div style={{ ...styles.card, borderTop: '4px solid #e74c3c' }}>
@@ -140,7 +144,7 @@ function Reports() {
 
               {/* Expense breakdown */}
               <div style={styles.section}>
-                <h4 style={styles.sectionTitle}>🧾 Expense Breakdown</h4>
+                <h4 style={{ ...styles.sectionTitle, display: 'flex', alignItems: 'center', gap: '8px' }}><Receipt size={16} /> Expense Breakdown</h4>
                 {report.expenses.by_category.length === 0 ? (
                   <p style={{ color: '#888' }}>No expenses this month.</p>
                 ) : (
@@ -190,7 +194,8 @@ function Reports() {
               {/* Dues list */}
               {report.dues.list.length > 0 && (
                 <div style={styles.section}>
-                  <h4 style={styles.sectionTitle}>⚠️ Pending Dues</h4>
+                  <h4 style={{ ...styles.sectionTitle, display: 'flex', alignItems: 'center', gap: '8px' }}><AlertTriangle size={16} /> Pending Dues</h4>
+                  <div style={styles.tableScroll}>
                   <table style={styles.table}>
                     <thead>
                       <tr>
@@ -227,7 +232,7 @@ function Reports() {
                               }}>
                                 {d.follow_up_date}
                                 {d.follow_up_date <= new Date().toISOString().split('T')[0] &&
-                                  ' ⚠️'}
+                                  <AlertTriangle size={11} style={{ marginLeft: '4px', verticalAlign: 'middle' }} />}
                               </span>
                             ) : '—'}
                           </td>
@@ -235,6 +240,7 @@ function Reports() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </div>
@@ -302,6 +308,7 @@ function Reports() {
               {/* Monthly table */}
               <div style={styles.section}>
                 <h4 style={styles.sectionTitle}>Month-wise Breakdown</h4>
+                <div style={styles.tableScroll}>
                 <table style={styles.table}>
                   <thead>
                     <tr>
@@ -335,9 +342,9 @@ function Reports() {
                           {m.income === 0 && m.expenses === 0 ? (
                             <span style={{ color: '#ccc', fontSize: '12px' }}>No data</span>
                           ) : m.net >= 0 ? (
-                            <span style={{ color: '#27ae60', fontSize: '12px' }}>✅ Profit</span>
+                            <span style={{ color: '#27ae60', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><CheckCircle2 size={11} /> Profit</span>
                           ) : (
-                            <span style={{ color: '#e74c3c', fontSize: '12px' }}>❌ Loss</span>
+                            <span style={{ color: '#e74c3c', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><XCircle size={11} /> Loss</span>
                           )}
                         </td>
                       </tr>
@@ -362,6 +369,7 @@ function Reports() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </div>
             </div>
           )}
@@ -412,12 +420,13 @@ function DuesTab() {
 
       {dues.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#27ae60' }}>
-          <p style={{ fontSize: '20px' }}>✅ No pending dues!</p>
+          <p style={{ fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><CheckCircle2 size={20} /> No pending dues!</p>
           <p style={{ fontSize: '14px', color: '#888', marginTop: '8px' }}>
             All customers are up to date.
           </p>
         </div>
       ) : (
+        <div style={tableStyles.tableScroll}>
         <table style={tableStyles.table}>
           <thead>
             <tr>
@@ -457,7 +466,7 @@ function DuesTab() {
                       fontWeight: 'bold'
                     }}>
                       {d.follow_up_date}
-                      {d.follow_up_date <= new Date().toISOString().split('T')[0] && ' ⚠️'}
+                      {d.follow_up_date <= new Date().toISOString().split('T')[0] && <AlertTriangle size={11} style={{ marginLeft: '4px', verticalAlign: 'middle' }} />}
                     </span>
                   ) : '—'}
                 </td>
@@ -476,13 +485,15 @@ function DuesTab() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
 }
 
 const tableStyles = {
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table: { width: '100%', minWidth: '750px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' }
@@ -507,7 +518,8 @@ const styles = {
   categoryRow: { display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
   progressBg: { height: '8px', backgroundColor: '#f0f0f0', borderRadius: '4px', overflow: 'hidden' },
   progressBar: { height: '100%', backgroundColor: '#e74c3c', borderRadius: '4px', transition: 'width 0.3s' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table: { width: '100%', minWidth: '700px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },

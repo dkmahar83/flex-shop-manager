@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { login } from '../services/api'
+import { Printer, AlertCircle, Eye, EyeOff, Lock } from 'lucide-react'
 
 function Login({ onLogin }) {
   const [username, setUsername] = useState('')
@@ -32,7 +33,7 @@ function Login({ onLogin }) {
 
         {/* Logo */}
         <div style={styles.logoBox}>
-          <div style={styles.logoIcon}>🖨️</div>
+          <div style={styles.logoIcon}><Printer size={40} color="#1a1a2e" /></div>
           <h1 style={styles.logoText}>VijayFlex Pro</h1>
           <p style={styles.logoSub}>Pilibangan, Rajasthan</p>
         </div>
@@ -41,7 +42,8 @@ function Login({ onLogin }) {
         <form onSubmit={handleSubmit}>
           {error && (
             <div style={styles.errorBox}>
-              ❌ {error}
+              <AlertCircle size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+              {error}
             </div>
           )}
 
@@ -74,7 +76,7 @@ function Login({ onLogin }) {
                 onClick={() => setShowPassword(!showPassword)}
                 style={styles.eyeBtn}
               >
-                {showPassword ? '🙈' : '👁️'}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
@@ -88,7 +90,7 @@ function Login({ onLogin }) {
             type="submit"
             disabled={loading}
           >
-            {loading ? 'Logging in...' : '🔐 Login'}
+            {loading ? 'Logging in...' : <><Lock size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Login</>}
           </button>
         </form>
 

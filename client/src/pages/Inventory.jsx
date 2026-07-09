@@ -8,6 +8,11 @@ import {
   getInventoryCategories, addInventoryCategory, deleteInventoryCategory,
   getDynamicItems, addDynamicItem, updateDynamicItem, deleteDynamicItem
 } from '../services/api'
+import {
+  Package, Image, Stamp, FlaskConical, Printer, Pencil, X, Send,
+  AlertTriangle, Siren, CheckCircle2, Palette, Droplet, FolderPlus,
+  Trash2, Box,
+} from 'lucide-react'
 
 const FLEX_BRANDS = [
   'Normal (180 GSM)', 'Jindal (220 GSM)', 'Black Back', 'Star (300 GSM)',
@@ -322,7 +327,7 @@ function Inventory() {
   return (
     <div>
       <div style={S.header}>
-        <h2>📦 Inventory</h2>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Package size={20} /> Inventory</h2>
       </div>
 
       {message && (
@@ -334,11 +339,11 @@ function Inventory() {
       {/* ── TABS ── */}
       <div style={S.tabRow}>
         {[
-          ['flex',      '🖼️ Flex Rolls'],
-          ['stamps',    '🔖 Stamps'],
-          ['chemicals', '🧪 Chemicals'],
-          ['frames',    '🖼 Photo Frames'],
-          ['ink',       '🖨️ Ink & Solvent'],
+          ['flex',      <><Image size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Flex Rolls</>],
+          ['stamps',    <><Stamp size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Stamps</>],
+          ['chemicals', <><FlaskConical size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Chemicals</>],
+          ['frames',    <><Image size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Photo Frames</>],
+          ['ink',       <><Printer size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Ink & Solvent</>],
         ].map(([key, label]) => (
           <button key={key}
             style={{ ...S.tab, ...(activeTab === key ? S.activeTab : {}) }}
@@ -416,7 +421,7 @@ function Inventory() {
 
           {editFlex && (
             <div style={{ ...S.formBox, borderLeft: '4px solid #f39c12' }}>
-              <h3 style={{ marginBottom: '12px' }}>✏️ Edit: {editFlex.brand} {editFlex.size_ft}ft</h3>
+              <h3 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Pencil size={16} /> Edit: {editFlex.brand} {editFlex.size_ft}ft</h3>
               <form onSubmit={handleUpdateFlex}>
                 <div style={S.formRow}>
                   <div style={{ flex: 1 }}>
@@ -441,7 +446,7 @@ function Inventory() {
           {showUseModal && (
             <div style={S.modal}>
               <div style={S.modalBox}>
-                <h3 style={{ marginBottom: '16px' }}>📤 Use Flex Stock</h3>
+                <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Send size={17} /> Use Flex Stock</h3>
                 <form onSubmit={handleUseFlex}>
                   <label style={S.label}>Rolls Used *</label>
                   <input style={{ ...S.input, marginBottom: '12px' }} type="number" placeholder="e.g. 2"
@@ -498,9 +503,9 @@ function Inventory() {
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxWidth: '180px' }}>
                             {Object.values(sizes).map(item => (
                               <div key={item.id} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
-                                <button style={S.useBtn}
+                                <button style={{ ...S.useBtn, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                                   onClick={() => { setUseForm({ id: item.id, quantity: '', notes: '' }); setShowUseModal(true) }}>
-                                  📤 {item.size_ft}ft
+                                  <Send size={10} /> {item.size_ft}ft
                                 </button>
                                 <button style={{ backgroundColor: '#3e88dd', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                                   onClick={() => {
@@ -508,10 +513,10 @@ function Inventory() {
                                     updateFlexStock(item.id, { ...item, quantity: item.quantity - 1 })
                                       .then(() => getFlexStock().then(r => setFlexStock(r.data)))
                                   }}>−1</button>
-                                <button style={S.editBtn} onClick={() => setEditFlex({ ...item })}>✏️</button>
-                                <button style={S.delBtn} onClick={() => {
+                                <button style={{ ...S.editBtn, display: 'inline-flex', alignItems: 'center' }} onClick={() => setEditFlex({ ...item })}><Pencil size={11} /></button>
+                                <button style={{ ...S.delBtn, display: 'inline-flex', alignItems: 'center' }} onClick={() => {
                                   if (window.confirm('Delete?')) deleteFlexStock(item.id).then(() => getFlexStock().then(r => setFlexStock(r.data)))
-                                }}>✕</button>
+                                }}><X size={11} /></button>
                               </div>
                             ))}
                           </div>
@@ -525,13 +530,15 @@ function Inventory() {
           }
 
           {flexStock.filter(f => f.quantity === 1).length > 0 && (
-            <div style={S.warningBox}>
-              ⚠️ Low Stock: {flexStock.filter(f => f.quantity === 1).map(f => `${f.brand} ${f.size_ft}ft (${f.quantity} left)`).join(', ')}
+            <div style={{ ...S.warningBox, display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Low Stock: {flexStock.filter(f => f.quantity === 1).map(f => `${f.brand} ${f.size_ft}ft (${f.quantity} left)`).join(', ')}</span>
             </div>
           )}
           {flexStock.filter(f => f.quantity === 0).length > 0 && (
-            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b' }}>
-              🚨 Out of Stock: {flexStock.filter(f => f.quantity === 0).map(f => `${f.brand} ${f.size_ft}ft`).join(', ')}
+            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <Siren size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Out of Stock: {flexStock.filter(f => f.quantity === 0).map(f => `${f.brand} ${f.size_ft}ft`).join(', ')}</span>
             </div>
           )}
         </div>
@@ -567,7 +574,7 @@ function Inventory() {
 
           {editStamp && (
             <div style={{ ...S.formBox, borderLeft: '4px solid #f39c12' }}>
-              <h3 style={{ marginBottom: '12px' }}>✏️ Edit: {editStamp.stamp_type}</h3>
+              <h3 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Pencil size={16} /> Edit: {editStamp.stamp_type}</h3>
               <p style={S.formHint}>Use this only to correct details or fix quantity. For restocking, use Add / Restock.</p>
               <form onSubmit={handleStampEdit}>
                 <div style={S.formRow}>
@@ -585,6 +592,7 @@ function Inventory() {
             </div>
           )}
 
+          <div style={S.tableScroll}>
           <table style={S.table}>
             <thead><tr>
               <th style={S.th}>Stamp Type</th><th style={S.th}>Size</th><th style={S.th}>Design</th>
@@ -602,14 +610,15 @@ function Inventory() {
                     <td style={{ ...S.td, fontSize: '12px', color: '#888' }}>{s.notes || '—'}</td>
                     <td style={S.td}>
                       <button style={S.reduceBtn} onClick={() => { if (s.quantity <= 0) return; updateStamp(s.id, { ...s, quantity: s.quantity - 1 }).then(() => getStamps().then(r => setStamps(r.data))) }}>−1</button>
-                      <button style={{ ...S.editBtn, marginLeft: '4px' }} onClick={() => { setEditStamp({ ...s }); setShowStampForm(false) }}>✏️</button>
-                      <button style={{ ...S.delBtn, marginLeft: '4px' }} onClick={() => { if (window.confirm('Delete?')) deleteStamp(s.id).then(() => getStamps().then(r => setStamps(r.data))) }}>✕</button>
+                      <button style={{ ...S.editBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { setEditStamp({ ...s }); setShowStampForm(false) }}><Pencil size={11} /></button>
+                      <button style={{ ...S.delBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { if (window.confirm('Delete?')) deleteStamp(s.id).then(() => getStamps().then(r => setStamps(r.data))) }}><X size={11} /></button>
                     </td>
                   </tr>
                 ))
               }
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -636,7 +645,7 @@ function Inventory() {
                     <label style={S.label}>Unit</label>
                     <select style={S.input} value={chemForm.unit} onChange={e => setChemForm({ ...chemForm, unit: e.target.value, items_per_box: '' })}>
                       <option value="litre">Litre</option><option value="kg">KG</option><option value="bottle">Bottle</option>
-                      <option value="tin">Tin</option><option value="pcs">Pcs</option><option value="box">📦 Box</option>
+                      <option value="tin">Tin</option><option value="pcs">Pcs</option><option value="box">Box</option>
                     </select>
                   </div>
                   {chemForm.unit === 'box' && (
@@ -644,7 +653,7 @@ function Inventory() {
                       <label style={S.label}>Items per Box *</label>
                       <input style={{ ...S.input, borderColor: '#e94560' }} type="number" placeholder="e.g. 25" value={chemForm.items_per_box} onChange={e => setChemForm({ ...chemForm, items_per_box: e.target.value })} />
                       {(chemForm.quantity_to_add && chemForm.items_per_box) && (
-                        <div style={{ fontSize: '11px', color: '#27ae60', marginTop: '4px' }}>✅ Total: {chemForm.quantity_to_add * chemForm.items_per_box} pcs</div>
+                        <div style={{ fontSize: '11px', color: '#27ae60', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={11} /> Total: {chemForm.quantity_to_add * chemForm.items_per_box} pcs</div>
                       )}
                     </div>
                   )}
@@ -658,7 +667,7 @@ function Inventory() {
 
           {editChem && (
             <div style={{ ...S.formBox, borderLeft: '4px solid #f39c12' }}>
-              <h3 style={{ marginBottom: '12px' }}>✏️ Edit: {editChem.chemical_name}</h3>
+              <h3 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Pencil size={16} /> Edit: {editChem.chemical_name}</h3>
               <p style={S.formHint}>Use this only to correct details or fix quantity.</p>
               <form onSubmit={handleChemEdit}>
                 <div style={S.formRow}>
@@ -668,7 +677,7 @@ function Inventory() {
                     <label style={S.label}>Unit</label>
                     <select style={S.input} value={editChem.unit} onChange={e => setEditChem({ ...editChem, unit: e.target.value, items_per_box: '' })}>
                       <option value="litre">Litre</option><option value="kg">KG</option><option value="bottle">Bottle</option>
-                      <option value="tin">Tin</option><option value="pcs">Pcs</option><option value="box">📦 Box</option>
+                      <option value="tin">Tin</option><option value="pcs">Pcs</option><option value="box">Box</option>
                     </select>
                   </div>
                   {editChem.unit === 'box' && (
@@ -684,6 +693,7 @@ function Inventory() {
             </div>
           )}
 
+          <div style={S.tableScroll}>
           <table style={S.table}>
             <thead><tr>
               <th style={S.th}>Chemical</th><th style={S.th}>Quantity</th><th style={S.th}>Unit</th>
@@ -696,7 +706,10 @@ function Inventory() {
                   <tr key={c.id} style={S.tr}>
                     <td style={{ ...S.td, fontWeight: 'bold' }}>{c.chemical_name}</td>
                     <td style={{ ...S.td, fontWeight: 'bold', fontSize: '15px', color: c.quantity <= c.minimum_stock ? '#e74c3c' : '#27ae60' }}>{chemQtyDisplay(c)}</td>
-                    <td style={S.td}>{c.unit === 'box' ? '📦 Box' : c.unit}{c.unit === 'box' && c.items_per_box && <div style={{ fontSize: '11px', color: '#888' }}>{c.items_per_box} pcs/box</div>}</td>
+                    <td style={S.td}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{c.unit === 'box' ? <><Box size={12} /> Box</> : c.unit}</span>
+                      {c.unit === 'box' && c.items_per_box && <div style={{ fontSize: '11px', color: '#888' }}>{c.items_per_box} pcs/box</div>}
+                    </td>
                     <td style={S.td}>{c.minimum_stock}</td>
                     <td style={S.td}>
                       {c.quantity === 0 ? <span style={{ ...S.badge, backgroundColor: '#e74c3c' }}>Out of Stock</span>
@@ -705,14 +718,15 @@ function Inventory() {
                     </td>
                     <td style={S.td}>
                       <button style={S.reduceBtn} onClick={() => { if (c.quantity <= 0) return; updateChemical(c.id, { ...c, quantity: c.quantity - 1 }).then(() => getChemicals().then(r => setChemicals(r.data))) }}>−1</button>
-                      <button style={{ ...S.editBtn, marginLeft: '4px' }} onClick={() => { setEditChem({ ...c }); setShowChemForm(false) }}>✏️</button>
-                      <button style={{ ...S.delBtn, marginLeft: '4px' }} onClick={() => { if (window.confirm('Delete?')) deleteChemical(c.id).then(() => getChemicals().then(r => setChemicals(r.data))) }}>✕</button>
+                      <button style={{ ...S.editBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { setEditChem({ ...c }); setShowChemForm(false) }}><Pencil size={11} /></button>
+                      <button style={{ ...S.delBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { if (window.confirm('Delete?')) deleteChemical(c.id).then(() => getChemicals().then(r => setChemicals(r.data))) }}><X size={11} /></button>
                     </td>
                   </tr>
                 ))
               }
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -746,7 +760,7 @@ function Inventory() {
 
           {editFrame && (
             <div style={{ ...S.formBox, borderLeft: '4px solid #f39c12' }}>
-              <h3 style={{ marginBottom: '12px' }}>✏️ Edit: {editFrame.frame_type}</h3>
+              <h3 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Pencil size={16} /> Edit: {editFrame.frame_type}</h3>
               <p style={S.formHint}>Use this only to correct details or fix quantity.</p>
               <form onSubmit={handleFrameEdit}>
                 <div style={S.formRow}>
@@ -764,6 +778,7 @@ function Inventory() {
             </div>
           )}
 
+          <div style={S.tableScroll}>
           <table style={S.table}>
             <thead><tr>
               <th style={S.th}>Frame Type</th><th style={S.th}>Size</th><th style={S.th}>Design</th>
@@ -780,20 +795,27 @@ function Inventory() {
                     <td style={{ ...S.td, fontWeight: 'bold', fontSize: '16px', color: f.quantity === 0 ? '#e74c3c' : '#27ae60' }}>{f.quantity}</td>
                     <td style={S.td}>
                       <button style={S.reduceBtn} onClick={() => { if (f.quantity <= 0) return; updateFrame(f.id, { ...f, quantity: f.quantity - 1 }).then(() => getFrames().then(r => setFrames(r.data))) }}>−1</button>
-                      <button style={{ ...S.editBtn, marginLeft: '4px' }} onClick={() => { setEditFrame({ ...f }); setShowFrameForm(false) }}>✏️</button>
-                      <button style={{ ...S.delBtn, marginLeft: '4px' }} onClick={() => { if (window.confirm('Delete?')) deleteFrame(f.id).then(() => getFrames().then(r => setFrames(r.data))) }}>✕</button>
+                      <button style={{ ...S.editBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { setEditFrame({ ...f }); setShowFrameForm(false) }}><Pencil size={11} /></button>
+                      <button style={{ ...S.delBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { if (window.confirm('Delete?')) deleteFrame(f.id).then(() => getFrames().then(r => setFrames(r.data))) }}><X size={11} /></button>
                     </td>
                   </tr>
                 ))
               }
             </tbody>
           </table>
+          </div>
 
           {frames.filter(f => f.quantity < 5 && f.quantity > 0).length > 0 && (
-            <div style={S.warningBox}>⚠️ Low Stock: {frames.filter(f => f.quantity < 5 && f.quantity > 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''} (${f.quantity} left)`).join(', ')}</div>
+            <div style={{ ...S.warningBox, display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Low Stock: {frames.filter(f => f.quantity < 5 && f.quantity > 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''} (${f.quantity} left)`).join(', ')}</span>
+            </div>
           )}
           {frames.filter(f => f.quantity === 0).length > 0 && (
-            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b' }}>🚨 Out of Stock: {frames.filter(f => f.quantity === 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''}`).join(', ')}</div>
+            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <Siren size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Out of Stock: {frames.filter(f => f.quantity === 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''}`).join(', ')}</span>
+            </div>
           )}
         </div>
       )}
@@ -819,8 +841,8 @@ function Inventory() {
                     <label style={S.label}>Type</label>
                     <select style={S.input} value={inkForm.item_type}
                       onChange={e => { const t = e.target.value; setInkForm({ ...inkForm, item_type: t, item_name: t === 'solvent' ? 'Cleaning Solvent' : '' }) }}>
-                      <option value="ink">🎨 Ink</option>
-                      <option value="solvent">🧴 Solvent</option>
+                      <option value="ink">Ink</option>
+                      <option value="solvent">Solvent</option>
                     </select>
                   </div>
                   <div style={{ flex: 2 }}>
@@ -850,11 +872,11 @@ function Inventory() {
 
           {editInk && (
             <div style={{ ...S.formBox, borderLeft: '4px solid #f39c12' }}>
-              <h3 style={{ marginBottom: '12px' }}>✏️ Edit: {editInk.item_name}</h3>
+              <h3 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Pencil size={16} /> Edit: {editInk.item_name}</h3>
               <p style={S.formHint}>Use this only to correct details or fix quantity.</p>
               <form onSubmit={handleInkEdit}>
                 <div style={S.formRow}>
-                  <div style={{ flex: 1 }}><label style={S.label}>Type</label><select style={S.input} value={editInk.item_type} onChange={e => setEditInk({ ...editInk, item_type: e.target.value })}><option value="ink">🎨 Ink</option><option value="solvent">🧴 Solvent</option></select></div>
+                  <div style={{ flex: 1 }}><label style={S.label}>Type</label><select style={S.input} value={editInk.item_type} onChange={e => setEditInk({ ...editInk, item_type: e.target.value })}><option value="ink">Ink</option><option value="solvent">Solvent</option></select></div>
                   <div style={{ flex: 2 }}><label style={S.label}>Item Name</label><input style={S.input} value={editInk.item_name} onChange={e => setEditInk({ ...editInk, item_name: e.target.value })} /></div>
                   <div style={{ flex: 1 }}><label style={S.label}>Quantity (actual)</label><input style={S.input} type="number" step="0.1" value={editInk.quantity} onChange={e => setEditInk({ ...editInk, quantity: e.target.value })} /></div>
                   <div style={{ flex: 1 }}><label style={S.label}>Unit</label><select style={S.input} value={editInk.unit} onChange={e => setEditInk({ ...editInk, unit: e.target.value })}><option value="litre">Litre</option><option value="ml">ML</option><option value="bottle">Bottle</option></select></div>
@@ -870,18 +892,18 @@ function Inventory() {
 
           {inkItems.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ marginBottom: '12px', color: '#1a1a2e' }}>🎨 Ink Colors</h3>
+              <h3 style={{ marginBottom: '12px', color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: '8px' }}><Palette size={17} /> Ink Colors</h3>
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                 {inkItems.map(item => (
                   <div key={item.id} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minWidth: '140px', textAlign: 'center', borderTop: `4px solid ${INK_COLOR_MAP[item.item_name] || '#3498db'}` }}>
                     <div style={{ fontSize: '22px', fontWeight: 'bold', color: item.quantity <= item.minimum_level ? '#e74c3c' : '#1a1a2e' }}>{item.quantity}</div>
                     <div style={{ fontSize: '11px', color: '#888' }}>{item.unit}</div>
                     <div style={{ fontWeight: 'bold', marginTop: '6px', fontSize: '13px' }}>{item.item_name}</div>
-                    {item.quantity <= item.minimum_level && <div style={{ fontSize: '10px', color: '#e74c3c', marginTop: '4px' }}>⚠️ Low</div>}
+                    {item.quantity <= item.minimum_level && <div style={{ fontSize: '10px', color: '#e74c3c', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}><AlertTriangle size={10} /> Low</div>}
                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', marginTop: '10px' }}>
                       <button style={S.reduceBtn} onClick={() => { if (item.quantity <= 0) return; updateInkStock(item.id, { ...item, quantity: item.quantity - 1 }).then(() => getInkStock().then(r => setInkStock(r.data))) }}>−1</button>
-                      <button style={S.editBtn} onClick={() => { setEditInk({ ...item }); setShowInkForm(false) }}>✏️</button>
-                      <button style={S.delBtn} onClick={() => { if (window.confirm('Delete?')) deleteInkStock(item.id).then(() => getInkStock().then(r => setInkStock(r.data))) }}>✕</button>
+                      <button style={{ ...S.editBtn, display: 'inline-flex', alignItems: 'center' }} onClick={() => { setEditInk({ ...item }); setShowInkForm(false) }}><Pencil size={11} /></button>
+                      <button style={{ ...S.delBtn, display: 'inline-flex', alignItems: 'center' }} onClick={() => { if (window.confirm('Delete?')) deleteInkStock(item.id).then(() => getInkStock().then(r => setInkStock(r.data))) }}><X size={11} /></button>
                     </div>
                   </div>
                 ))}
@@ -891,7 +913,8 @@ function Inventory() {
 
           {solventItems.length > 0 && (
             <div>
-              <h3 style={{ marginBottom: '12px', color: '#1a1a2e' }}>🧴 Solvent</h3>
+              <h3 style={{ marginBottom: '12px', color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: '8px' }}><Droplet size={17} /> Solvent</h3>
+              <div style={S.tableScroll}>
               <table style={S.table}>
                 <thead><tr><th style={S.th}>Item</th><th style={S.th}>Quantity</th><th style={S.th}>Unit</th><th style={S.th}>Min Level</th><th style={S.th}>Status</th><th style={S.th}>Actions</th></tr></thead>
                 <tbody>
@@ -904,13 +927,14 @@ function Inventory() {
                       <td style={S.td}><span style={{ ...S.badge, backgroundColor: item.quantity <= item.minimum_level ? '#e74c3c' : '#27ae60' }}>{item.quantity <= item.minimum_level ? 'Low' : 'OK'}</span></td>
                       <td style={S.td}>
                         <button style={S.reduceBtn} onClick={() => { if (item.quantity <= 0) return; updateInkStock(item.id, { ...item, quantity: item.quantity - 1 }).then(() => getInkStock().then(r => setInkStock(r.data))) }}>−1</button>
-                        <button style={{ ...S.editBtn, marginLeft: '4px' }} onClick={() => { setEditInk({ ...item }); setShowInkForm(false) }}>✏️</button>
-                        <button style={{ ...S.delBtn, marginLeft: '4px' }} onClick={() => { if (window.confirm('Delete?')) deleteInkStock(item.id).then(() => getInkStock().then(r => setInkStock(r.data))) }}>✕</button>
+                        <button style={{ ...S.editBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { setEditInk({ ...item }); setShowInkForm(false) }}><Pencil size={11} /></button>
+                        <button style={{ ...S.delBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { if (window.confirm('Delete?')) deleteInkStock(item.id).then(() => getInkStock().then(r => setInkStock(r.data))) }}><X size={11} /></button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 
@@ -940,7 +964,7 @@ function Inventory() {
       {showCategoryModal && (
         <div style={S.modal}>
           <div style={{ ...S.modalBox, maxWidth: '460px' }}>
-            <h3 style={{ marginBottom: '8px' }}>📂 New Inventory Category</h3>
+            <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}><FolderPlus size={18} /> New Inventory Category</h3>
             <p style={{ ...S.formHint, marginBottom: '16px' }}>
               Ek naya tab banao — jaise Vinyl, Paper, Lamination, etc. Baad mein isme items add kar sakte ho, bina code edit kiye.
             </p>
@@ -1040,8 +1064,8 @@ function DynamicCategoryTab({ category, showMsg, onDeleted }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
         <button
           onClick={() => { if (window.confirm(`Delete category "${category.label}"? Iske saare items bhi delete ho jayenge.`)) onDeleted() }}
-          style={{ background: 'none', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontSize: '12px' }}>
-          🗑️ Delete this Category
+          style={{ background: 'none', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+          <Trash2 size={12} /> Delete this Category
         </button>
         <button style={S.addBtn} onClick={() => { setShowForm(!showForm); setEditItem(null) }}>
           {showForm ? 'Cancel' : '+ Add / Restock'}
@@ -1103,7 +1127,7 @@ function DynamicCategoryTab({ category, showMsg, onDeleted }) {
 
       {editItem && (
         <div style={{ ...S.formBox, borderLeft: '4px solid #f39c12' }}>
-          <h3 style={{ marginBottom: '12px' }}>✏️ Edit: {editItem.item_name}</h3>
+          <h3 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Pencil size={16} /> Edit: {editItem.item_name}</h3>
           <p style={S.formHint}>Use this only to correct details or fix quantity. For restocking, use Add / Restock.</p>
           <form onSubmit={handleEdit}>
             <div style={S.formRow}>
@@ -1140,6 +1164,7 @@ function DynamicCategoryTab({ category, showMsg, onDeleted }) {
         </div>
       )}
 
+      <div style={S.tableScroll}>
       <table style={S.table}>
         <thead>
           <tr>
@@ -1173,14 +1198,15 @@ function DynamicCategoryTab({ category, showMsg, onDeleted }) {
                 <td style={S.td}>
                   <button style={S.reduceBtn}
                     onClick={() => { if (it.quantity <= 0) return; updateDynamicItem(category.id, it.id, { ...it, quantity: it.quantity - 1 }).then(fetchItems) }}>−1</button>
-                  <button style={{ ...S.editBtn, marginLeft: '4px' }} onClick={() => { setEditItem({ ...it }); setShowForm(false) }}>✏️</button>
-                  <button style={{ ...S.delBtn, marginLeft: '4px' }} onClick={() => handleDeleteItem(it.id)}>✕</button>
+                  <button style={{ ...S.editBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => { setEditItem({ ...it }); setShowForm(false) }}><Pencil size={11} /></button>
+                  <button style={{ ...S.delBtn, marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }} onClick={() => handleDeleteItem(it.id)}><X size={11} /></button>
                 </td>
               </tr>
             ))
           }
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -1202,7 +1228,8 @@ const S = {
   input:     { width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' },
   label:     { fontSize: '12px', color: '#888', display: 'block', marginBottom: '4px' },
   submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-  table:     { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table:     { width: '100%', minWidth: '600px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' },
   th:        { padding: '10px 14px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td:        { padding: '10px 14px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr:        { backgroundColor: '#fff' },

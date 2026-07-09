@@ -7,6 +7,11 @@ import {
   addVendorPurchase, addVendorPayment,
   getCustomers, getExpenses, deleteLedgerEntry
 } from '../services/api'
+import {
+  Landmark, Receipt, Smartphone, Store, Coins, Pencil, Trash2, X,
+  Banknote, Building2, Inbox, CheckCircle2, XCircle, Package,
+  Wallet, Clock, AlertTriangle, Lightbulb,
+} from 'lucide-react'
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -170,9 +175,9 @@ function PaymentMethodSelector({ method, setMethod, upiAccount, setUpiAccount, b
     <div style={{ marginBottom: '14px' }}>
       <label style={styles.label}>Payment Method</label>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-        {btn('💵 Cash', 'cash', '#16a34a')}
-        {btn('📱 UPI',  'upi',  '#7c3aed')}
-        {btn('🏦 Bank', 'bank', '#1d4ed8')}
+        {btn(<><Banknote size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cash</>, 'cash', '#16a34a')}
+        {btn(<><Smartphone size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />UPI</>,  'upi',  '#7c3aed')}
+        {btn(<><Building2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Bank</>, 'bank', '#1d4ed8')}
       </div>
 
       {method === 'upi' && (
@@ -412,9 +417,9 @@ function Accounts() {
   const payMethodBadge = (t) => {
     if (t.type !== 'payment') return null
     const m = t.payment_method || 'cash'
-    const label = m === 'upi'  ? `📱 ${(t.upi_account || 'UPI').split('-')[0].trim()}`
-                : m === 'bank' ? `🏦 ${t.bank_transfer_type || 'NEFT'}`
-                : '💵 Cash'
+    const label = m === 'upi'  ? <><Smartphone size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{(t.upi_account || 'UPI').split('-')[0].trim()}</>
+                : m === 'bank' ? <><Building2 size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{t.bank_transfer_type || 'NEFT'}</>
+                : <><Banknote size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />Cash</>
     const bg = m === 'upi' ? '#7c3aed' : m === 'bank' ? '#1d4ed8' : '#16a34a'
     return <span style={{ ...styles.badge, backgroundColor: bg, fontSize: '11px', marginLeft: '6px' }}>{label}</span>
   }
@@ -422,7 +427,7 @@ function Accounts() {
   return (
     <PageLock pageKey="accounts" pageTitle="Accounts">
     <div>
-      <div style={styles.header}><h2>🏦 Accounts</h2></div>
+      <div style={styles.header}><h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Landmark size={20} /> Accounts</h2></div>
 
       {message && <p style={styles.message} onClick={() => setMessage('')}>{message}</p>}
 
@@ -445,10 +450,10 @@ function Accounts() {
           setActiveTab(tab)
           if (tab === 'commission') fetchCommission()
         }}>
-          {tab === 'cheques' ? '🧾 Cheque Register'
-            : tab === 'upi' ? '📱 UPI Accounts'
-            : tab === 'vendors' ? '🏪 Vendor Accounts'
-            : '💸 Commission'}
+          {tab === 'cheques' ? <><Receipt size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cheque Register</>
+            : tab === 'upi' ? <><Smartphone size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />UPI Accounts</>
+            : tab === 'vendors' ? <><Store size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Vendor Accounts</>
+            : <><Coins size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Commission</>}
         </button>
       ))}
       </div>
@@ -496,6 +501,7 @@ function Accounts() {
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div style={{ flex: '1', minWidth: '300px' }}>
               {cheques.length === 0 ? <p style={{ color: '#888' }}>No cheques for this period.</p> : (
+                <div style={styles.tableScroll}>
                 <table style={styles.table}>
                   <thead><tr><th style={styles.th}>Date</th><th style={styles.th}>Cheque No.</th><th style={styles.th}>Firm</th><th style={styles.th}>Amount</th><th style={styles.th}>Status</th></tr></thead>
                   <tbody>
@@ -514,6 +520,7 @@ function Accounts() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
             {chequeDetail && (
@@ -521,7 +528,7 @@ function Accounts() {
                 <div style={styles.formBox}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <h3>Cheque Details</h3>
-                    <button onClick={() => setEditingCheque(!editingCheque)} style={{ ...styles.addBtn, padding: '6px 14px', fontSize: '13px' }}>{editingCheque ? 'Cancel Edit' : '✏️ Edit'}</button>
+                    <button onClick={() => setEditingCheque(!editingCheque)} style={{ ...styles.addBtn, padding: '6px 14px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>{editingCheque ? 'Cancel Edit' : <><Pencil size={12} /> Edit</>}</button>
                   </div>
                   {!editingCheque ? (
                     <div>
@@ -540,15 +547,18 @@ function Accounts() {
                         {['received','deposited','cleared','bounced'].map(s => (
                           <button key={s} onClick={() => { handleChequeStatusUpdate(chequeDetail.id, s); setChequeDetail({ ...chequeDetail, status: s }); setCheques(cheques.map(c => c.id === chequeDetail.id ? { ...c, status: s } : c)) }}
                             style={{ padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: chequeDetail.status === s ? 'bold' : 'normal', backgroundColor: chequeDetail.status === s ? statusColor(s) : '#fff', color: chequeDetail.status === s ? '#fff' : '#555', border: `1px solid ${statusColor(s)}` }}>
-                            {s === 'received' ? '📬 Received' : s === 'deposited' ? '🏦 In Bank' : s === 'cleared' ? '✅ Cleared' : '❌ Bounced'}
+                            {s === 'received' ? <><Inbox size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Received</>
+                              : s === 'deposited' ? <><Building2 size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />In Bank</>
+                              : s === 'cleared' ? <><CheckCircle2 size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cleared</>
+                              : <><XCircle size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Bounced</>}
                           </button>
                         ))}
                       </div>
                       <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#f8f8f8', borderRadius: '6px', fontSize: '12px', color: '#666' }}>
-                        {chequeDetail.status === 'received' && '📬 Cheque is with you, not yet deposited.'}
-                        {chequeDetail.status === 'deposited' && '🏦 Deposited in bank, waiting to clear.'}
-                        {chequeDetail.status === 'cleared' && '✅ Payment received. Counted in customer dues.'}
-                        {chequeDetail.status === 'bounced' && '❌ Cheque bounced. Follow up with customer.'}
+                        {chequeDetail.status === 'received' && <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Inbox size={12} /> Cheque is with you, not yet deposited.</span>}
+                        {chequeDetail.status === 'deposited' && <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Building2 size={12} /> Deposited in bank, waiting to clear.</span>}
+                        {chequeDetail.status === 'cleared' && <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><CheckCircle2 size={12} /> Payment received. Counted in customer dues.</span>}
+                        {chequeDetail.status === 'bounced' && <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><XCircle size={12} /> Cheque bounced. Follow up with customer.</span>}
                       </div>
                     </div>
                   ) : (
@@ -606,6 +616,7 @@ function Accounts() {
             </div>
           )}
           {upiTransactions.length === 0 ? <p style={{ color: '#888' }}>No UPI transactions for this period.</p> : (
+            <div style={styles.tableScroll}>
             <table style={styles.table}>
               <thead><tr><th style={styles.th}>Date</th><th style={styles.th}>UPI Account</th><th style={styles.th}>From</th><th style={styles.th}>Amount</th><th style={styles.th}>UTR No.</th><th style={styles.th}>Notes</th><th style={styles.th}>Type</th><th style={styles.th}>Action</th></tr></thead>
               <tbody>
@@ -631,13 +642,14 @@ function Accounts() {
                             borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
                           }}
                           title="Delete this entry"
-                        >🗑</button>
+                        ><Trash2 size={12} /></button>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -667,12 +679,14 @@ function Accounts() {
                   <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
                     <button onClick={() => setEditVendorData(v)} title="Edit vendor" style={{
                       background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8',
-                      borderRadius: '6px', padding: '4px 9px', fontSize: '12px', cursor: 'pointer', fontWeight: 700
-                    }}>✏️</button>
+                      borderRadius: '6px', padding: '4px 9px', fontSize: '12px', cursor: 'pointer', fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center'
+                    }}><Pencil size={12} /></button>
                     <button onClick={() => setDeleteConfirmV(v)} title="Delete vendor" style={{
                       background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-                      borderRadius: '6px', padding: '4px 9px', fontSize: '12px', cursor: 'pointer', fontWeight: 700
-                    }}>🗑️</button>
+                      borderRadius: '6px', padding: '4px 9px', fontSize: '12px', cursor: 'pointer', fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center'
+                    }}><Trash2 size={12} /></button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
@@ -711,8 +725,8 @@ function Accounts() {
                   <h4 style={{ marginBottom: '12px' }}>Record Transaction</h4>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
                     {[
-                      { key: 'purchase', label: '📦 Purchase (We Bought)', color: '#e74c3c' },
-                      { key: 'payment',  label: '💵 Payment (We Paid)',     color: '#27ae60' }
+                      { key: 'purchase', label: <><Package size={13} style={{ marginRight: '5px', verticalAlign: 'middle' }} />Purchase (We Bought)</>, color: '#e74c3c' },
+                      { key: 'payment',  label: <><Banknote size={13} style={{ marginRight: '5px', verticalAlign: 'middle' }} />Payment (We Paid)</>,     color: '#27ae60' }
                     ].map(({ key, label, color }) => (
                       <button key={key} type="button" onClick={() => { setTxnType(key); resetTxnForm() }} style={{ ...styles.txnTypeBtn, backgroundColor: txnType === key ? color : '#fff', color: txnType === key ? '#fff' : color, border: `1px solid ${color}` }}>{label}</button>
                     ))}
@@ -768,6 +782,7 @@ function Accounts() {
                 {(!vendorDetail.transactions || vendorDetail.transactions.length === 0) ? (
                   <p style={{ color: '#888', fontSize: '14px' }}>No transactions yet.</p>
                 ) : (
+                  <div style={styles.tableScroll}>
                   <table style={styles.table}>
                     <thead>
                       <tr>
@@ -782,12 +797,12 @@ function Accounts() {
                         <tr key={t.id} style={styles.tr}>
                           <td style={styles.td}>
                             <div>{t.transaction_date}</div>
-                            {t.created_at && <div style={{ fontSize: '11px', color: '#aaa' }}>🕐 {fmtDT(t.created_at)}</div>}
+                            {t.created_at && <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} /> {fmtDT(t.created_at)}</div>}
                           </td>
                           <td style={styles.td}>
                             <div>
-                              <span style={{ ...styles.badge, backgroundColor: t.type === 'purchase' ? '#e74c3c' : '#27ae60' }}>
-                                {t.type === 'purchase' ? '📦 Purchase' : '💵 Payment'}
+                              <span style={{ ...styles.badge, backgroundColor: t.type === 'purchase' ? '#e74c3c' : '#27ae60', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                {t.type === 'purchase' ? <><Package size={11} /> Purchase</> : <><Banknote size={11} /> Payment</>}
                               </span>
                               {payMethodBadge(t)}
                             </div>
@@ -814,6 +829,7 @@ function Accounts() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
             </div>
@@ -823,9 +839,10 @@ function Accounts() {
       {/* ─── COMMISSION TAB ─── */}
       {activeTab === 'commission' && (
         <div>
-          <div style={{ marginBottom: '16px', padding: '12px 16px', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ff9800', fontSize: '13px', color: '#e65100' }}>
-            💡 Commission entries sirf <strong>Daily Sales → Add Expense → Category: Commission</strong> se add hoti hain.
-            Yahan sirf history dikhti hai.
+          <div style={{ marginBottom: '16px', padding: '12px 16px', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ff9800', fontSize: '13px', color: '#e65100', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <Lightbulb size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
+            <span>Commission entries sirf <strong>Daily Sales → Add Expense → Category: Commission</strong> se add hoti hain.
+            Yahan sirf history dikhti hai.</span>
           </div>
 
           {commissionLoading ? (
@@ -833,6 +850,7 @@ function Accounts() {
           ) : commissionEntries.length === 0 ? (
             <p style={{ color: '#aaa' }}>Is mahine koi commission entry nahi hai.</p>
           ) : (
+            <div style={styles.tableScroll}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -851,7 +869,7 @@ function Accounts() {
                   >
                     <td style={styles.td}>
                       <div>{e.expense_date}</div>
-                      {e.created_at && <div style={{ fontSize: '11px', color: '#aaa' }}>🕐 {fmtDT(e.created_at)}</div>}
+                      {e.created_at && <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} /> {fmtDT(e.created_at)}</div>}
                     </td>
                     <td style={styles.td}>
                       <strong>{e.customer_name || '—'}</strong>
@@ -862,9 +880,10 @@ function Accounts() {
                     <td style={styles.td}>
                       <span style={{
                         ...styles.badge,
-                        backgroundColor: e.payment_mode === 'upi' ? '#1565c0' : '#2e7d32'
+                        backgroundColor: e.payment_mode === 'upi' ? '#1565c0' : '#2e7d32',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px'
                       }}>
-                        {e.payment_mode === 'upi' ? `📱 ${e.upi_account || 'UPI'}` : '💵 Cash'}
+                        {e.payment_mode === 'upi' ? <><Smartphone size={11} /> {e.upi_account || 'UPI'}</> : <><Banknote size={11} /> Cash</>}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -883,19 +902,20 @@ function Accounts() {
                 </tr>
               </tfoot>
             </table>
+            </div>
           )}
         </div>
       )}
 
       {/* ── UPI Entry Delete Modal ── */}
       {upiDeleteModal && (
-        <Modal title="🗑 Entry Delete Karo" onClose={() => { setUpiDeleteModal(null); setUpiDeletePassword('') }}>
+        <Modal title={<span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={16} /> Entry Delete Karo</span>} onClose={() => { setUpiDeleteModal(null); setUpiDeletePassword('') }}>
           <p style={{ fontSize: '13px', color: '#555', marginBottom: '4px' }}>Entry:</p>
           <div style={{ backgroundColor: '#fff5f5', border: '1px solid #fdd', borderRadius: '6px', padding: '10px 14px', fontSize: '13px', color: '#c0392b', marginBottom: '16px', fontWeight: 'bold' }}>
             {upiDeleteModal.label}
           </div>
-          <p style={{ fontSize: '12px', color: '#e74c3c', marginBottom: '16px' }}>
-            ⚠️ Ye entry permanently delete hogi aur sab jagah se hat jaegi. Password daalo:
+          <p style={{ fontSize: '12px', color: '#e74c3c', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <AlertTriangle size={13} /> Ye entry permanently delete hogi aur sab jagah se hat jaegi. Password daalo:
           </p>
           <form onSubmit={handleUpiDelete}>
             <input
@@ -916,7 +936,7 @@ function Accounts() {
                 type="submit"
                 disabled={upiDeleteLoading}
                 style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#e74c3c', color: '#fff', cursor: upiDeleteLoading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: upiDeleteLoading ? 0.6 : 1 }}
-              >{upiDeleteLoading ? 'Deleting...' : '🗑 Delete'}</button>
+              >{upiDeleteLoading ? 'Deleting...' : <><Trash2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delete</>}</button>
             </div>
           </form>
         </Modal>
@@ -969,7 +989,8 @@ const styles = {
   input: { width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' },
   label: { fontSize: '12px', color: '#888', display: 'block', marginBottom: '4px' },
   submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table: { width: '100%', minWidth: '650px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '10px 14px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '10px 14px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },

@@ -6,6 +6,11 @@ import {
   updateEmployeeSalary
 } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
+import {
+  Users, CalendarCheck, CalendarDays, Wallet, User, Trash2,
+  Banknote, Smartphone, CheckCircle2, XCircle, Pencil, X,
+  Send, ArrowUpFromLine, AlertTriangle, Clock, Phone,
+} from 'lucide-react'
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -245,11 +250,11 @@ function Employees() {
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   const TABS = [
-    { key: 'list',       label: '👥 Employees' },
-    { key: 'attendance', label: '📅 Mark Attendance' },
-    { key: 'calendar',  label: '🗓️ Calendar' },
-    { key: 'salary',    label: '💰 Salary' },
-    { key: 'profile',   label: '👤 Profile' }
+    { key: 'list',       label: <><Users size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Employees</> },
+    { key: 'attendance', label: <><CalendarCheck size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Mark Attendance</> },
+    { key: 'calendar',  label: <><CalendarDays size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Calendar</> },
+    { key: 'salary',    label: <><Wallet size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Salary</> },
+    { key: 'profile',   label: <><User size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Profile</> }
   ]
 
   return (
@@ -308,6 +313,7 @@ function Employees() {
         loading ? <p>Loading...</p> : employees.length === 0 ? (
           <p style={{ color: '#888' }}>No employees found.</p>
         ) : (
+          <div style={styles.tableScroll}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -337,31 +343,32 @@ function Employees() {
                       setSelectedEmployee(emp)
                       setSalaryData(null)
                       setActiveTab('salary')
-                    }} style={styles.actionBtn}>
-                      💰 Salary
+                    }} style={{ ...styles.actionBtn, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Wallet size={12} /> Salary
                     </button>
                     <button onClick={() => {
                       setCalendarEmployee(emp)
                       setActiveTab('calendar')
                       fetchCalendar(emp.id, calendarMonth, calendarYear)
-                    }} style={{ ...styles.actionBtn, color: '#3498db', borderColor: '#3498db', marginLeft: '6px' }}>
-                      🗓️ Calendar
+                    }} style={{ ...styles.actionBtn, color: '#3498db', borderColor: '#3498db', marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <CalendarDays size={12} /> Calendar
                     </button>
                     <button onClick={() => {
                       loadEmployeeProfile(emp)
                       setActiveTab('profile')
-                    }} style={{ ...styles.actionBtn, color: '#8e44ad', borderColor: '#8e44ad', marginLeft: '6px' }}>
-                      👤 Profile
+                    }} style={{ ...styles.actionBtn, color: '#8e44ad', borderColor: '#8e44ad', marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <User size={12} /> Profile
                     </button>
                     <button onClick={() => handleDeleteEmployee(emp)}
-                      style={{ ...styles.actionBtn, color: '#e74c3c', borderColor: '#e74c3c', marginLeft: '6px' }}>
-                      🗑️ Delete
+                      style={{ ...styles.actionBtn, color: '#e74c3c', borderColor: '#e74c3c', marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Trash2 size={12} /> Delete
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )
       )}
 
@@ -383,6 +390,7 @@ function Employees() {
           </div>
 
           {employees.length === 0 ? <p style={{ color: '#888' }}>No employees.</p> : (
+            <div style={styles.tableScroll}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -410,7 +418,9 @@ function Employees() {
                               border: `1px solid ${attendanceColor(s)}`
                             }}
                           >
-                            {s === 'present' ? '✅ Present' : s === 'absent' ? '❌ Absent' : '½ Half Day'}
+                            {s === 'present' ? <><CheckCircle2 size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Present</>
+                              : s === 'absent' ? <><XCircle size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Absent</>
+                              : '½ Half Day'}
                           </button>
                         ))}
                       </div>
@@ -419,6 +429,7 @@ function Employees() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -426,7 +437,7 @@ function Employees() {
       {/* ── TAB: CALENDAR ── */}
       {activeTab === 'calendar' && (
         <div style={styles.section}>
-          <h3 style={{ marginBottom: '16px' }}>🗓️ Attendance Calendar</h3>
+          <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><CalendarDays size={17} /> Attendance Calendar</h3>
 
           <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div>
@@ -559,7 +570,7 @@ function Employees() {
       {/* ── TAB: SALARY ── */}
       {activeTab === 'salary' && (
         <div style={styles.section}>
-          <h3 style={{ marginBottom: '16px' }}>💰 Salary Calculator</h3>
+          <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Wallet size={17} /> Salary Calculator</h3>
           <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div>
               <label style={styles.label}>Employee</label>
@@ -644,7 +655,7 @@ function Employees() {
 
               {/* CREDIT SALARY */}
               <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginTop: '16px' }}>
-                <h4 style={{ marginBottom: '12px' }}>💸 Credit This Salary</h4>
+                <h4 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}><Send size={15} /> Credit This Salary</h4>
 
                 <div style={{ marginBottom: '12px' }}>
                   <label style={styles.label}>Payment Mode</label>
@@ -656,7 +667,7 @@ function Employees() {
                         backgroundColor: salaryPaymentMode === 'cash' ? '#27ae60' : '#fff',
                         color: salaryPaymentMode === 'cash' ? '#fff' : '#333'
                       }}
-                    >💵 Cash</button>
+                    ><Banknote size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cash</button>
                     <button type="button"
                       onClick={() => setSalaryPaymentMode('upi')}
                       style={{
@@ -664,7 +675,7 @@ function Employees() {
                         backgroundColor: salaryPaymentMode === 'upi' ? '#1565c0' : '#fff',
                         color: salaryPaymentMode === 'upi' ? '#fff' : '#333'
                       }}
-                    >📱 UPI</button>
+                    ><Smartphone size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />UPI</button>
                   </div>
                 </div>
 
@@ -697,7 +708,7 @@ function Employees() {
                     opacity: crediting ? 0.6 : 1, cursor: crediting ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {crediting ? 'Crediting...' : `✅ Credit ₹${salaryData.calculated_salary} to ${selectedEmployee?.name}`}
+                  {crediting ? 'Crediting...' : <><CheckCircle2 size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Credit ₹{salaryData.calculated_salary} to {selectedEmployee?.name}</>}
                 </button>
               </div>
             </div>
@@ -720,7 +731,7 @@ function Employees() {
                   border: selectedEmployee?.id === emp.id ? '1px solid #1a1a2e' : '1px solid #ddd'
                 }}
               >
-                👤 {emp.name}
+                <User size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />{emp.name}
               </button>
             ))}
           </div>
@@ -746,8 +757,8 @@ function Employees() {
               <div style={{ marginBottom: '20px' }}>
                 <h3 style={{ marginBottom: '4px' }}>{employeeProfile.employee.name}</h3>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
-                  <p style={{ color: '#888', fontSize: '13px', margin: 0 }}>
-                    📞 {employeeProfile.employee.phone || '—'} &nbsp;•&nbsp;
+                  <p style={{ color: '#888', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                    <Phone size={12} /> {employeeProfile.employee.phone || '—'} &nbsp;•&nbsp;
                     Salary: <strong style={{ color: '#1a1a2e' }}>₹{employeeProfile.employee.monthly_salary}/month</strong> &nbsp;•&nbsp;
                     Per day: ₹{Math.round(employeeProfile.employee.monthly_salary / 30)}
                   </p>
@@ -762,7 +773,7 @@ function Employees() {
                       borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
                     }}
                   >
-                    {showSalaryEdit ? '✕ Cancel' : '✏️ Edit Salary'}
+                    {showSalaryEdit ? <><X size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cancel</> : <><Pencil size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Edit Salary</>}
                   </button>
                 </div>
 
@@ -804,7 +815,7 @@ function Employees() {
                         fontSize: '14px', fontWeight: 'bold', opacity: salaryEditLoading ? 0.6 : 1
                       }}
                     >
-                      {salaryEditLoading ? 'Saving...' : '✅ Update Salary'}
+                      {salaryEditLoading ? 'Saving...' : <><CheckCircle2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Update Salary</>}
                     </button>
                   </form>
                 )}
@@ -843,8 +854,8 @@ function Employees() {
               {/* Stats */}
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
                 <div style={styles.statBox}>
-                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                    💰 Salary Earned ({employeeProfile.effective_days} days)
+                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Wallet size={12} /> Salary Earned ({employeeProfile.effective_days} days)
                   </div>
                   <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#27ae60' }}>
                     + ₹{Math.abs(employeeProfile.salary_earned)}
@@ -852,8 +863,8 @@ function Employees() {
                 </div>
 
                 <div style={styles.statBox}>
-                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                    📤 Advance Given
+                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <ArrowUpFromLine size={12} /> Advance Given
                   </div>
                   <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#e74c3c' }}>
                     - ₹{Math.abs(employeeProfile.total_advance_paid)}
@@ -865,8 +876,8 @@ function Employees() {
                   backgroundColor: employeeProfile.net_payable >= 0 ? '#f0fff4' : '#fff5f5',
                   border: `1px solid ${employeeProfile.net_payable >= 0 ? '#c3e6cb' : '#fdd'}`
                 }}>
-                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                    {employeeProfile.net_payable >= 0 ? '✅ Net Payable to Employee' : '⚠️ Employee Owes Back'}
+                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    {employeeProfile.net_payable >= 0 ? <><CheckCircle2 size={12} /> Net Payable to Employee</> : <><AlertTriangle size={12} /> Employee Owes Back</>}
                   </div>
                   <div style={{
                     fontSize: '26px', fontWeight: 'bold',
@@ -882,6 +893,7 @@ function Employees() {
               {employeeProfile.payment_history.length === 0 ? (
                 <p style={{ color: '#888' }}>No payments recorded yet.</p>
               ) : (
+                <div style={styles.tableScroll}>
                 <table style={styles.table}>
                   <thead>
                     <tr>
@@ -902,25 +914,26 @@ function Employees() {
                           {/* FIX: display stored timestamp directly without re-parsing through Date() */}
                           <div>{p.date || '—'}</div>
                           {p.created_at && (
-                            <div style={{ fontSize: '11px', color: '#aaa' }}>
-                              🕐 {fmtDT(p.created_at)}
+                            <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              <Clock size={10} /> {fmtDT(p.created_at)}
                             </div>
                           )}
                         </td>
                         <td style={styles.td}>
                           <span style={{
                             ...styles.badge,
-                            backgroundColor: p.type === 'advance' ? '#f39c12' : '#27ae60'
+                            backgroundColor: p.type === 'advance' ? '#f39c12' : '#27ae60',
+                            display: 'inline-flex', alignItems: 'center', gap: '4px'
                           }}>
-                            {p.type === 'advance' ? '💵 Advance' : '💰 Salary'}
+                            {p.type === 'advance' ? <><Banknote size={11} /> Advance</> : <><Wallet size={11} /> Salary</>}
                           </span>
                         </td>
                         <td style={styles.td}>{p.description || '—'}</td>
                         <td style={styles.td}>
-                          <span style={{ fontSize: '13px' }}>
-                            {p.payment_mode === 'cash' ? '💵 Cash'
-                              : p.upi_account ? `📱 ${p.upi_account}`
-                              : '💵 Cash'}
+                          <span style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            {p.payment_mode === 'cash' ? <><Banknote size={11} /> Cash</>
+                              : p.upi_account ? <><Smartphone size={11} /> {p.upi_account}</>
+                              : <><Banknote size={11} /> Cash</>}
                           </span>
                         </td>
                         <td style={styles.td}>
@@ -932,6 +945,7 @@ function Employees() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
           )}
@@ -960,7 +974,8 @@ const styles = {
   activeTab: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
   section: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   attendanceHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  table: { width: '100%', minWidth: '650px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },

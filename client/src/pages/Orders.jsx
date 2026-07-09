@@ -1,6 +1,30 @@
 import { useState, useEffect } from 'react'
 import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF, getOrderPhotos, uploadOrderPhoto, deleteOrderPhoto } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
+import {
+  Ruler,
+  X,
+  Banknote,
+  Smartphone,
+  Search,
+  Check,
+  Pencil,
+  ChevronUp,
+  ChevronDown,
+  FileText,
+  Package,
+  Wallet,
+  Receipt,
+  Scissors,
+  StickyNote,
+  ClipboardList,
+  Camera,
+  Paperclip,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Send,
+} from 'lucide-react'
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -481,12 +505,13 @@ function Orders() {
                       style={{
                         ...styles.toggleBtn,
                         backgroundColor: item.useSize ? '#1a1a2e' : '#fff',
-                        color: item.useSize ? '#fff' : '#333'
+                        color: item.useSize ? '#fff' : '#333',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px'
                       }}
                     >
-                      {item.useSize ? '📐 Size ON' : '📐 L×B'}
+                      <Ruler size={13} /> {item.useSize ? 'Size ON' : 'L×B'}
                     </button>
-                    <button type="button" onClick={() => removeItemRow(index)} style={styles.removeBtn}>✕</button>
+                    <button type="button" onClick={() => removeItemRow(index)} style={{ ...styles.removeBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={14} /></button>
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -581,20 +606,22 @@ function Orders() {
                         onClick={() => setForm(f => ({ ...f, advance_payment_mode: 'cash', advance_upi_account: '' }))}
                         style={{
                           ...styles.modeBtn,
-                          ...(form.advance_payment_mode === 'cash' ? styles.modeBtnActive : {})
+                          ...(form.advance_payment_mode === 'cash' ? styles.modeBtnActive : {}),
+                          display: 'inline-flex', alignItems: 'center', gap: '6px'
                         }}
                       >
-                        💵 Cash
+                        <Banknote size={14} /> Cash
                       </button>
                       <button
                         type="button"
                         onClick={() => setForm(f => ({ ...f, advance_payment_mode: 'upi' }))}
                         style={{
                           ...styles.modeBtn,
-                          ...(form.advance_payment_mode === 'upi' ? styles.modeBtnActive : {})
+                          ...(form.advance_payment_mode === 'upi' ? styles.modeBtnActive : {}),
+                          display: 'inline-flex', alignItems: 'center', gap: '6px'
                         }}
                       >
-                        📱 UPI
+                        <Smartphone size={14} /> UPI
                       </button>
                     </div>
                   </div>
@@ -676,16 +703,19 @@ function Orders() {
         </div>
       )}
       <div style={styles.searchRow}>
-      <input
-        type="text"
-        placeholder="🔍 Search by Order No. / Firm Name / Phone..."
-        value={searchQuery}
-        onChange={e => setSearchQuery(e.target.value)}
-        style={styles.searchInput}
-      />
+      <div style={{ position: 'relative', flex: 1, maxWidth: '340px' }}>
+        <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+        <input
+          type="text"
+          placeholder="Search by Order No. / Firm Name / Phone..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{ ...styles.searchInput, width: '100%', paddingLeft: '36px' }}
+        />
+      </div>
       {searchQuery && (
-        <button onClick={() => setSearchQuery('')} style={styles.clearSearchBtn}>
-          ✕ Clear
+        <button onClick={() => setSearchQuery('')} style={{ ...styles.clearSearchBtn, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <X size={13} /> Clear
         </button>
       )}
     </div>
@@ -705,6 +735,7 @@ function Orders() {
         ) : filteredOrders.length === 0 ? (
           <p style={{ color: '#888' }}>No orders match your search.</p>
         ) : (
+        <div style={styles.tableScroll}>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -769,15 +800,15 @@ function Orders() {
                         />
                         <button
                           onClick={() => handleFollowUpSave(o.id)}
-                          style={{ backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                          style={{ backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'inline-flex', alignItems: 'center' }}
                         >
-                          ✓
+                          <Check size={13} />
                         </button>
                         <button
                           onClick={() => setEditingFollowUp(null)}
-                          style={{ backgroundColor: '#fff', color: '#888', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                          style={{ backgroundColor: '#fff', color: '#888', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'inline-flex', alignItems: 'center' }}
                         >
-                          ✕
+                          <X size={13} />
                         </button>
                       </div>
                     ) : (
@@ -790,16 +821,16 @@ function Orders() {
                         </span>
                         <button
                           onClick={() => { setEditingFollowUp(o.id); setFollowUpValue(o.follow_up_date || '') }}
-                          style={{ backgroundColor: '#f0f0f0', border: '1px solid #ddd', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', color: '#555' }}
+                          style={{ backgroundColor: '#f0f0f0', border: '1px solid #ddd', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', color: '#555', display: 'inline-flex', alignItems: 'center' }}
                         >
-                          ✏️
+                          <Pencil size={11} />
                         </button>
                       </div>
                     )}
                   </td>
                   <td style={styles.td}>
-                    <button onClick={() => toggleExpand(o)} style={styles.detailBtn}>
-                      {expandedOrder === o.id ? '▲ Hide' : '▼ Details'}
+                    <button onClick={() => toggleExpand(o)} style={{ ...styles.detailBtn, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      {expandedOrder === o.id ? <><ChevronUp size={12} /> Hide</> : <><ChevronDown size={12} /> Details</>}
                     </button>
                     <button onClick={() => openEditForm(o)} style={{ ...styles.editBtn, marginLeft: '6px' }}>
                       Edit
@@ -827,10 +858,11 @@ function Orders() {
                         borderRadius: '4px',
                         cursor: 'pointer',
                         fontSize: '12px',
-                        marginLeft: '6px'
+                        marginLeft: '6px',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px'
                       }}
                     >
-                      📄 Bill
+                      <FileText size={12} /> Bill
                     </button>
                     <button
                       onClick={() => {
@@ -846,11 +878,12 @@ function Orders() {
                         borderRadius: '4px',
                         cursor: waStatus === 'ready' ? 'pointer' : 'not-allowed',
                         fontSize: '12px',
-                        marginLeft: '6px'
+                        marginLeft: '6px',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px'
                       }}
                       title={waStatus === 'ready' ? 'Send bill on WhatsApp' : 'WhatsApp not connected'}
                     >
-                      📱 WA
+                      <Smartphone size={12} /> WA
                     </button>
                     <button onClick={() => handleDeleteOrder(o)} style={{ ...styles.deleteBtn, marginLeft: '6px' }}>
                       Delete
@@ -888,7 +921,8 @@ function Orders() {
                         )}
 
                         <div style={styles.detailSection}>
-                          <h4 style={styles.detailTitle}>📦 Order Items</h4>
+                          <h4 style={{ ...styles.detailTitle, display: 'flex', alignItems: 'center', gap: '6px' }}><Package size={15} /> Order Items</h4>
+                          <div style={styles.tableScroll}>
                           <table style={styles.innerTable}>
                             <thead>
                               <tr>
@@ -915,10 +949,12 @@ function Orders() {
                               </tr>
                             </tbody>
                           </table>
+                          </div>
                         </div>
 
                         <div style={styles.detailSection}>
-                          <h4 style={styles.detailTitle}>💰 Payment History</h4>
+                          <h4 style={{ ...styles.detailTitle, display: 'flex', alignItems: 'center', gap: '6px' }}><Wallet size={15} /> Payment History</h4>
+                          <div style={styles.tableScroll}>
                           <table style={styles.innerTable}>
                             <thead>
                               <tr>
@@ -950,7 +986,9 @@ function Orders() {
                                         backgroundColor: orderDetail.advance_payment_mode === 'upi' ? '#e3f2fd' : '#e8f5e9',
                                         color: orderDetail.advance_payment_mode === 'upi' ? '#1565c0' : '#2e7d32'
                                       }}>
-                                        {orderDetail.advance_payment_mode === 'upi' ? '📱 UPI' : '💵 Cash'}
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                        {orderDetail.advance_payment_mode === 'upi' ? <><Smartphone size={11} /> UPI</> : <><Banknote size={11} /> Cash</>}
+                                      </span>
                                       </span>
                                     )}
                                   </td>
@@ -978,9 +1016,11 @@ function Orders() {
                                         backgroundColor: p.payment_mode === 'upi' ? '#e3f2fd' : '#e8f5e9',
                                         color: p.payment_mode === 'upi' ? '#1565c0' : '#2e7d32'
                                       }}>
-                                        {p.payment_mode === 'upi'
-                                          ? `📱 ${p.upi_account || 'UPI'}`
-                                          : '💵 Cash'}
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                          {p.payment_mode === 'upi'
+                                            ? <><Smartphone size={11} /> {p.upi_account || 'UPI'}</>
+                                            : <><Banknote size={11} /> Cash</>}
+                                        </span>
                                       </span>
                                     )}
                                   </td>
@@ -988,7 +1028,7 @@ function Orders() {
                               ))}
                               {orderDetail.cheques && orderDetail.cheques.map((c) => (
                                 <tr key={`cheque-${c.id}`} style={{ backgroundColor: '#f5f0ff' }}>
-                                  <td style={styles.innerTd}>🧾</td>
+                                  <td style={styles.innerTd}><Receipt size={14} /></td>
                                   <td style={styles.innerTd}>
                                     {c.received_date
                                       ? new Date(c.received_date).toLocaleDateString('en-GB').replace(/\//g, '.')
@@ -1011,7 +1051,8 @@ function Orders() {
                                         : c.status === 'bounced' ? '#c0392b'
                                         : '#856404'
                                     }}>
-                                      🧾 {c.status === 'cleared' ? 'Cleared'
+                                      <Receipt size={11} style={{ marginRight: '3px', verticalAlign: 'middle' }} />
+                                      {c.status === 'cleared' ? 'Cleared'
                                         : c.status === 'bounced' ? 'Bounced'
                                         : 'Awaiting Clearance'}
                                     </span>
@@ -1020,8 +1061,8 @@ function Orders() {
                               ))}
                               {orderDetail.discount_amount > 0 && (
                                 <tr style={{ backgroundColor: '#fff8e1' }}>
-                                  <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: '#e67e22' }}>
-                                    ✂ Discount {orderDetail.discount_note ? `(${orderDetail.discount_note})` : '(Round-off)'}
+                                  <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: '#e67e22', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                    <Scissors size={13} /> Discount {orderDetail.discount_note ? `(${orderDetail.discount_note})` : '(Round-off)'}
                                   </td>
                                   <td colSpan="2" style={{ ...styles.innerTd, fontWeight: 'bold', color: '#e67e22' }}>
                                     - ₹{orderDetail.discount_amount}
@@ -1044,6 +1085,7 @@ function Orders() {
                               </tr>
                             </tbody>
                           </table>
+                          </div>
 
                           {orderDetail.balance_due > 0 && (
                             <form onSubmit={handleAddPayment} style={styles.paymentForm}>
@@ -1060,16 +1102,17 @@ function Orders() {
                                     padding: '4px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer',
                                     backgroundColor: paymentForm.showDiscount ? '#e67e22' : '#f0f0f0',
                                     color: paymentForm.showDiscount ? '#fff' : '#333',
-                                    border: '1px solid #ddd'
+                                    border: '1px solid #ddd',
+                                    display: 'inline-flex', alignItems: 'center', gap: '5px'
                                   }}
                                 >
-                                  ✂ {paymentForm.showDiscount ? 'Discount ON' : 'Discount OFF'}
+                                  <Scissors size={12} /> {paymentForm.showDiscount ? 'Discount ON' : 'Discount OFF'}
                                 </button>
                               </div>
 
                               {paymentForm.showDiscount && (
                                 <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'center', backgroundColor: '#fff8e1', padding: '10px', borderRadius: '8px' }}>
-                                  <span style={{ fontSize: '13px', color: '#e67e22', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✂ Discount:</span>
+                                  <span style={{ fontSize: '13px', color: '#e67e22', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Scissors size={12} /> Discount:</span>
                                   <input
                                     style={{ ...styles.input, maxWidth: '130px' }}
                                     type="number" placeholder="Amount ₹"
@@ -1119,7 +1162,7 @@ function Orders() {
                                         color: paymentForm.payment_mode === 'cash' ? '#fff' : '#333',
                                         cursor: 'pointer', fontSize: '13px', fontWeight: '500'
                                       }}
-                                    >💵 Cash</button>
+                                    ><Banknote size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cash</button>
                                     <button
                                       type="button"
                                       onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'upi', cheque_number: '', bank_name: '' }))}
@@ -1129,7 +1172,7 @@ function Orders() {
                                         color: paymentForm.payment_mode === 'upi' ? '#fff' : '#333',
                                         cursor: 'pointer', fontSize: '13px', fontWeight: '500'
                                       }}
-                                    >📱 UPI</button>
+                                    ><Smartphone size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />UPI</button>
                                     <button
                                       type="button"
                                       onClick={() => setPaymentForm(f => ({ ...f, payment_mode: 'cheque', upi_account: '' }))}
@@ -1139,7 +1182,7 @@ function Orders() {
                                         color: paymentForm.payment_mode === 'cheque' ? '#fff' : '#333',
                                         cursor: 'pointer', fontSize: '13px', fontWeight: '500'
                                       }}
-                                    >🧾 Cheque</button>
+                                    ><Receipt size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Cheque</button>
                                   </div>
                                 </div>
 
@@ -1212,7 +1255,7 @@ function Orders() {
 
                         {orderDetail.notes && (
                           <div style={styles.detailSection}>
-                            <h4 style={styles.detailTitle}>📝 Notes</h4>
+                            <h4 style={{ ...styles.detailTitle, display: 'flex', alignItems: 'center', gap: '6px' }}><StickyNote size={15} /> Notes</h4>
                             <p style={{ fontSize: '14px', color: '#555' }}>{orderDetail.notes}</p>
                           </div>
                         )}
@@ -1220,7 +1263,7 @@ function Orders() {
                         {/* ACTIVITY LOG */}
                         {orderDetail.activityLog && orderDetail.activityLog.length > 0 && (
                           <div style={styles.detailSection}>
-                            <h4 style={styles.detailTitle}>📋 Activity Log</h4>
+                            <h4 style={{ ...styles.detailTitle, display: 'flex', alignItems: 'center', gap: '6px' }}><ClipboardList size={15} /> Activity Log</h4>
                             {orderDetail.activityLog.map(a => (
                               <div key={a.id} style={{
                                 fontSize: '12px', color: '#555',
@@ -1236,7 +1279,7 @@ function Orders() {
 
                         {/* ORDER PHOTOS */}
                         <div style={styles.detailSection}>
-                          <h4 style={styles.detailTitle}>📷 Order Photos</h4>
+                          <h4 style={{ ...styles.detailTitle, display: 'flex', alignItems: 'center', gap: '6px' }}><Camera size={15} /> Order Photos</h4>
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
                             <input
                               type="text"
@@ -1250,7 +1293,7 @@ function Orders() {
                               borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500',
                               opacity: photoUploading ? 0.6 : 1, whiteSpace: 'nowrap'
                             }}>
-                              {photoUploading ? 'Uploading...' : '📎 Add Photo'}
+                              {photoUploading ? 'Uploading...' : <><Paperclip size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Add Photo</>}
                               <input
                                 type="file"
                                 accept="image/*"
@@ -1284,9 +1327,10 @@ function Orders() {
                                       position: 'absolute', top: '4px', right: '4px',
                                       backgroundColor: 'rgba(0,0,0,0.55)', color: '#fff',
                                       border: 'none', borderRadius: '50%', width: '22px', height: '22px',
-                                      fontSize: '12px', cursor: 'pointer', lineHeight: 1
+                                      fontSize: '12px', cursor: 'pointer', lineHeight: 1,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
                                     }}
-                                  >✕</button>
+                                  ><X size={12} /></button>
                                 </div>
                               ))}
                             </div>
@@ -1300,6 +1344,7 @@ function Orders() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* WA SEND MODAL */}
@@ -1312,15 +1357,15 @@ function Orders() {
             onClick={e => e.stopPropagation()}
             style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '28px', width: '380px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
           >
-            <h3 style={{ marginBottom: '6px', fontSize: '16px' }}>📱 WhatsApp Bill</h3>
+            <h3 style={{ marginBottom: '6px', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}><Smartphone size={16} /> WhatsApp Bill</h3>
             <p style={{ fontSize: '13px', color: '#888', marginBottom: '20px' }}>
               {waSendModal.firm_name} — Bill #{waSendModal.order_number || waSendModal.id}
             </p>
 
             {waSendModal.balance_due > 0 ? (
               <>
-                <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '12px', fontWeight: 'bold' }}>
-                  ⚠️ Balance Due: ₹{waSendModal.balance_due}
+                <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertTriangle size={14} /> Balance Due: ₹{waSendModal.balance_due}
                 </p>
                 <label style={{ fontSize: '13px', color: '#555', display: 'block', marginBottom: '6px' }}>
                   UPI QR bhejna hai? Account select karo:
@@ -1330,7 +1375,7 @@ function Orders() {
                   onChange={e => setSelectedUpiForWA(e.target.value)}
                   style={{ ...styles.input, marginBottom: '20px' }}
                 >
-                  <option value="">❌ QR mat bhejo</option>
+                  <option value="">QR mat bhejo</option>
                   {[
                     { label: 'BOI Shop Account', upiId: 'boism-9950580621@boi' },
                     { label: 'Google Pay - Rampratap Painter', upiId: 'gpay-11263065173@okbizaxis' },
@@ -1342,8 +1387,8 @@ function Orders() {
                 </select>
               </>
             ) : (
-              <p style={{ fontSize: '13px', color: '#27ae60', marginBottom: '20px', fontWeight: 'bold' }}>
-                ✅ Fully Paid — QR nahi bheja jayega
+              <p style={{ fontSize: '13px', color: '#27ae60', marginBottom: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={15} /> Fully Paid — QR nahi bheja jayega
               </p>
             )}
 
@@ -1361,9 +1406,9 @@ function Orders() {
                     .then(res => { setMessage(res.data.message); setWaSendModal(null) })
                     .catch(err => { setMessage('WhatsApp error: ' + (err.response?.data?.error || 'Not connected')); setWaSendModal(null) })
                 }}
-                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#25D366', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#25D366', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
               >
-                📤 Send
+                <Send size={14} /> Send
               </button>
             </div>
           </div>
@@ -1387,8 +1432,8 @@ function Orders() {
           )}
           <button
             onClick={() => setLightboxPhoto(null)}
-            style={{ position: 'absolute', top: '20px', right: '28px', background: 'transparent', border: 'none', color: '#fff', fontSize: '32px', cursor: 'pointer' }}
-          >✕</button>
+            style={{ position: 'absolute', top: '20px', right: '28px', background: 'transparent', border: 'none', color: '#fff', fontSize: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          ><X size={28} /></button>
         </div>
       )}
     </div>
@@ -1421,7 +1466,8 @@ const styles = {
   clearSearchBtn: { backgroundColor: '#fff', border: '1px solid #ddd', color: '#888', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
   filterBtn: { padding: '7px 16px', borderRadius: '20px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', textTransform: 'capitalize' },
   filterActive: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  table: { width: '100%', minWidth: '900px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },
@@ -1432,7 +1478,7 @@ const styles = {
   detailBox: { padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' },
   detailSection: { backgroundColor: '#fff', padding: '16px', borderRadius: '8px' },
   detailTitle: { marginBottom: '10px', fontSize: '14px', color: '#333' },
-  innerTable: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+  innerTable: { width: '100%', minWidth: '500px', borderCollapse: 'collapse', fontSize: '13px' },
   innerTh: { padding: '8px 12px', backgroundColor: '#f8f8f8', textAlign: 'left', borderBottom: '1px solid #eee', color: '#666' },
   innerTd: { padding: '8px 12px', borderBottom: '1px solid #f0f0f0' },
   advanceBadge: { backgroundColor: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontSize: '11px' },

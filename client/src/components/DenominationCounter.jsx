@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Calculator, ChevronUp, ChevronDown, Banknote, Undo2, RotateCcw } from 'lucide-react'
 
 const DENOMINATIONS = [
   { label: '₹500', value: 500 },
@@ -33,8 +34,8 @@ function DenominationCounter({ onApply, context = 'income' }) {
   const netTotal = receivedTotal - returnedTotal
 
   const labels = context === 'expense'
-    ? { section1: '💸 Cash Given', section2: '↩️ In Return', color1: '#e74c3c', color2: '#27ae60' }
-    : { section1: '💵 Cash Received', section2: '🔁 Change Returned', color1: '#27ae60', color2: '#e74c3c' }
+    ? { section1: 'Cash Given', section2: 'In Return', color1: '#e74c3c', color2: '#27ae60' }
+    : { section1: 'Cash Received', section2: 'Change Returned', color1: '#27ae60', color2: '#e74c3c' }
 
   function bump(setter, value, delta) {
     setter(prev => {
@@ -93,8 +94,8 @@ function DenominationCounter({ onApply, context = 'income' }) {
 
   return (
     <div style={styles.wrapper}>
-      <button type="button" onClick={() => setOpen(o => !o)} style={styles.toggleBtn}>
-        🧮 {open ? 'Hide' : 'Note Counting (Galla Check)'} {open ? '▲' : '▼'}
+      <button type="button" onClick={() => setOpen(o => !o)} style={{ ...styles.toggleBtn, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+        <Calculator size={14} /> {open ? 'Hide' : 'Note Counting (Galla Check)'} {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
       </button>
 
       {open && (
