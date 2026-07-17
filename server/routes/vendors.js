@@ -27,11 +27,19 @@ router.get('/:id', (req, res) => {
       (err, transactions) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        // Parse items JSON for each transaction
-        const parsed = transactions.map(t => ({
-          ...t,
-          items: t.items_json ? JSON.parse(t.items_json) : []
-        }));
+        // Parse items JSON + denomination breakdown for each transaction
+        const parsed = transactions.map(t => {
+          let denomination_breakdown = null;
+          if (t.denomination_breakdown) {
+            try { denomination_breakdown = JSON.parse(t.denomination_breakdown); }
+            catch (e) { denomination_breakdown = null; } // corrupt/old data — silently ignore
+          }
+          return {
+            ...t,
+            items: t.items_json ? JSON.parse(t.items_json) : [],
+            denomination_breakdown
+          };
+        });
 
         res.json({ ...vendor, transactions: parsed });
       }
@@ -147,8 +155,13 @@ router.post('/:id/payment', (req, res) => {
     transaction_date,
     payment_method = 'cash',
     upi_account = null,
-    bank_transfer_type = null
+    bank_transfer_type = null,
+    denomination_breakdown = null
   } = req.body;
+
+  // Frontend object bhejta hai (jaise { 500: 2, 100: 3 }), DB mein text column hai —
+  // baaki jagah (expenses, orders, salary) jaisa hi JSON string bana ke store karo.
+  const denominationJson = denomination_breakdown ? JSON.stringify(denomination_breakdown) : null;
 
   if (!amount) return res.status(400).json({ error: 'amount required' });
 
@@ -171,9 +184,9 @@ router.post('/:id/payment', (req, res) => {
     // ── Step 1: Record vendor_transaction ──
     db.run(
       `INSERT INTO vendor_transactions
-          (vendor_id, type, amount, transaction_date, description, payment_method, upi_account, bank_transfer_type, created_at)
-        VALUES (?, 'payment', ?, ?, ?, ?, ?, ?, ?)`,
-        [id, amount, txDate, txDesc, payment_method, upi_account, bank_transfer_type,
+          (vendor_id, type, amount, transaction_date, description, payment_method, upi_account, bank_transfer_type, denomination_breakdown, created_at)
+        VALUES (?, 'payment', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, amount, txDate, txDesc, payment_method, upi_account, bank_transfer_type, denominationJson,
         new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ')],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
@@ -206,30 +219,11 @@ router.post('/:id/payment', (req, res) => {
                     if (err) console.error('daily_records update error:', err.message);
                   });
 
-                  // ── Step 4: Record daily ledger entry ──
-                db.run(
-                  `INSERT INTO daily_ledger (entry_date, type, amount, description, payment_method, reference_type, reference_id)
-                   VALUES (?, 'expense', ?, ?, ?, 'vendor', ?)`,
-                  [txDate, amount, fullDesc, payment_method, id],
-                  (err) => {
-                    if (err) console.error('Ledger insert error:', err.message);
-
-                    // ── Step 5 (only for cash): Debit cash drawer ──
-                    if (payment_method === 'cash') {
-                      db.run(
-                        `INSERT INTO cash_drawer_entries (entry_date, type, amount, description, reference_type, reference_id)
-                         VALUES (?, 'debit', ?, ?, 'vendor_payment', ?)`,
-                        [txDate, amount, `Vendor payment — ${vendorName}: ${txDesc}`, id],
-                        (err) => {
-                          if (err) console.error('Cash drawer insert error:', err.message);
-                          res.status(201).json({ message: 'Payment recorded (cash drawer updated)' });
-                        }
-                      );
-                    } else {
-                      res.status(201).json({ message: 'Payment recorded' });
-                    }
-                  }
-                );
+                  // Purane "daily_ledger" aur "cash_drawer_entries" tables ab exist
+                  // nahi karte — cash_income/expenses + denomination-drawer system
+                  // inko replace kar chuka hai. Ye 2 INSERT calls hata di, jo har
+                  // vendor payment pe silently "no such table" error de rahi thi.
+                  res.status(201).json({ message: 'Payment recorded' });
               }
             );
           }

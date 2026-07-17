@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Calculator, ChevronUp, ChevronDown, Banknote, Undo2, RotateCcw } from 'lucide-react'
+import { Calculator, ChevronUp, ChevronDown } from 'lucide-react'
 
 const DENOMINATIONS = [
   { label: '₹500', value: 500 },
@@ -24,7 +24,7 @@ function calcTotal(counts) {
  * Props:
  *  - onApply(netTotal, breakdown): breakdown = { received: {...}, returned: {...} }
  */
-function DenominationCounter({ onApply, context = 'income' }) {
+function DenominationCounter({ onApply, context = 'income', availableNotes = null }) {
   const [open, setOpen] = useState(false)
   const [received, setReceived] = useState({})
   const [returned, setReturned] = useState({})
@@ -37,10 +37,20 @@ function DenominationCounter({ onApply, context = 'income' }) {
     ? { section1: 'Cash Given', section2: 'In Return', color1: '#e74c3c', color2: '#27ae60' }
     : { section1: 'Cash Received', section2: 'Change Returned', color1: '#27ae60', color2: '#e74c3c' }
 
-  function bump(setter, value, delta) {
+  // Drawer se cash bahar jaane wala side — isi ko available notes ke against cap karna hai.
+  // 'expense' context (Cash Given) mein section1 outflow hai; 'income' (default) mein section2 (Change Returned) outflow hai.
+  const section1IsOutflow = context === 'expense'
+
+  function bump(setter, value, delta, isOutflowSection) {
     setter(prev => {
       const current = Number(prev[value]) || 0
-      const next = Math.max(0, current + delta)
+      let next = Math.max(0, current + delta)
+      // Outflow side ko available notes se zyada nahi badhne dena — jitna physically drawer
+      // mein hai usse zyada "diya" ya "wapas kiya" nahi ja sakta.
+      if (availableNotes && isOutflowSection && delta > 0) {
+        const available = Number(availableNotes[value]) || 0
+        if (next > available) next = current
+      }
       return { ...prev, [value]: next }
     })
   }
@@ -54,7 +64,7 @@ function DenominationCounter({ onApply, context = 'income' }) {
     setReturned({})
   }
 
-  function renderSection(title, counts, setCounts, accentColor, total) {
+  function renderSection(title, counts, setCounts, accentColor, total, isOutflowSection) {
     return (
       <div style={{ ...styles.section, borderColor: accentColor }}>
         <div style={{ ...styles.sectionHeader, color: accentColor }}>
@@ -63,27 +73,37 @@ function DenominationCounter({ onApply, context = 'income' }) {
         <div style={styles.grid}>
           {DENOMINATIONS.map(d => {
             const count = Number(counts[d.value]) || 0
+            const available = availableNotes ? (Number(availableNotes[d.value]) || 0) : null
+            const atLimit = isOutflowSection && available !== null && count >= available
             return (
-              <div key={d.value} style={styles.row}>
-                <span style={styles.denomLabel}>{d.label}</span>
-                <div style={styles.stepper}>
-                  <button
-                    type="button"
-                    onClick={() => bump(setCounts, d.value, -1)}
-                    style={{ ...styles.stepBtn, opacity: count === 0 ? 0.4 : 1 }}
-                    disabled={count === 0}
-                  >
-                    −
-                  </button>
-                  <span style={styles.count}>{count}</span>
-                  <button
-                    type="button"
-                    onClick={() => bump(setCounts, d.value, 1)}
-                    style={{ ...styles.stepBtn, backgroundColor: accentColor, color: '#fff', borderColor: accentColor }}
-                  >
-                    +
-                  </button>
+              <div key={d.value}>
+                <div style={styles.row}>
+                  <span style={styles.denomLabel}>{d.label}</span>
+                  <div style={styles.stepper}>
+                    <button
+                      type="button"
+                      onClick={() => bump(setCounts, d.value, -1, isOutflowSection)}
+                      style={{ ...styles.stepBtn, opacity: count === 0 ? 0.4 : 1 }}
+                      disabled={count === 0}
+                    >
+                      −
+                    </button>
+                    <span style={styles.count}>{count}</span>
+                    <button
+                      type="button"
+                      onClick={() => bump(setCounts, d.value, 1, isOutflowSection)}
+                      style={{ ...styles.stepBtn, backgroundColor: accentColor, color: '#fff', borderColor: accentColor, opacity: atLimit ? 0.4 : 1 }}
+                      disabled={atLimit}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
+                {atLimit && (
+                  <div style={{ fontSize: '10px', color: '#e74c3c', marginTop: '2px', textAlign: 'center' }}>
+                    {available === 0 ? 'Cash hi nahi hai' : `Sirf ${available} bache hain`}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -100,8 +120,8 @@ function DenominationCounter({ onApply, context = 'income' }) {
 
       {open && (
         <div style={styles.panel}>
-          {renderSection(labels.section1, received, setReceived, labels.color1, receivedTotal)}
-          {renderSection(labels.section2, returned, setReturned, labels.color2, returnedTotal)}
+          {renderSection(labels.section1, received, setReceived, labels.color1, receivedTotal, section1IsOutflow)}
+          {renderSection(labels.section2, returned, setReturned, labels.color2, returnedTotal, !section1IsOutflow)}
 
           <div style={styles.footer}>
             <div style={styles.totalBox}>

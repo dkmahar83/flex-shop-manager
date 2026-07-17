@@ -3,9 +3,11 @@ import PageLock from '../components/PageLock'
 import {
   getEmployees, createEmployee, markAttendance,
   getSalary, getAttendance, getEmployeeProfile, deleteEmployee, generateSalary,
-  updateEmployeeSalary
+  updateEmployeeSalary, getSetting, getDenominationDrawer
 } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
+import LoadingButton from '../components/LoadingButton'
+import SectionLoader from '../components/SectionLoader'
 import {
   Users, CalendarCheck, CalendarDays, Wallet, User, Trash2,
   Banknote, Smartphone, CheckCircle2, XCircle, Pencil, X,
@@ -25,6 +27,22 @@ function Employees() {
   const [showForm, setShowForm] = useState(false)
   const [message, setMessage] = useState('')
   const [activeTab, setActiveTab] = useState('list')
+
+  // Message ab khud-ba-khud gayab ho jaata hai (4 sec baad) — pehle sirf
+  // click-karke-hatao tha, isliye purana success-message screen pe atka
+  // reh jaata tha jab tak koi naya action na ho.
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [message])
+
+  // Tab badalte hi purana message turant clear — warna "salary credited"
+  // wala banner "Mark Attendance" ya "Profile" tab pe bhi dikhta rehta tha.
+  function changeTab(tab) {
+    setMessage('')
+    setActiveTab(tab)
+  }
   const [selectedEmployee, setSelectedEmployee] = useState(null)
   const [salaryData, setSalaryData] = useState(null)
   const [attendanceCalendar, setAttendanceCalendar] = useState([])
@@ -37,6 +55,15 @@ function Employees() {
   const [showSalaryEdit, setShowSalaryEdit] = useState(false)
   const [salaryEditForm, setSalaryEditForm] = useState({ new_salary: '', reason: '', effective_date: '' })
   const [salaryEditLoading, setSalaryEditLoading] = useState(false)
+  // Note-wise Cash Tracking — global setting (Galla Hisaab tab wali hi key)
+  const [noteTrackingEnabled, setNoteTrackingEnabled] = useState(true)
+  // Live drawer notes — salary (outflow) ko available notes se zyada nahi badhne dena
+  const [availableNotes, setAvailableNotes] = useState(null)
+  const [addEmpSaving, setAddEmpSaving] = useState(false)
+  const [attendanceSaving, setAttendanceSaving] = useState(false)
+  const [deletingEmpId, setDeletingEmpId] = useState(null)
+  const [calendarLoading, setCalendarLoading] = useState(false)
+  const [salaryCalcLoading, setSalaryCalcLoading] = useState(false)
 
   const [form, setForm] = useState({
     name: '', phone: '', monthly_salary: '', join_date: ''
@@ -60,15 +87,29 @@ function Employees() {
     String(new Date().getFullYear())
   )
 
-  const [genMonth, setGenMonth] = useState(
-    String(new Date().getMonth() + 1).padStart(2, '0')
-  )
-  const [genYear, setGenYear] = useState(
-    String(new Date().getFullYear())
-  )
+  // const [genMonth, setGenMonth] = useState(
+  //   String(new Date().getMonth() + 1).padStart(2, '0')
+  // )
+  // const [genYear, setGenYear] = useState(
+  //   String(new Date().getFullYear())
+  // )
+  // (genMonth/genYear hataye — Profile ab all-time hai, month/year selector
+  // ki zaroorat nahi. Note: "Salary" tab ka apna salaryMonth/salaryYear alag
+  // hai — wo as-is rehta hai, kyunki wo specific month ki salary credit karne
+  // ke liye hai, jo intentionally month-wise hi rehna chahiye.)
 
   useEffect(() => {
     fetchEmployees()
+  }, [])
+
+  useEffect(() => {
+    getSetting('note_tracking_enabled')
+      .then(res => setNoteTrackingEnabled(res.data.value === null ? true : res.data.value === 'true'))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshAvailableNotes()
   }, [])
 
   function fetchEmployees() {
@@ -84,6 +125,12 @@ function Employees() {
       .catch(() => setLoading(false))
   }
 
+  function refreshAvailableNotes() {
+    getDenominationDrawer()
+      .then(res => setAvailableNotes(res.data.denominations))
+      .catch(() => {})
+  }
+
   function handleFormChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
@@ -91,6 +138,7 @@ function Employees() {
   function handleAddEmployee(e) {
     e.preventDefault()
     if (!form.name) return setMessage('Name is required.')
+    setAddEmpSaving(true)
     createEmployee(form)
       .then(() => {
         setMessage('Employee added successfully!')
@@ -99,6 +147,7 @@ function Employees() {
         fetchEmployees()
       })
       .catch(() => setMessage('Error adding employee.'))
+      .finally(() => setAddEmpSaving(false))
   }
 
   function handleAttendanceChange(employeeId, status) {
@@ -109,12 +158,14 @@ function Employees() {
     const records = Object.entries(attendanceRecords).map(([emp_id, status]) => ({
       employee_id: parseInt(emp_id), status
     }))
+    setAttendanceSaving(true)
     markAttendance({ date: attendanceDate, records })
       .then(() => {
         setMessage(`Attendance marked for ${attendanceDate}`)
         if (calendarEmployee) fetchCalendar(calendarEmployee.id, calendarMonth, calendarYear)
       })
       .catch(() => setMessage('Error marking attendance.'))
+      .finally(() => setAttendanceSaving(false))
   }
 
   function fetchSalary(empId, month, year) {
@@ -124,6 +175,7 @@ function Employees() {
         console.error('Salary fetch failed:', err)
         setMessage('Error fetching salary: ' + (err?.response?.data?.error || err.message))
       })
+      .finally(() => setSalaryCalcLoading(false))
   }
 
   function handleCreditSalary() {
@@ -146,13 +198,14 @@ function Employees() {
       setMessage(`✅ ₹${salaryData.calculated_salary} salary credited to ${selectedEmployee.name}`)
       setSalaryDenomination({})
       fetchSalary(selectedEmployee.id, salaryMonth, salaryYear)
+      refreshAvailableNotes()
     })
     .catch(err => setMessage('Error: ' + (err.response?.data?.error || 'Could not credit salary')))
     .finally(() => setCrediting(false))
 }
 
   function fetchCalendar(empId, month, year) {
-    getAttendance(empId, { month, year })
+    return getAttendance(empId, { month, year })
       .then(res => setAttendanceCalendar(res.data))
       .catch(err => {
         console.error('Calendar load failed:', err)
@@ -162,16 +215,20 @@ function Employees() {
 
   function handleCalendarLoad() {
     if (!calendarEmployee) return setMessage('Select an employee first.')
+    setCalendarLoading(true)
     fetchCalendar(calendarEmployee.id, calendarMonth, calendarYear)
+      .finally(() => setCalendarLoading(false))
   }
   function handleDeleteEmployee(emp) {
     if (!window.confirm(`"${emp.name}" ko delete karna chahte ho?\nIska attendance, salary aur payments bhi delete ho jayega!`)) return
+    setDeletingEmpId(emp.id)
     deleteEmployee(emp.id)
       .then(() => {
         setMessage(`${emp.name} delete ho gaya.`)
         fetchEmployees()
       })
       .catch(() => setMessage('Error deleting employee.'))
+      .finally(() => setDeletingEmpId(null))
   }
 
   function handleSalaryUpdate(e) {
@@ -188,27 +245,24 @@ function Employees() {
         setShowSalaryEdit(false)
         setSalaryEditForm({ new_salary: '', reason: '', effective_date: '' })
         fetchEmployees()
-        loadEmployeeProfile(selectedEmployee, genMonth, genYear)
+        loadEmployeeProfile(selectedEmployee)
       })
       .catch(err => setMessage('Error: ' + (err.response?.data?.error || 'Salary update failed')))
       .finally(() => setSalaryEditLoading(false))
   }
 
-  // ── FIX: loadEmployeeProfile now shows real error instead of generic message ──
-  function loadEmployeeProfile(emp, month, year) {
+  // Profile ab ALL-TIME data dikhata hai (join date se ab tak) — month/year
+  // params ki ab zaroorat nahi (backend bhi ab ignore/accept nahi karta).
+  function loadEmployeeProfile(emp) {
     setSelectedEmployee(emp)
     setEmployeeProfile(null)
     setProfileError('')
 
-    const m = month || genMonth
-    const y = year  || genYear
-
-    getEmployeeProfile(emp.id, m, y)
+    getEmployeeProfile(emp.id)
       .then(res => {
         setEmployeeProfile(res.data)
       })
       .catch(err => {
-        // Show the actual server error so we can debug it
         const msg = err?.response?.data?.error || err?.message || 'Unknown error'
         setProfileError(`Error loading profile: ${msg}`)
         console.error('Profile load failed:', err)
@@ -249,12 +303,14 @@ function Employees() {
   const { daysInMonth, firstDay } = buildCalendar(calendarMonth, calendarYear)
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+  // Calendar/Salary/Profile ab top-tabs mein nahi hain — redundant the row-action
+  // buttons (Salary/Calendar/Profile, employee-list mein har row ke saamne) ke saath,
+  // jo already same activeTab set karte hain + employee bhi seedha select kar dete hain
+  // (ek-click, faster). Tab content (activeTab === 'salary' / 'calendar' / 'profile')
+  // as-is rehta hai — bas manual-click se navigate karne ka option hata hai.
   const TABS = [
     { key: 'list',       label: <><Users size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Employees</> },
-    { key: 'attendance', label: <><CalendarCheck size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Mark Attendance</> },
-    { key: 'calendar',  label: <><CalendarDays size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Calendar</> },
-    { key: 'salary',    label: <><Wallet size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Salary</> },
-    { key: 'profile',   label: <><User size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Profile</> }
+    { key: 'attendance', label: <><CalendarCheck size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Mark Attendance</> }
   ]
 
   return (
@@ -291,7 +347,7 @@ function Employees() {
                   value={form.join_date} onChange={handleFormChange} />
               </div>
             </div>
-            <button style={styles.submitBtn} type="submit">Save Employee</button>
+            <LoadingButton loading={addEmpSaving} style={styles.submitBtn} type="submit">Save Employee</LoadingButton>
           </form>
         </div>
       )}
@@ -301,7 +357,7 @@ function Employees() {
         {TABS.map(t => (
           <button key={t.key}
             style={{ ...styles.tab, ...(activeTab === t.key ? styles.activeTab : {}) }}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => changeTab(t.key)}
           >
             {t.label}
           </button>
@@ -310,7 +366,7 @@ function Employees() {
 
       {/* ── TAB: LIST ── */}
       {activeTab === 'list' && (
-        loading ? <p>Loading...</p> : employees.length === 0 ? (
+        loading ? <SectionLoader label="Employees load ho rahe hain..." /> : employees.length === 0 ? (
           <p style={{ color: '#888' }}>No employees found.</p>
         ) : (
           <div style={styles.tableScroll}>
@@ -342,27 +398,30 @@ function Employees() {
                     <button onClick={() => {
                       setSelectedEmployee(emp)
                       setSalaryData(null)
-                      setActiveTab('salary')
+                      changeTab('salary')
                     }} style={{ ...styles.actionBtn, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <Wallet size={12} /> Salary
                     </button>
                     <button onClick={() => {
                       setCalendarEmployee(emp)
-                      setActiveTab('calendar')
+                      changeTab('calendar')
                       fetchCalendar(emp.id, calendarMonth, calendarYear)
-                    }} style={{ ...styles.actionBtn, color: '#3498db', borderColor: '#3498db', marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    }} style={{ ...styles.actionBtn, marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <CalendarDays size={12} /> Calendar
                     </button>
                     <button onClick={() => {
                       loadEmployeeProfile(emp)
-                      setActiveTab('profile')
-                    }} style={{ ...styles.actionBtn, color: '#8e44ad', borderColor: '#8e44ad', marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      changeTab('profile')
+                    }} style={{ ...styles.actionBtn, marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <User size={12} /> Profile
                     </button>
-                    <button onClick={() => handleDeleteEmployee(emp)}
-                      style={{ ...styles.actionBtn, color: '#e74c3c', borderColor: '#e74c3c', marginLeft: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <LoadingButton
+                      loading={deletingEmpId === emp.id}
+                      loadingText="..."
+                      onClick={() => handleDeleteEmployee(emp)}
+                      style={{ backgroundColor: '#800000', color: '#fff', border: '1px solid #800000', padding: '5px 10px', borderRadius: '4px', fontSize: '12px', marginLeft: '6px' }}>
                       <Trash2 size={12} /> Delete
-                    </button>
+                    </LoadingButton>
                   </td>
                 </tr>
               ))}
@@ -383,9 +442,9 @@ function Employees() {
                 type="date" value={attendanceDate}
                 onChange={e => setAttendanceDate(e.target.value)}
               />
-              <button style={styles.submitBtn} onClick={handleSubmitAttendance}>
+              <LoadingButton loading={attendanceSaving} style={styles.submitBtn} onClick={handleSubmitAttendance}>
                 Save Attendance
-              </button>
+              </LoadingButton>
             </div>
           </div>
 
@@ -476,9 +535,9 @@ function Employees() {
                 ))}
               </select>
             </div>
-            <button style={styles.submitBtn} onClick={handleCalendarLoad}>
+            <LoadingButton loading={calendarLoading} style={styles.submitBtn} onClick={handleCalendarLoad}>
               Load Calendar
-            </button>
+            </LoadingButton>
           </div>
 
           {calendarEmployee && (
@@ -608,10 +667,17 @@ function Employees() {
                 ))}
               </select>
             </div>
-            <button style={styles.submitBtn}
-              onClick={() => { if (selectedEmployee) fetchSalary(selectedEmployee.id, salaryMonth, salaryYear) }}>
+            <LoadingButton
+              loading={salaryCalcLoading}
+              style={styles.submitBtn}
+              onClick={() => {
+                if (!selectedEmployee) return
+                setSalaryCalcLoading(true)
+                fetchSalary(selectedEmployee.id, salaryMonth, salaryYear)
+              }}
+            >
               Calculate
-            </button>
+            </LoadingButton>
           </div>
 
           {salaryData && (
@@ -694,22 +760,22 @@ function Employees() {
                   </div>
                 )}
 
-                {salaryPaymentMode === 'cash' && (
+                {salaryPaymentMode === 'cash' && noteTrackingEnabled && (
                   <DenominationCounter
+                    context="expense"
+                    availableNotes={availableNotes}
                     onApply={(total, counts) => setSalaryDenomination(counts)}
                   />
                 )}
 
-                <button
+                <LoadingButton
                   onClick={handleCreditSalary}
-                  disabled={crediting}
-                  style={{
-                    ...styles.submitBtn, marginTop: '12px',
-                    opacity: crediting ? 0.6 : 1, cursor: crediting ? 'not-allowed' : 'pointer'
-                  }}
+                  loading={crediting}
+                  loadingText="Crediting..."
+                  style={{ ...styles.submitBtn, marginTop: '12px' }}
                 >
-                  {crediting ? 'Crediting...' : <><CheckCircle2 size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Credit ₹{salaryData.calculated_salary} to {selectedEmployee?.name}</>}
-                </button>
+                  <CheckCircle2 size={14} /> Credit ₹{salaryData.calculated_salary} to {selectedEmployee?.name}
+                </LoadingButton>
               </div>
             </div>
           )}
@@ -744,7 +810,7 @@ function Employees() {
           )}
 
           {!employeeProfile && selectedEmployee && !profileError && (
-            <p style={{ color: '#888' }}>Loading profile...</p>
+            <SectionLoader label="Profile load ho raha hai..." size="small" />
           )}
 
           {!selectedEmployee && (
@@ -807,55 +873,29 @@ function Employees() {
                         onChange={e => setSalaryEditForm(f => ({ ...f, reason: e.target.value }))}
                       />
                     </div>
-                    <button
-                      type="submit" disabled={salaryEditLoading}
+                    <LoadingButton
+                      type="submit" loading={salaryEditLoading}
                       style={{
                         backgroundColor: '#27ae60', color: '#fff', border: 'none',
-                        padding: '10px 20px', borderRadius: '6px', cursor: 'pointer',
-                        fontSize: '14px', fontWeight: 'bold', opacity: salaryEditLoading ? 0.6 : 1
+                        padding: '10px 20px', borderRadius: '6px',
+                        fontSize: '14px', fontWeight: 'bold'
                       }}
                     >
-                      {salaryEditLoading ? 'Saving...' : <><CheckCircle2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Update Salary</>}
-                    </button>
+                      <CheckCircle2 size={13} /> Update Salary
+                    </LoadingButton>
                   </form>
                 )}
               </div>
 
-              {/* Month/Year selector */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div>
-                  <label style={styles.label}>Month</label>
-                  <select style={{ ...styles.input, minWidth: '130px' }}
-                    value={genMonth}
-                    onChange={e => {
-                      const newMonth = e.target.value
-                      setGenMonth(newMonth)
-                      loadEmployeeProfile(selectedEmployee, newMonth, genYear)
-                    }}>
-                    {['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => (
-                      <option key={m} value={m}>{new Date(2000, i).toLocaleString('en-IN', { month: 'long' })}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={styles.label}>Year</label>
-                  <select style={{ ...styles.input, minWidth: '90px' }}
-                    value={genYear}
-                    onChange={e => {
-                      const newYear = e.target.value
-                      setGenYear(newYear)
-                      loadEmployeeProfile(selectedEmployee, genMonth, newYear)
-                    }}>
-                    {['2024','2025','2026','2027'].map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
-              </div>
+              {/* Month/Year selector hataya — Profile ab hamesha all-time (join
+                  date se ab tak) data dikhata hai, isliye period-select ki
+                  zaroorat nahi rahi. */}
 
               {/* Stats */}
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
                 <div style={styles.statBox}>
                   <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Wallet size={12} /> Salary Earned ({employeeProfile.effective_days} days)
+                    <Wallet size={12} /> Salary Earned — Total ({employeeProfile.effective_days} din)
                   </div>
                   <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#27ae60' }}>
                     + ₹{Math.abs(employeeProfile.salary_earned)}
@@ -962,13 +1002,13 @@ function attendanceColor(status) {
 
 const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  addBtn: { backgroundColor: '#e94560', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  addBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   message: { backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '10px 16px', borderRadius: '6px', marginBottom: '16px', cursor: 'pointer' },
   formBox: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
   formRow: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' },
   input: { width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' },
   label: { fontSize: '12px', color: '#888', display: 'block', marginBottom: '4px' },
-  submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   tabRow: { display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' },
   tab: { padding: '10px 20px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' },
   activeTab: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
@@ -981,7 +1021,7 @@ const styles = {
   tr: { backgroundColor: '#fff' },
   statusBtns: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   statusBtn: { padding: '6px 14px', borderRadius: '20px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
-  actionBtn: { backgroundColor: '#fff', color: '#27ae60', border: '1px solid #27ae60', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  actionBtn: { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   badge: { padding: '3px 10px', borderRadius: '12px', color: '#fff', fontSize: '12px' },
   legend: { display: 'flex', gap: '20px', marginBottom: '16px', flexWrap: 'wrap' },
   legendItem: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' },

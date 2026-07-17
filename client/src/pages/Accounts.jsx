@@ -1,16 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import PageLock from '../components/PageLock'
 import {
   getCheques, addCheque, updateChequeStatus, getChequeSummary, getCheque, updateCheque,
   getUpiTransactions, getUpiSummary, addUpiTransaction,
   getVendors, getVendor, addVendor, updateVendor, deleteVendor,
   addVendorPurchase, addVendorPayment,
-  getCustomers, getExpenses, deleteLedgerEntry
+  getCustomers, getExpenses, deleteLedgerEntry, getSetting, getDenominationDrawer
 } from '../services/api'
+import DenominationCounter from '../components/DenominationCounter'
+import LoadingButton from '../components/LoadingButton'
+import SectionLoader from '../components/SectionLoader'
 import {
-  Landmark, Receipt, Smartphone, Store, Coins, Pencil, Trash2, X,
+  Landmark, Receipt, Smartphone, Store, Coins, Pencil, Trash2,
   Banknote, Building2, Inbox, CheckCircle2, XCircle, Package,
-  Wallet, Clock, AlertTriangle, Lightbulb,
+ Clock, AlertTriangle, Lightbulb,
 } from 'lucide-react'
 
 const UPI_ACCOUNTS = [
@@ -71,13 +74,14 @@ function VendorForm({ initial, onSave, onCancel, saving }) {
         <button onClick={onCancel} style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: 'pointer' }}>
           Cancel
         </button>
-        <button
+        <LoadingButton
           onClick={() => form.name.trim() && onSave(form)}
-          disabled={!form.name.trim() || saving}
+          disabled={!form.name.trim()}
+          loading={saving}
           style={{ flex: 2, ...styles.submitBtn, opacity: form.name.trim() ? 1 : 0.5 }}
         >
-          {saving ? 'Saving…' : initial ? 'Save Changes' : 'Add Vendor'}
-        </button>
+          {initial ? 'Save Changes' : 'Add Vendor'}
+        </LoadingButton>
       </div>
     </div>
   )
@@ -226,6 +230,7 @@ function Accounts() {
   const [chequeForm, setChequeForm]       = useState({ cheque_number: '', firm_name: '', customer_id: '', bank_name: '', amount: '', received_date: '', order_id: '', notes: '' })
   const [showChequeForm, setShowChequeForm] = useState(false)
   const [selectedCheque, setSelectedCheque] = useState(null)
+  const [chequesLoading, setChequesLoading] = useState(false)  
   const [chequeDetail, setChequeDetail]     = useState(null)
   const [editingCheque, setEditingCheque]   = useState(false)
   const [chequeEditForm, setChequeEditForm] = useState({})
@@ -250,6 +255,12 @@ function Accounts() {
   const [editVendorData, setEditVendorData]     = useState(null)   // null = closed
   const [deleteConfirmV, setDeleteConfirmV]     = useState(null)   // vendor obj
   const [vendorSaving, setVendorSaving]         = useState(false)
+  const [chequeSaving, setChequeSaving]         = useState(false)
+  const [chequeEditSaving, setChequeEditSaving] = useState(false)
+  const [upiSaving, setUpiSaving]               = useState(false)
+  const [purchaseSaving, setPurchaseSaving]     = useState(false)
+  const [paymentSaving, setPaymentSaving]       = useState(false)
+  const [vendorDeleting, setVendorDeleting]     = useState(false)
 
   // Transaction form
   const [txnType, setTxnType]   = useState('purchase')
@@ -264,6 +275,16 @@ function Accounts() {
   const [payMethod, setPayMethod]       = useState('cash')
   const [payUpiAcc, setPayUpiAcc]       = useState('')
   const [payBankType, setPayBankType]   = useState('NEFT')
+  const [payDenomination, setPayDenomination] = useState({})
+
+  // Note-wise Cash Tracking — global setting (Galla Hisaab tab wali hi key)
+  const [noteTrackingEnabled, setNoteTrackingEnabled] = useState(true)
+
+  // Vendor transaction history — click-to-expand denomination breakdown
+  const [expandedTxnId, setExpandedTxnId] = useState(null)
+
+  // Live drawer notes — vendor cash payment ko available notes se zyada nahi badhne dena
+  const [availableNotes, setAvailableNotes] = useState(null)
 
   // Customers
   const [customers, setCustomers] = useState([])
@@ -271,6 +292,29 @@ function Accounts() {
   const [commissionLoading, setCommissionLoading] = useState(false)
 
   useEffect(() => { fetchAll(); getCustomers().then(r => setCustomers(r.data)).catch(() => {}) }, [filterMonth, filterYear]) // eslint-disable-line
+
+  // notify() already 3 sec baad auto-clear karta hai — bas tab badalte hi
+  // turant clear bhi karna hai, warna "Cheque recorded" jaisa message UPI
+  // ya Vendors tab pe bhi dikh sakta tha agar 3 sec ke andar switch kiya.
+  useEffect(() => {
+    queueMicrotask(() => setMessage(''))
+  }, [activeTab])
+
+  useEffect(() => {
+    getSetting('note_tracking_enabled')
+      .then(res => setNoteTrackingEnabled(res.data.value === null ? true : res.data.value === 'true'))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshAvailableNotes()
+  }, [])
+
+  function refreshAvailableNotes() {
+    getDenominationDrawer()
+      .then(res => setAvailableNotes(res.data.denominations))
+      .catch(() => {})
+  }
 
   function fetchAll()    { fetchCheques(); fetchUpi(); fetchVendors() }
   function fetchCommission() {
@@ -283,8 +327,17 @@ function Accounts() {
       .catch(() => setCommissionLoading(false))
   }
   function fetchCheques() {
-    getCheques({ month: filterMonth, year: filterYear }).then(r => setCheques(r.data)).catch(() => {})
-    getChequeSummary().then(r => setChequeSummary(r.data)).catch(() => {})
+    setChequesLoading(true)
+    Promise.all([
+      getCheques({ month: filterMonth, year: filterYear }),
+      getChequeSummary({ month: filterMonth, year: filterYear })
+    ])
+      .then(([chequesRes, summaryRes]) => {
+        setCheques(chequesRes.data)
+        setChequeSummary(summaryRes.data)
+      })
+      .catch(() => {})
+      .finally(() => setChequesLoading(false))
   }
   function fetchUpi() {
     getUpiTransactions({ month: filterMonth, year: filterYear, upi_account: upiFilter || undefined }).then(r => setUpiTransactions(r.data)).catch(() => {})
@@ -301,11 +354,13 @@ function Accounts() {
   function handleAddCheque(e) {
     e.preventDefault()
     if (!chequeForm.firm_name || !chequeForm.amount) return notify('Firm name and amount required.')
+    setChequeSaving(true)
     addCheque(chequeForm).then(() => {
       notify('Cheque recorded.')
       setChequeForm({ cheque_number: '', firm_name: '', customer_id: '', bank_name: '', amount: '', received_date: '', order_id: '', notes: '' })
       setShowChequeForm(false); fetchCheques()
     }).catch(() => notify('Error recording cheque.'))
+      .finally(() => setChequeSaving(false))
   }
   function handleChequeStatusUpdate(id, status) {
     updateChequeStatus(id, status).then(() => { notify(`Cheque marked as ${status}`); fetchCheques() }).catch(() => notify('Error updating cheque.'))
@@ -315,11 +370,13 @@ function Accounts() {
   function handleAddUpi(e) {
     e.preventDefault()
     if (!upiForm.upi_account || !upiForm.amount) return notify('UPI account and amount required.')
+    setUpiSaving(true)
     addUpiTransaction(upiForm).then(() => {
       notify('UPI transaction recorded.')
       setUpiForm({ upi_account: '', customer_name: '', customer_id: '', amount: '', transaction_date: '', utr_number: '', order_id: '', notes: '' })
       setShowUpiForm(false); fetchUpi()
     }).catch(() => notify('Error recording UPI transaction.'))
+      .finally(() => setUpiSaving(false))
   }
 
   function handleUpiDelete(e) {
@@ -356,17 +413,20 @@ function Accounts() {
   }
 
   function handleDeleteVendor() {
+    setVendorDeleting(true)
     deleteVendor(deleteConfirmV.id).then(() => {
       notify('Vendor deleted.')
       setDeleteConfirmV(null)
       if (selectedVendor?.id === deleteConfirmV.id) { setSelectedVendor(null); setVendorDetail(null) }
       fetchVendors()
     }).catch(() => notify('Error deleting vendor.'))
+      .finally(() => setVendorDeleting(false))
   }
 
   function resetTxnForm() {
     setTxnDate(''); setTxnDesc(''); setPurchaseItems([])
     setPayAmount(''); setPayMethod('cash'); setPayUpiAcc(''); setPayBankType('NEFT')
+    setPayDenomination({})
   }
 
   function handleVendorPurchase(e) {
@@ -379,9 +439,11 @@ function Accounts() {
       transaction_date: txnDate,
       items: purchaseItems.filter(i => i.name.trim())
     }
+    setPurchaseSaving(true)
     addVendorPurchase(selectedVendor.id, payload).then(() => {
       notify('Purchase recorded.'); resetTxnForm(); fetchVendorDetail(selectedVendor.id); fetchVendors()
     }).catch(() => notify('Error recording purchase.'))
+      .finally(() => setPurchaseSaving(false))
   }
 
   function handleVendorPayment(e) {
@@ -393,12 +455,17 @@ function Accounts() {
       transaction_date: txnDate,
       payment_method: payMethod,
       upi_account: payMethod === 'upi' ? payUpiAcc : null,
-      bank_transfer_type: payMethod === 'bank' ? payBankType : null
+      bank_transfer_type: payMethod === 'bank' ? payBankType : null,
+      denomination_breakdown: payMethod === 'cash' && Object.keys(payDenomination).length > 0
+        ? payDenomination : null
     }
+    setPaymentSaving(true)
     addVendorPayment(selectedVendor.id, payload).then(() => {
       notify('Payment recorded — ledger & expenses updated.')
       resetTxnForm(); fetchVendorDetail(selectedVendor.id); fetchVendors()
+      refreshAvailableNotes()
     }).catch(() => notify('Error recording payment.'))
+      .finally(() => setPaymentSaving(false))
   }
 
   function fmtDT(dateStr) {
@@ -410,6 +477,36 @@ function Accounts() {
   const pad = n => String(n).padStart(2, '0')
   return `${pad(ist.getHours())}:${pad(ist.getMinutes())}:${pad(ist.getSeconds())}  ${pad(ist.getDate())}.${pad(ist.getMonth()+1)}.${ist.getFullYear()}`
 }
+
+  // Denomination order — jaisa DenominationCounter.jsx mein hai, badi se choti
+  const DENOM_ORDER = [500, 200, 100, 50, 20, 10, 5, 2, 1]
+
+  function sumDenom(counts) {
+    return Object.values(counts || {}).reduce((s, v) => s + (Number(v) || 0), 0)
+  }
+
+  // Kya is transaction ka koi expandable breakdown hai? (sirf cash payments ke liye)
+  function hasBreakdown(t) {
+    if (t.type !== 'payment' || !t.denomination_breakdown) return false
+    const { received, returned } = t.denomination_breakdown
+    return sumDenom(received) > 0 || sumDenom(returned) > 0
+  }
+
+  // Chips render karo — jaise "₹500 × 2"
+  function renderDenomChips(counts, color) {
+    const entries = DENOM_ORDER.map(d => [d, Number(counts?.[d]) || 0]).filter(([, c]) => c > 0)
+    if (entries.length === 0) return null
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+        {entries.map(([d, c]) => (
+          <span key={d} style={{
+            fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '5px',
+            backgroundColor: color + '18', color
+          }}>₹{d} × {c}</span>
+        ))}
+      </div>
+    )
+  }
 
   const statusColor = s => ({ received: '#f39c12', deposited: '#3498db', cleared: '#27ae60', bounced: '#e74c3c' }[s] || '#ccc')
   const upiColor    = acc => ({ 'BOI Shop Account': '#1a237e', 'Google Pay - Rampratap Painter': '#1a73e8', 'PhonePe - Bhavya Printers': '#5f259f', 'Amazon Pay - Deepak': '#ff9900' }[acc] || '#888')
@@ -461,7 +558,10 @@ function Accounts() {
       {/* ─── CHEQUES TAB ─── */}
       {activeTab === 'cheques' && (
         <div>
-          <div style={styles.summaryRow}>
+          {chequesLoading && (
+            <SectionLoader label="Cheques load ho rahe hain..." size="small" />
+          )}
+          <div style={{ ...styles.summaryRow, opacity: chequesLoading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
             {chequeSummary.map(s => (
               <div key={s.status} style={{ ...styles.summaryCard, borderTop: `4px solid ${statusColor(s.status)}` }}>
                 <div style={{ fontSize: '20px', fontWeight: 'bold', color: statusColor(s.status) }}>₹{s.total}</div>
@@ -494,7 +594,7 @@ function Accounts() {
                 <div style={styles.formRow}>
                   <div style={{ flex: 2 }}><label style={styles.label}>Notes</label><input style={styles.input} placeholder="e.g. Against order #5" value={chequeForm.notes} onChange={e => setChequeForm({ ...chequeForm, notes: e.target.value })} /></div>
                 </div>
-                <button style={styles.submitBtn} type="submit">Save Cheque</button>
+                <LoadingButton loading={chequeSaving} style={styles.submitBtn} type="submit">Save Cheque</LoadingButton>
               </form>
             </div>
           )}
@@ -528,7 +628,7 @@ function Accounts() {
                 <div style={styles.formBox}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <h3>Cheque Details</h3>
-                    <button onClick={() => setEditingCheque(!editingCheque)} style={{ ...styles.addBtn, padding: '6px 14px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>{editingCheque ? 'Cancel Edit' : <><Pencil size={12} /> Edit</>}</button>
+                    <button onClick={() => setEditingCheque(!editingCheque)} style={{ backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>{editingCheque ? 'Cancel Edit' : <><Pencil size={12} /> Edit</>}</button>
                   </div>
                   {!editingCheque ? (
                     <div>
@@ -562,12 +662,19 @@ function Accounts() {
                       </div>
                     </div>
                   ) : (
-                    <form onSubmit={e => { e.preventDefault(); updateCheque(chequeDetail.id, chequeEditForm).then(() => { notify('Cheque updated.'); setEditingCheque(false); getCheque(chequeDetail.id).then(r => setChequeDetail(r.data)); fetchCheques() }).catch(() => notify('Error updating cheque.')) }}>
+                    <form onSubmit={e => {
+                      e.preventDefault()
+                      setChequeEditSaving(true)
+                      updateCheque(chequeDetail.id, chequeEditForm)
+                        .then(() => { notify('Cheque updated.'); setEditingCheque(false); getCheque(chequeDetail.id).then(r => setChequeDetail(r.data)); fetchCheques() })
+                        .catch(() => notify('Error updating cheque.'))
+                        .finally(() => setChequeEditSaving(false))
+                    }}>
                       {[['Cheque Number','cheque_number'],['Bank Name','bank_name'],['Notes','notes']].map(([l,k]) => (
                         <div key={k} style={{ marginBottom: '12px' }}><label style={styles.label}>{l}</label><input style={styles.input} value={chequeEditForm[k]} onChange={e => setChequeEditForm({ ...chequeEditForm, [k]: e.target.value })} /></div>
                       ))}
                       <div style={{ marginBottom: '16px' }}><label style={styles.label}>Received Date</label><input style={styles.input} type="date" value={chequeEditForm.received_date} onChange={e => setChequeEditForm({ ...chequeEditForm, received_date: e.target.value })} /></div>
-                      <button style={styles.submitBtn} type="submit">Save Changes</button>
+                      <LoadingButton loading={chequeEditSaving} style={styles.submitBtn} type="submit">Save Changes</LoadingButton>
                     </form>
                   )}
                 </div>
@@ -611,7 +718,7 @@ function Accounts() {
                   <div style={{ flex: 1 }}><label style={styles.label}>UTR / Reference Number</label><input style={styles.input} placeholder="e.g. 123456789012" value={upiForm.utr_number} onChange={e => setUpiForm({ ...upiForm, utr_number: e.target.value })} /></div>
                 </div>
                 <div style={styles.formRow}><div style={{ flex: 2 }}><label style={styles.label}>Notes</label><input style={styles.input} placeholder="e.g. Payment for flex order" value={upiForm.notes} onChange={e => setUpiForm({ ...upiForm, notes: e.target.value })} /></div></div>
-                <button style={styles.submitBtn} type="submit">Save UPI Transaction</button>
+                <LoadingButton loading={upiSaving} style={styles.submitBtn} type="submit">Save UPI Transaction</LoadingButton>
               </form>
             </div>
           )}
@@ -638,7 +745,7 @@ function Accounts() {
                             label: `${t.customer_name || 'Unknown'} — ₹${t.amount} (${t.upi_account})`
                           })}
                           style={{
-                            backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c',
+                            backgroundColor: '#800000', color: '#fff', border: '1px solid #800000',
                             borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
                           }}
                           title="Delete this entry"
@@ -678,12 +785,12 @@ function Accounts() {
                   {/* Edit / Delete buttons */}
                   <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
                     <button onClick={() => setEditVendorData(v)} title="Edit vendor" style={{
-                      background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8',
+                      background: '#fff', border: '1px solid #1a1a2e', color: '#1a1a2e',
                       borderRadius: '6px', padding: '4px 9px', fontSize: '12px', cursor: 'pointer', fontWeight: 700,
                       display: 'inline-flex', alignItems: 'center'
                     }}><Pencil size={12} /></button>
                     <button onClick={() => setDeleteConfirmV(v)} title="Delete vendor" style={{
-                      background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
+                      background: '#800000', border: '1px solid #800000', color: '#fff',
                       borderRadius: '6px', padding: '4px 9px', fontSize: '12px', cursor: 'pointer', fontWeight: 700,
                       display: 'inline-flex', alignItems: 'center'
                     }}><Trash2 size={12} /></button>
@@ -746,7 +853,7 @@ function Accounts() {
                           <input style={styles.input} placeholder="Any additional note" value={txnDesc} onChange={e => setTxnDesc(e.target.value)} />
                         </div>
                       </div>
-                      <button style={{ ...styles.submitBtn, backgroundColor: '#e74c3c' }} type="submit">Save Purchase</button>
+                      <LoadingButton loading={purchaseSaving} style={{ ...styles.submitBtn, backgroundColor: '#e74c3c' }} type="submit">Save Purchase</LoadingButton>
                     </form>
                   )}
 
@@ -756,7 +863,22 @@ function Accounts() {
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
                         <div style={{ flex: 1 }}>
                           <label style={styles.label}>Amount (₹) *</label>
-                          <input style={styles.input} type="number" placeholder="0" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
+                          <input
+                            style={{
+                              ...styles.input,
+                              ...(payMethod === 'cash' && noteTrackingEnabled
+                                ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {})
+                            }}
+                            type="number" placeholder="0"
+                            value={payAmount}
+                            onChange={e => setPayAmount(e.target.value)}
+                            readOnly={payMethod === 'cash' && noteTrackingEnabled}
+                          />
+                          {payMethod === 'cash' && noteTrackingEnabled && (
+                            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                              Note Counting (neeche) se bharo
+                            </div>
+                          )}
                         </div>
                         <div style={{ flex: 1 }}>
                           <label style={styles.label}>Date</label>
@@ -768,11 +890,21 @@ function Accounts() {
                         upiAccount={payUpiAcc}  setUpiAccount={setPayUpiAcc}
                         bankType={payBankType}  setBankType={setPayBankType}
                       />
+                      {payMethod === 'cash' && noteTrackingEnabled && (
+                        <DenominationCounter
+                          context="expense"
+                          availableNotes={availableNotes}
+                          onApply={(total, counts) => {
+                            setPayAmount(String(total))
+                            setPayDenomination(counts)
+                          }}
+                        />
+                      )}
                       <div style={{ marginBottom: '10px' }}>
                         <label style={styles.label}>Description (optional)</label>
                         <input style={styles.input} placeholder="e.g. Paid for last month's flex order" value={txnDesc} onChange={e => setTxnDesc(e.target.value)} />
                       </div>
-                      <button style={{ ...styles.submitBtn, backgroundColor: '#27ae60' }} type="submit">Save Payment</button>
+                      <LoadingButton loading={paymentSaving} style={{ ...styles.submitBtn, backgroundColor: '#27ae60' }} type="submit">Save Payment</LoadingButton>
                     </form>
                   )}
                 </div>
@@ -793,40 +925,73 @@ function Accounts() {
                       </tr>
                     </thead>
                     <tbody>
-                      {vendorDetail.transactions.map(t => (
-                        <tr key={t.id} style={styles.tr}>
-                          <td style={styles.td}>
-                            <div>{t.transaction_date}</div>
-                            {t.created_at && <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} /> {fmtDT(t.created_at)}</div>}
-                          </td>
-                          <td style={styles.td}>
-                            <div>
-                              <span style={{ ...styles.badge, backgroundColor: t.type === 'purchase' ? '#e74c3c' : '#27ae60', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                {t.type === 'purchase' ? <><Package size={11} /> Purchase</> : <><Banknote size={11} /> Payment</>}
-                              </span>
-                              {payMethodBadge(t)}
-                            </div>
-                          </td>
-                          <td style={styles.td}>
-                            <strong style={{ color: t.type === 'purchase' ? '#e74c3c' : '#27ae60' }}>₹{t.amount}</strong>
-                          </td>
-                          <td style={{ ...styles.td, fontSize: '13px', color: '#555' }}>
-                            {t.description && <div>{t.description}</div>}
-                            {/* Items chips */}
-                            {t.items && t.items.length > 0 && (
-                              <div style={{ marginTop: '4px' }}>
-                                {t.items.map((it, i) => (
-                                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#f3f4f6', borderRadius: '5px', padding: '2px 7px', margin: '2px 3px 2px 0', fontSize: '12px' }}>
-                                    <span>{it.name}</span>
-                                    {it.qty && <span style={{ color: '#9ca3af' }}>×{it.qty}{it.unit}</span>}
-                                    {it.amount && <span style={{ fontWeight: 700 }}> ₹{it.amount}</span>}
-                                  </span>
-                                ))}
+                      {vendorDetail.transactions.map(t => {
+                        const expandable = hasBreakdown(t)
+                        const isExpanded = expandedTxnId === t.id
+                        return (
+                        <Fragment key={t.id}>
+                          <tr
+                            style={{
+                              ...styles.tr,
+                              cursor: expandable ? 'pointer' : 'default',
+                              backgroundColor: isExpanded ? '#f8fdf9' : '#fff'
+                            }}
+                            onClick={() => expandable && setExpandedTxnId(isExpanded ? null : t.id)}
+                          >
+                            <td style={styles.td}>
+                              <div>{t.transaction_date}</div>
+                              {t.created_at && <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} /> {fmtDT(t.created_at)}</div>}
+                            </td>
+                            <td style={styles.td}>
+                              <div>
+                                <span style={{ ...styles.badge, backgroundColor: t.type === 'purchase' ? '#e74c3c' : '#27ae60', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  {t.type === 'purchase' ? <><Package size={11} /> Purchase</> : <><Banknote size={11} /> Payment</>}
+                                </span>
+                                {payMethodBadge(t)}
                               </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td style={styles.td}>
+                              <strong style={{ color: t.type === 'purchase' ? '#e74c3c' : '#27ae60' }}>₹{t.amount}</strong>
+                            </td>
+                            <td style={{ ...styles.td, fontSize: '13px', color: '#555' }}>
+                              {t.description && <div>{t.description}</div>}
+                              {/* Items chips */}
+                              {t.items && t.items.length > 0 && (
+                                <div style={{ marginTop: '4px' }}>
+                                  {t.items.map((it, i) => (
+                                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#f3f4f6', borderRadius: '5px', padding: '2px 7px', margin: '2px 3px 2px 0', fontSize: '12px' }}>
+                                      <span>{it.name}</span>
+                                      {it.qty && <span style={{ color: '#9ca3af' }}>×{it.qty}{it.unit}</span>}
+                                      {it.amount && <span style={{ fontWeight: 700 }}> ₹{it.amount}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+
+                          {isExpanded && (
+                            <tr style={{ backgroundColor: '#f8fdf9' }}>
+                              <td colSpan="4" style={{ padding: '4px 14px 14px 14px', borderBottom: '1px solid #f0f0f0' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', paddingTop: '6px' }}>
+                                  <div>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', marginBottom: '5px' }}>+ Aaye</div>
+                                    {renderDenomChips(t.denomination_breakdown.received, '#16a34a')
+                                      || <span style={{ fontSize: '12px', color: '#aaa' }}>—</span>}
+                                  </div>
+                                  {sumDenom(t.denomination_breakdown.returned) > 0 && (
+                                    <div>
+                                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#e74c3c', marginBottom: '5px' }}>− Gaye</div>
+                                      {renderDenomChips(t.denomination_breakdown.returned, '#e74c3c')}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                        )
+                      })}
                     </tbody>
                   </table>
                   </div>
@@ -846,7 +1011,7 @@ function Accounts() {
           </div>
 
           {commissionLoading ? (
-            <p style={{ color: '#888' }}>Loading...</p>
+            <SectionLoader label="Commission entries load ho rahi hain..." />
           ) : commissionEntries.length === 0 ? (
             <p style={{ color: '#aaa' }}>Is mahine koi commission entry nahi hai.</p>
           ) : (
@@ -932,11 +1097,12 @@ function Accounts() {
                 onClick={() => { setUpiDeleteModal(null); setUpiDeletePassword('') }}
                 style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' }}
               >Cancel</button>
-              <button
+              <LoadingButton
+                loading={upiDeleteLoading}
+                loadingText="Deleting..."
                 type="submit"
-                disabled={upiDeleteLoading}
-                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#e74c3c', color: '#fff', cursor: upiDeleteLoading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: upiDeleteLoading ? 0.6 : 1 }}
-              >{upiDeleteLoading ? 'Deleting...' : <><Trash2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delete</>}</button>
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #800000', backgroundColor: '#800000', color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
+              ><Trash2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delete</LoadingButton>
             </div>
           </form>
         </Modal>
@@ -959,13 +1125,13 @@ function Accounts() {
       {/* ── Delete Confirm Modal ── */}
       {deleteConfirmV && (
         <Modal title="Delete Vendor" onClose={() => setDeleteConfirmV(null)}>
-          <p style={{ color: '#374151', fontSize: '14px', marginTop: 0 }}>
-            Are you sure you want to delete <strong>{deleteConfirmV.name}</strong>?<br />
-            <span style={{ color: '#e74c3c', fontSize: '13px' }}>This will permanently remove all their transactions.</span>
+          <p style={{ color: '#374151', fontSize: '14px', marginTop: 0, marginBottom: '20px', lineHeight: '1.6' }}>
+            Are you sure you want to delete <strong>{deleteConfirmV.name}</strong>?
+            <span style={{ display: 'block', color: '#e74c3c', fontSize: '13px', marginTop: '6px' }}>This will permanently remove all their transactions.</span>
           </p>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={() => setDeleteConfirmV(null)} style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: 'pointer' }}>Cancel</button>
-            <button onClick={handleDeleteVendor} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '6px', background: '#e74c3c', color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Yes, Delete</button>
+            <LoadingButton loading={vendorDeleting} onClick={handleDeleteVendor} style={{ flex: 1, padding: '10px', border: '1px solid #800000', borderRadius: '6px', background: '#800000', color: '#fff', fontWeight: 700 }}>Yes, Delete</LoadingButton>
           </div>
         </Modal>
       )}
@@ -983,7 +1149,7 @@ const styles = {
   tabRow: { display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' },
   tab: { padding: '10px 20px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' },
   activeTab: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
-  addBtn: { backgroundColor: '#e94560', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  addBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   formBox: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
   formRow: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' },
   input: { width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' },

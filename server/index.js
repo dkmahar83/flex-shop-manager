@@ -3,30 +3,40 @@
 // jo uncaught exception throw karta hai aur pura process crash kar deta hai.
 // Yeh handler sirf process ko zinda rakhta hai, hamara apna disconnect/reinit logic
 // (whatsapp.js mein) waise hi chalta rehta hai.
+require('dotenv').config();
+const logger = require('./utils/logger');
+
 process.on('uncaughtException', (err) => {
   if (err && err.message && err.message.includes('detached Frame')) {
-    console.log('⚠️  WhatsApp Chrome frame detached (non-fatal, ignored):', err.message)
+    logger.warn('WhatsApp Chrome frame detached (non-fatal, ignored): ' + err.message)
     return
   }
-  console.error('Uncaught Exception:', err)
+  logger.error('Uncaught Exception: ' + err.stack || err)
 })
 
 process.on('unhandledRejection', (reason) => {
   if (reason && reason.message && reason.message.includes('detached Frame')) {
-    console.log('⚠️  WhatsApp Chrome frame detached (non-fatal, ignored):', reason.message)
+    logger.warn('WhatsApp Chrome frame detached (non-fatal, ignored): ' + reason.message)
     return
   }
-  console.error('Unhandled Rejection:', reason)
+  logger.error('Unhandled Rejection: ' + (reason?.stack || reason))
 })
-require('dotenv').config();
 const db = require('./db/database');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 
 const app = express();
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}))
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean)
+app.use(cors({
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+  credentials: true
+}))
 app.use(express.json());
 
 const path = require('path');
@@ -50,6 +60,7 @@ const whatsappRoutes  = require('./routes/whatsapp')
 const commissionRoutes = require('./routes/commission')
 const pageLockRoutes = require('./routes/pageLocks')
 const backupRoutes = require('./routes/backup')
+const settingsRoutes = require('./routes/settings')
 const { startBackupScheduler } = require('./backup')
 
 
@@ -80,20 +91,21 @@ app.use('/api/pdf',        requireAuth, pdfRoutes)
 app.use('/api/whatsapp',   requireAuth, whatsappRoutes)
 app.use('/api/commission', requireAuth, commissionRoutes)
 app.use('/api/page-locks', requireAuth, pageLockRoutes)
-app.use('/api/backup', require('./routes/backup'))
-app.use('/api/upi-qr-history', require('./routes/upiQrHistory'))
+app.use('/api/backup', requireAuth, backupRoutes)
+app.use('/api/settings', requireAuth, settingsRoutes)
+app.use('/api/upi-qr-history', requireAuth, require('./routes/upiQrHistory'))
 
 app.get('/', (req, res) => {
   res.json({ message: 'VijayFlex Pro API is running!' })
 })
 // Global error handler — catches multer errors etc, always returns JSON
 app.use((err, req, res, next) => {
-  console.error('Server error:', err.message);
+  logger.error(`Server error on ${req.method} ${req.originalUrl}: ${err.stack || err.message}`);
   res.status(500).json({ error: err.message || 'Something went wrong' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://localhost:${PORT}`)
+  logger.info(`Server running on http://localhost:${PORT}`)
   setTimeout(initWhatsApp, 3000)
   startBackupScheduler()
 })

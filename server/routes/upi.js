@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const logger = require('../utils/logger');
 
 const UPI_ACCOUNTS = [
   'BOI Shop Account',
@@ -9,9 +10,9 @@ const UPI_ACCOUNTS = [
   'Amazon Pay - Deepak'
 ];
 
-// GET all UPI transactions
+// GET all UPI transactions — ?page & ?limit optional. Bina diye purana behavior (full array).
 router.get('/', (req, res) => {
-  const { upi_account, month, year } = req.query;
+  const { upi_account, month, year, page, limit } = req.query;
   
   let dateFilter = '';
   let params = [];
@@ -25,7 +26,7 @@ router.get('/', (req, res) => {
   if (upi_account) params = [...params, upi_account, ...params, upi_account, ...params, upi_account];
   else params = [...params, ...params, ...params];
 
-  const query = `
+  const unionQuery = `
     SELECT id, upi_account, customer_name, customer_id, amount, transaction_date,
           utr_number, notes, 'credit' as direction, created_at, 'upi_transactions' as source
     FROM upi_transactions
@@ -55,13 +56,32 @@ router.get('/', (req, res) => {
     LEFT JOIN employees ON expenses.paid_to_type = 'employee' AND expenses.paid_to_id = employees.id
     WHERE expenses.payment_mode = 'upi' AND expenses.upi_account IS NOT NULL
     ${dateFilter.replace('transaction_date', 'expense_date')} ${accountFilter}
-
-    ORDER BY transaction_date DESC
   `;
 
-  db.all(query, params, (err, rows) => {
+  if (!page) {
+    return db.all(`${unionQuery} ORDER BY transaction_date DESC`, params, (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    });
+  }
+
+  const pageNum  = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+  const offset   = (pageNum - 1) * limitNum;
+
+  db.get(`SELECT COUNT(*) as total FROM (${unionQuery})`, params, (err, countRow) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+
+    db.all(`${unionQuery} ORDER BY transaction_date DESC LIMIT ? OFFSET ?`, [...params, limitNum, offset], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({
+        data: rows,
+        page: pageNum,
+        limit: limitNum,
+        total: countRow.total,
+        total_pages: Math.ceil(countRow.total / limitNum)
+      });
+    });
   });
 });
 
@@ -108,21 +128,32 @@ router.post('/', (req, res) => {
     notes
   } = req.body;
 
-  if (!upi_account || !amount) {
+  if (!upi_account || !amount || isNaN(amount) || Number(amount) <= 0) {
     return res.status(400).json({
-      error: 'upi_account and amount required'
+      error: 'upi_account and a valid positive amount are required'
     });
   }
-
   let formattedDate;
+    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
 
-  if (transaction_date) {
-    const [day, month, year] = transaction_date.split('-');
-    formattedDate = `${year}-${month}-${day}`;
-  } else {
-    formattedDate = new Date().toISOString().split('T')[0];
-    const createdAt = new Date().toLocaleString('sv-SE', {timeZone: 'Asia/Kolkata'}).replace('T', ' ');
-  }
+    if (transaction_date) {
+      // Frontend (HTML date input) already sends YYYY-MM-DD — use as-is.
+      // Only convert if it looks like DD-MM-YYYY (legacy/manual format).
+      formattedDate = /^\d{4}-\d{2}-\d{2}$/.test(transaction_date)
+        ? transaction_date
+        : (() => {
+            const parts = transaction_date.split('-');
+            if (parts.length === 3) {
+              const [day, month, year] = parts;
+              return `${year}-${month}-${day}`;
+            }
+            // Unrecognized format — garbage date insert karne ke bajaye IST-today fallback
+            return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+          })();
+    } else {
+      // Poora app IST use karta hai — UTC ISO date yahan timezone-bug create karta tha
+      formattedDate = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
+    }
 
   db.run(
     `
@@ -143,7 +174,7 @@ router.post('/', (req, res) => {
     ],
     function (err) {
       if (err) {
-        console.error('UPI ERROR:', err);
+        logger.error('UPI insert error: ' + err.message);
         return res.status(500).json({
           error: err.message
         });

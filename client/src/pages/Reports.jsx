@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import PageLock from '../components/PageLock'
 import { getMonthlyReport, getYearlyReport } from '../services/api'
+import SectionLoader from '../components/SectionLoader'
 import {
   BarChart3, Calendar, CalendarDays, AlertTriangle, Receipt,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, Printer
 } from 'lucide-react'
 
 function Reports() {
@@ -17,6 +18,18 @@ function Reports() {
   const [yearlyReport, setYearlyReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [message])
+
+  // Tab badalte hi purana message turant clear — warna "Error loading
+  // report" wala banner Yearly ya Dues tab pe bhi dikhta reh jaata.
+  useEffect(() => {
+    queueMicrotask(() => setMessage(''))
+  }, [activeTab])
 
   function loadMonthlyReport() {
     setLoading(true)
@@ -40,6 +53,13 @@ function Reports() {
   return (
   <PageLock pageKey="reports" pageTitle="Reports">
   <div>
+    <style>{`
+      @media print {
+        body * { visibility: hidden; }
+        .print-area, .print-area * { visibility: visible; }
+        .print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+      }
+    `}</style>
     <div style={styles.header}>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 size={20} /> Reports</h2>
       </div>
@@ -84,12 +104,17 @@ function Reports() {
             <button style={styles.loadBtn} onClick={loadMonthlyReport}>
               Load Report
             </button>
+            {report && (
+              <button style={styles.printBtn} onClick={() => window.print()}>
+                <Printer size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Print
+              </button>
+            )}
           </div>
 
-          {loading && <p style={{ color: '#888' }}>Loading...</p>}
+          {loading && <SectionLoader label="Report load ho raha hai..." />}
 
           {report && (
-            <div>
+            <div className="print-area">
               <h3 style={{ marginBottom: '20px', color: '#1a1a2e' }}>
                 {monthName(report.month)} {report.year} — P&L Report
               </h3>
@@ -137,7 +162,7 @@ function Reports() {
                   </div>
                   <div style={styles.cardLabel}>Total Outstanding Dues</div>
                   <div style={styles.cardSub}>
-                    {report.dues.list.length} orders pending
+                    {report.dues.list.length} customer{report.dues.list.length !== 1 ? 's' : ''} pending
                   </div>
                 </div>
               </div>
@@ -201,26 +226,28 @@ function Reports() {
                       <tr>
                         <th style={styles.th}>Firm</th>
                         <th style={styles.th}>Phone</th>
-                        <th style={styles.th}>Description</th>
-                        <th style={styles.th}>Total</th>
-                        <th style={styles.th}>Due</th>
+                        <th style={styles.th}>Orders Due</th>
+                        <th style={styles.th}>Opening Balance</th>
+                        <th style={styles.th}>Total Due</th>
                         <th style={styles.th}>Follow-up</th>
                       </tr>
                     </thead>
                     <tbody>
                       {report.dues.list.map(d => (
-                        <tr key={d.id} style={styles.tr}
+                        <tr key={d.customer_id} style={styles.tr}
                           onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
                           onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
                         >
                           <td style={styles.td}><strong>{d.firm_name}</strong></td>
                           <td style={styles.td}>{d.phone || '—'}</td>
-                          <td style={{ ...styles.td, fontSize: '13px', color: '#555' }}>
-                            {d.description || '—'}
-                          </td>
-                          <td style={styles.td}>₹{d.total_amount}</td>
                           <td style={styles.td}>
-                            <strong style={{ color: '#e74c3c' }}>₹{d.balance_due}</strong>
+                            {d.orders_due > 0
+                              ? <>₹{d.orders_due} <span style={{ fontSize: '12px', color: '#888' }}>({d.orders_due_count})</span></>
+                              : '—'}
+                          </td>
+                          <td style={styles.td}>{d.opening_balance > 0 ? `₹${d.opening_balance}` : '—'}</td>
+                          <td style={styles.td}>
+                            <strong style={{ color: '#e74c3c' }}>₹{d.total_due}</strong>
                           </td>
                           <td style={styles.td}>
                             {d.follow_up_date ? (
@@ -267,12 +294,17 @@ function Reports() {
             <button style={styles.loadBtn} onClick={loadYearlyReport}>
               Load Yearly Report
             </button>
+            {yearlyReport && (
+              <button style={styles.printBtn} onClick={() => window.print()}>
+                <Printer size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Print
+              </button>
+            )}
           </div>
 
-          {loading && <p style={{ color: '#888' }}>Loading...</p>}
+          {loading && <SectionLoader label="Yearly report load ho raha hai..." />}
 
           {yearlyReport && (
-            <div>
+            <div className="print-area">
               <h3 style={{ marginBottom: '20px' }}>
                 {yearlyReport.year} — Yearly Summary
               </h3>
@@ -399,22 +431,29 @@ function DuesTab() {
       getDues()
         .then(res => {
           setDues(res.data)
-          setTotalDue(res.data.reduce((s, d) => s + d.balance_due, 0))
+          setTotalDue(res.data.reduce((s, d) => s + d.total_due, 0))
           setLoading(false)
         })
         .catch(() => setLoading(false))
     })
   })
 
-  if (loading) return <p style={{ color: '#888' }}>Loading dues...</p>
+  if (loading) return <SectionLoader label="Dues load ho rahi hain..." />
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <h3>All Pending Dues</h3>
-        <div style={{ backgroundColor: '#fff', padding: '12px 20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-          <span style={{ color: '#888', fontSize: '13px' }}>Total Outstanding: </span>
-          <strong style={{ color: '#e74c3c', fontSize: '18px' }}>₹{totalDue}</strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ backgroundColor: '#fff', padding: '12px 20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <span style={{ color: '#888', fontSize: '13px' }}>Total Outstanding: </span>
+            <strong style={{ color: '#e74c3c', fontSize: '18px' }}>₹{totalDue}</strong>
+          </div>
+          {dues.length > 0 && (
+            <button style={tableStyles.printBtn} onClick={() => window.print()}>
+              <Printer size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Print
+            </button>
+          )}
         </div>
       </div>
 
@@ -426,36 +465,37 @@ function DuesTab() {
           </p>
         </div>
       ) : (
-        <div style={tableStyles.tableScroll}>
+        <div className="print-area" style={tableStyles.tableScroll}>
         <table style={tableStyles.table}>
           <thead>
             <tr>
               <th style={tableStyles.th}>#</th>
               <th style={tableStyles.th}>Firm</th>
               <th style={tableStyles.th}>Phone</th>
-              <th style={tableStyles.th}>Description</th>
-              <th style={tableStyles.th}>Total</th>
-              <th style={tableStyles.th}>Balance Due</th>
+              <th style={tableStyles.th}>Orders Due</th>
+              <th style={tableStyles.th}>Opening Balance</th>
+              <th style={tableStyles.th}>Total Due</th>
               <th style={tableStyles.th}>Follow-up</th>
-              <th style={tableStyles.th}>Status</th>
             </tr>
           </thead>
           <tbody>
             {dues.map((d, i) => (
-              <tr key={d.order_id} style={tableStyles.tr}
+              <tr key={d.customer_id} style={tableStyles.tr}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
               >
                 <td style={tableStyles.td}>{i + 1}</td>
                 <td style={tableStyles.td}><strong>{d.firm_name}</strong></td>
                 <td style={tableStyles.td}>{d.phone || '—'}</td>
-                <td style={{ ...tableStyles.td, fontSize: '13px', color: '#555' }}>
-                  {d.description || '—'}
+                <td style={tableStyles.td}>
+                  {d.orders_due > 0
+                    ? <>₹{d.orders_due} <span style={{ fontSize: '12px', color: '#888' }}>({d.orders_due_count})</span></>
+                    : '—'}
                 </td>
-                <td style={tableStyles.td}>₹{d.total_amount}</td>
+                <td style={tableStyles.td}>{d.opening_balance > 0 ? `₹${d.opening_balance}` : '—'}</td>
                 <td style={tableStyles.td}>
                   <strong style={{ color: '#e74c3c', fontSize: '16px' }}>
-                    ₹{d.balance_due}
+                    ₹{d.total_due}
                   </strong>
                 </td>
                 <td style={tableStyles.td}>
@@ -469,17 +509,6 @@ function DuesTab() {
                       {d.follow_up_date <= new Date().toISOString().split('T')[0] && <AlertTriangle size={11} style={{ marginLeft: '4px', verticalAlign: 'middle' }} />}
                     </span>
                   ) : '—'}
-                </td>
-                <td style={tableStyles.td}>
-                  <span style={{
-                    padding: '3px 10px', borderRadius: '12px', color: '#fff',
-                    fontSize: '12px', backgroundColor:
-                      d.status === 'pending' ? '#f39c12' :
-                      d.status === 'in_progress' ? '#3498db' :
-                      d.status === 'ready' ? '#27ae60' : '#95a5a6'
-                  }}>
-                    {d.status?.replace('_', ' ')}
-                  </span>
                 </td>
               </tr>
             ))}
@@ -496,7 +525,8 @@ const tableStyles = {
   table: { width: '100%', minWidth: '750px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
-  tr: { backgroundColor: '#fff' }
+  tr: { backgroundColor: '#fff' },
+  printBtn: { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', display: 'inline-flex', alignItems: 'center' }
 }
 
 const styles = {
@@ -507,7 +537,8 @@ const styles = {
   activeTab: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
   filterRow: { display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap' },
   input: { padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' },
-  loadBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  loadBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  printBtn: { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', display: 'inline-flex', alignItems: 'center' },
   cardsRow: { display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' },
   card: { flex: '1', minWidth: '180px', backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   cardNum: { fontSize: '26px', fontWeight: 'bold', marginBottom: '4px' },

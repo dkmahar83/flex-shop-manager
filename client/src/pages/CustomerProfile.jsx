@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto, generateCustomerStatement, sendStatementWhatsApp } from '../services/api'
 import PageLock from '../components/PageLock'
+import SectionLoader from '../components/SectionLoader'
 import {
   Camera,
   Phone,
@@ -29,6 +30,7 @@ function CustomerProfile() {
   const [obDate, setObDate]         = useState(new Date().toLocaleDateString('en-CA'))
   const [obNotes, setObNotes]       = useState('Pichle saal ka bakaya')
   const [obMsg, setObMsg]           = useState('')
+  const [obSaving, setObSaving]     = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoMsg, setPhotoMsg] = useState('')
   const [showPhotoModal, setShowPhotoModal] = useState(false)
@@ -45,7 +47,27 @@ function CustomerProfile() {
       .catch(() => setLoading(false))
   }, [id])
 
-  if (loading) return <p style={{ padding: '20px' }}>Loading...</p>
+  // Teeno independent messages (opening-balance, photo, statement) ab khud
+  // 4 sec baad gayab ho jaate hain — pehle sirf click-karke hatao tha.
+  useEffect(() => {
+    if (!obMsg) return
+    const timer = setTimeout(() => setObMsg(''), 4000)
+    return () => clearTimeout(timer)
+  }, [obMsg])
+
+  useEffect(() => {
+    if (!photoMsg) return
+    const timer = setTimeout(() => setPhotoMsg(''), 4000)
+    return () => clearTimeout(timer)
+  }, [photoMsg])
+
+  useEffect(() => {
+    if (!stmtMsg) return
+    const timer = setTimeout(() => setStmtMsg(''), 4000)
+    return () => clearTimeout(timer)
+  }, [stmtMsg])
+
+  if (loading) return <SectionLoader label="Customer profile load ho raha hai..." size="large" minHeight="60vh" />
   if (!customer) return <p style={{ padding: '20px' }}>Customer not found.</p>
 
   const orders = customer.orders || []
@@ -117,15 +139,17 @@ function handleOpeningBalance(e) {
   if (!obAmount || isNaN(obAmount) || Number(obAmount) <= 0)
     return setObMsg('Valid amount required')
 
+  setObSaving(true)
   addOpeningBalance(id, { amount: Number(obAmount), date: obDate, notes: obNotes })
     .then(() => {
       setObMsg('Opening balance added successfully!')
       setObAmount('')
       setShowObForm(false)
       // Reload profile
-      getCustomerProfile(id).then(res => setCustomer(res.data))
+      return getCustomerProfile(id).then(res => setCustomer(res.data))
     })
     .catch(err => setObMsg('Error: ' + (err.response?.data?.error || 'Failed')))
+    .finally(() => setObSaving(false))
 }
 function handlePhotoChange(e) {
   const file = e.target.files[0]
@@ -240,20 +264,22 @@ function handlePhotoRemove() {
           </div>
         </div>
       </div>
-      {/* OPENING BALANCE BUTTON */}
-      <div style={{ marginBottom: '16px' }}>
-        <button
-          onClick={() => setShowObForm(f => !f)}
-          style={{
-            backgroundColor: '#8e44ad', color: '#fff', border: 'none',
-            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
-            fontSize: '14px', fontWeight: 'bold',
-            display: 'inline-flex', alignItems: 'center', gap: '8px'
-          }}
-        >
-          <NotebookPen size={15} /> Add Opening Balance (Purana Bakaya)
-        </button>
-      </div>
+
+      {/* OPENING BALANCE DISPLAY — pehle ye kahi nahi dikhta tha, sirf Total Due
+          mein silently mix ho jaata tha. Ab clear purple banner, statement PDF
+          jaisi hi styling. */}
+      {customer.opening_balance > 0 && (
+        <div style={styles.obBanner}>
+          <div>
+            <div style={styles.obBannerLabel}>Opening Balance (Purana Bakaya)</div>
+            <div style={styles.obBannerSub}>
+              {customer.opening_balance_notes || ''}
+              {customer.opening_balance_date && `  •  ${customer.opening_balance_date}`}
+            </div>
+          </div>
+          <div style={styles.obBannerAmt}>₹{customer.opening_balance}</div>
+        </div>
+      )}
 
       {showObForm && (
         <div style={{
@@ -265,7 +291,7 @@ function handlePhotoRemove() {
           </h3>
           <p style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
             Pichle financial year ka jo bhi bakaya hai wo yahan add karo.
-            Ye ek pending order ki tarah save hoga.
+            Customer ke total due mein seedha jud jayega (naya order nahi banega).
           </p>
           <form onSubmit={handleOpeningBalance}>
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -277,7 +303,7 @@ function handlePhotoRemove() {
                   type="number"
                   placeholder="e.g. 5000"
                   value={obAmount}
-                  onChange={e => setObAmount(e.target.value)}
+                  onChange={e => { setObAmount(e.target.value); if (obMsg) setObMsg('') }}
                   style={{
                     width: '100%', padding: '10px', borderRadius: '6px',
                     border: '1px solid #ddd', fontSize: '16px', fontWeight: 'bold',
@@ -327,20 +353,23 @@ function handlePhotoRemove() {
             <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
               <button
                 type="submit"
+                disabled={obSaving}
                 style={{
                   backgroundColor: '#8e44ad', color: '#fff', border: 'none',
-                  padding: '10px 24px', borderRadius: '6px', cursor: 'pointer',
-                  fontSize: '14px', fontWeight: 'bold'
+                  padding: '10px 24px', borderRadius: '6px', cursor: obSaving ? 'not-allowed' : 'pointer',
+                  fontSize: '14px', fontWeight: 'bold', opacity: obSaving ? 0.6 : 1
                 }}
               >
-                Save Opening Balance
+                {obSaving ? 'Saving...' : 'Save Opening Balance'}
               </button>
               <button
                 type="button"
+                disabled={obSaving}
                 onClick={() => { setShowObForm(false); setObMsg('') }}
                 style={{
                   backgroundColor: '#fff', color: '#888', border: '1px solid #ddd',
-                  padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px'
+                  padding: '10px 20px', borderRadius: '6px', cursor: obSaving ? 'not-allowed' : 'pointer', fontSize: '14px',
+                  opacity: obSaving ? 0.6 : 1
                 }}
               >
                 Cancel
@@ -349,18 +378,34 @@ function handlePhotoRemove() {
           </form>
         </div>
       )}
-      {/* STATEMENT BUTTONS */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      {/* ACTION BUTTONS — opening balance ek alag-intent action hai (purple accent
+          rakha hai jaanbujh kar), isliye ek thin divider se statement-actions se
+          visually separate kiya hai, par sab ek hi row mein, same height/padding. */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <button
+          onClick={() => setShowObForm(f => !f)}
+          style={{
+            backgroundColor: '#8e44ad', color: '#fff', border: '1px solid #8e44ad',
+            padding: '10px 20px', borderRadius: '8px', cursor: 'pointer',
+            fontSize: '14px', fontWeight: 'bold',
+            display: 'inline-flex', alignItems: 'center', gap: '8px'
+          }}
+        >
+          <NotebookPen size={15} /> Add Opening Balance (Purana Bakaya)
+        </button>
+
+        <div style={{ width: '1px', height: '28px', backgroundColor: '#e0e0e0', flexShrink: 0 }} />
+
         <button
           onClick={handleDownloadStatement}
           disabled={stmtLoading}
-          style={{ backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: stmtLoading ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+          style={{ backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: stmtLoading ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
         >
           {stmtLoading ? 'Generating...' : <><FileText size={15} /> Download Statement</>}
         </button>
         <button
           onClick={() => setWaStmtModal(true)}
-          style={{ backgroundColor: '#25D366', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+          style={{ backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
         >
           <Send size={15} /> Send Statement on WhatsApp
         </button>
@@ -371,13 +416,21 @@ function handlePhotoRemove() {
           </p>
         )}
       </div>
-      {/* DUE ALERT */}
-      {totalDue > 0 && (
-        <div style={{ ...styles.dueAlert, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <AlertTriangle size={16} /> This customer has <strong>₹{totalDue}</strong> pending across{' '}
-          <strong>{orders.filter(o => o.balance_due > 0).length}</strong> order(s).
-        </div>
-      )}
+      {/* DUE ALERT — ab opening-balance ko bhi account mein leta hai, taaki
+          "pending across 0 order(s)" jaisa confusing case na ho jab poora due
+          sirf opening-balance se ho, kisi order se nahi. */}
+      {totalDue > 0 && (() => {
+        const orderDueCount  = orders.filter(o => o.balance_due > 0).length
+        const orderDueAmount = orders.reduce((s, o) => s + Number(o.balance_due || 0), 0)
+        const obDue          = Number(customer.opening_balance || 0)
+        return (
+          <div style={{ ...styles.dueAlert, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={16} /> This customer has <strong>₹{totalDue}</strong> pending
+            {orderDueCount > 0 && <> — <strong>₹{orderDueAmount}</strong> across <strong>{orderDueCount}</strong> order(s)</>}
+            {obDue > 0 && <>{orderDueCount > 0 ? ', ' : ' — '}<strong>₹{obDue}</strong> opening balance</>}.
+          </div>
+        )
+      })()}
 
       {/* PAYMENT BREAKDOWN */}
       <div style={styles.paymentBreakdown}>
@@ -655,6 +708,10 @@ const styles = {
   statNum: { fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e' },
   statLabel: { fontSize: '12px', color: '#888', marginTop: '4px' },
   dueAlert: { backgroundColor: '#fff3cd', border: '1px solid #ffc107', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' },
+  obBanner: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f5f0ff', borderLeft: '4px solid #8e44ad', padding: '14px 18px', borderRadius: '8px', marginBottom: '16px' },
+  obBannerLabel: { fontSize: '13px', fontWeight: 'bold', color: '#8e44ad' },
+  obBannerSub: { fontSize: '12px', color: '#888', marginTop: '3px' },
+  obBannerAmt: { fontSize: '18px', fontWeight: 'bold', color: '#8e44ad' },
   paymentBreakdown: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' },
   breakdownItem: { backgroundColor: '#f8f8f8', padding: '14px 18px', borderRadius: '8px', minWidth: '140px' },
   tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },

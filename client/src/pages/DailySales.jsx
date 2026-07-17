@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import {
   getDailySummary,
   getExpenses, addExpense, deleteExpense, getTodaySales,
   getEmployees, getVendors, getDailyLedgerByDate, saveCashIncome, getCustomers,
-  getCashDrawer, getDenominationDrawer, setDrawerBaseline, deleteLedgerEntry
+  getCashDrawer, getDenominationDrawer, setDrawerBaseline, deleteLedgerEntry,
+  getSetting, setSetting, getGallaHistory
 } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
+import LoadingButton from '../components/LoadingButton'
+import SectionLoader from '../components/SectionLoader'
 import {
   Wallet, ClipboardList, Receipt, NotebookPen, Calculator,
   BarChart3, CreditCard, Banknote, Smartphone, User, Store,
@@ -58,9 +61,23 @@ function DailySales() {
   const [baselineCounts, setBaselineCounts] = useState({})
   const [baselineSaving, setBaselineSaving] = useState(false)
   const [suggestedBaseline, setSuggestedBaseline] = useState(null)
+  // Note-wise Cash Tracking — global ON/OFF setting
+  const [noteTrackingEnabled, setNoteTrackingEnabled] = useState(true)
+  const [settingLoading, setSettingLoading] = useState(false)
+  const [gallaHistory, setGallaHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  // Tracking OFF→ON popup — denomination reset + baseline-set, tabhi ON hoga
+  const [showEnableModal, setShowEnableModal] = useState(false)
+  const [enableSaving, setEnableSaving] = useState(false)
+  // Tracking ON→OFF warning popup
+  const [showDisableModal, setShowDisableModal] = useState(false)
+  const [disableSaving, setDisableSaving] = useState(false)
   const [deleteModal, setDeleteModal] = useState(null) // { type, id, label }
   const [deletePassword, setDeletePassword] = useState('')
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Cash Drawer tab — click-to-expand denomination breakdown
+  const [expandedDrawerKey, setExpandedDrawerKey] = useState(null)
 
   const [cashForm, setCashForm] = useState({
     customer_id: '',
@@ -76,7 +93,8 @@ function DailySales() {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [cashDenomination, setCashDenomination] = useState({})
   const [expenseDenomination, setExpenseDenomination] = useState({})
-
+  const [cashSubmitting, setCashSubmitting] = useState(false)
+  const [expenseSubmitting, setExpenseSubmitting] = useState(false)
   const [expenseForm, setExpenseForm] = useState({
     category: '',
     amount: '',
@@ -107,6 +125,27 @@ function DailySales() {
     getVendors().then(res => setVendors(res.data)).catch(() => {})
   }, [filterMonth, filterYear]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Tracking setting sirf "Galla" tab pe nahi — mount hote hi chahiye,
+  // kyunki "Record Entry" tab (cash income + expense) ko bhi turant
+  // pata hona chahiye ki denomination-counter dikhana hai ya nahi.
+  useEffect(() => {
+    fetchNoteTrackingSetting()
+    fetchDrawer()
+  }, [])
+
+  // Message ab khud gayab ho jaata hai, aur tab badalte hi turant clear —
+  // warna "Entry saved" wala banner "Cash Drawer" ya "Galla Hisaab" tab pe
+  // bhi dikhta reh jaata tha.
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [message])
+
+  useEffect(() => {
+    queueMicrotask(() => setMessage(''))
+  }, [activeTab])
+
   function showMsg(text, type = 'success') {
     setMessage(text)
     setMessageType(type)
@@ -122,6 +161,34 @@ function DailySales() {
       return `${timePart}  ${dd}.${mm}.${yyyy}`
     }
     return clean
+  }
+
+  // Denomination order — jaisa DenominationCounter.jsx mein hai, badi se choti
+  const DENOM_ORDER = [500, 200, 100, 50, 20, 10, 5, 2, 1]
+
+  function sumDenom(counts) {
+    return Object.values(counts || {}).reduce((s, v) => s + (Number(v) || 0), 0)
+  }
+
+  function hasBreakdown(item) {
+    if (!item.denomination_breakdown) return false
+    const { received, returned } = item.denomination_breakdown
+    return sumDenom(received) > 0 || sumDenom(returned) > 0
+  }
+
+  function renderDenomChips(counts, color) {
+    const entries = DENOM_ORDER.map(d => [d, Number(counts?.[d]) || 0]).filter(([, c]) => c > 0)
+    if (entries.length === 0) return null
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+        {entries.map(([d, c]) => (
+          <span key={d} style={{
+            fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '5px',
+            backgroundColor: color + '18', color
+          }}>₹{d} × {c}</span>
+        ))}
+      </div>
+    )
   }
 
   function fetchAll() {
@@ -178,6 +245,50 @@ function DailySales() {
       .catch(() => setDrawerLoading(false))
   }
 
+  function fetchNoteTrackingSetting() {
+    setSettingLoading(true)
+    getSetting('note_tracking_enabled')
+      .then(res => {
+        // Key kabhi set hi na hui ho (naya install) to default ON —
+        // taaki jinke paas already Galla Hisaab active hai unke liye kuch na tute.
+        setNoteTrackingEnabled(res.data.value === null ? true : res.data.value === 'true')
+      })
+      .catch(() => {})
+      .finally(() => setSettingLoading(false))
+  }
+
+  function toggleNoteTracking() {
+    if (!noteTrackingEnabled) {
+      // OFF → ON: seedha ON nahi karna — pehle fresh galla count lena hai.
+      setBaselineCounts({})
+      setShowEnableModal(true)
+      return
+    }
+    // ON → OFF: ab seedha off nahi hota — pehle warning, kyunki OFF karte hi
+    // denomination-counter option Orders/Sales/Expense/Salary/Vendor sabse gayab ho jaayega.
+    setShowDisableModal(true)
+  }
+
+  function handleDisableTracking() {
+    setDisableSaving(true)
+    setSetting('note_tracking_enabled', false)
+      .then(() => {
+        setNoteTrackingEnabled(false)
+        setShowDisableModal(false)
+        showMsg('Note-wise Cash Tracking OFF kar diya.')
+      })
+      .catch(() => showMsg('Setting update nahi ho payi.', 'error'))
+      .finally(() => setDisableSaving(false))
+  }
+
+  function fetchGallaHistory() {
+    setHistoryLoading(true)
+    getGallaHistory()
+      .then(res => setGallaHistory(res.data))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false))
+  }
+
   function bumpBaseline(value, delta) {
     setBaselineCounts(prev => {
       const current = Number(prev[value]) || 0
@@ -198,6 +309,24 @@ function DailySales() {
     .catch(() => showMsg('Error setting galla count.', 'error'))
     .finally(() => setBaselineSaving(false))
 }
+
+  function handleEnableTracking() {
+    setEnableSaving(true)
+    // Pehle fresh baseline save hoti hai, tabhi setting ON hoti hai —
+    // taaki tracking hamesha ek verified count se hi shuru ho.
+    setDrawerBaseline({ denomination_counts: baselineCounts, notes: 'Tracking ON — fresh galla count' })
+      .then(() => setSetting('note_tracking_enabled', true))
+      .then(() => {
+        setNoteTrackingEnabled(true)
+        setShowEnableModal(false)
+        setBaselineCounts({})
+        showMsg('Note-wise Cash Tracking ON kar diya — naya galla count set ho gaya ✅')
+        fetchDrawer()
+        fetchGallaHistory()
+      })
+      .catch(() => showMsg('Tracking ON karte waqt error aaya — dobara try karo.', 'error'))
+      .finally(() => setEnableSaving(false))
+  }
 
   const filteredCustomers = customers.filter(c =>
     c.firm_name.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -242,6 +371,7 @@ function DailySales() {
         ? cashDenomination
         : null
     }
+    setCashSubmitting(true)
     saveCashIncome(cleanForm)
       .then(() => {
         showMsg(`₹${cashForm.amount} cash income saved for ${selectedCustomer?.firm_name}`)
@@ -250,8 +380,10 @@ function DailySales() {
         setCustomerSearch('')
         setCashDenomination({})
         fetchAll()
+        fetchDrawer()
       })
       .catch(() => showMsg('Error saving cash income.', 'error'))
+      .finally(() => setCashSubmitting(false))
   }
 
   function handleAddExpense(e) {
@@ -285,6 +417,7 @@ function DailySales() {
         : null
     }
 
+    setExpenseSubmitting(true)
     addExpense(payload)
       .then(() => {
         showMsg(`Expense of ₹${expenseForm.amount} added.`)
@@ -298,8 +431,10 @@ function DailySales() {
         setCommCustomerSearch('')
         setExpenseDenomination({})
         fetchAll()
+        fetchDrawer()
       })
       .catch(() => showMsg('Error adding expense.', 'error'))
+      .finally(() => setExpenseSubmitting(false))
   }
 
   function handleDeleteExpense(id) {
@@ -394,6 +529,8 @@ function DailySales() {
             setActiveTab(tab)
             if (tab === 'galla') {
               fetchDrawer()
+              fetchNoteTrackingSetting()
+              fetchGallaHistory()
               try {
                 const res = await getCashDrawer(today)
                 const bal = res.data?.closing_balance ?? 0
@@ -639,8 +776,9 @@ function DailySales() {
                   </div>
                 )}
 
-                {cashForm.payment_mode === 'cash' && (
+                {cashForm.payment_mode === 'cash' && noteTrackingEnabled && (
                   <DenominationCounter
+                    availableNotes={drawerData?.denominations}
                     onApply={(total, counts) => {
                       setCashForm(f => ({ ...f, amount: String(total) }))
                       setCashDenomination(counts)
@@ -651,12 +789,22 @@ function DailySales() {
                 <div style={{ marginBottom: '12px' }}>
                   <label style={styles.label}>Amount (₹) *</label>
                   <input
-                    style={{ ...styles.input, fontSize: '20px', fontWeight: 'bold' }}
+                    style={{
+                      ...styles.input, fontSize: '20px', fontWeight: 'bold',
+                      ...(cashForm.payment_mode === 'cash' && noteTrackingEnabled
+                        ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {})
+                    }}
                     type="number"
                     placeholder="e.g. 500"
                     value={cashForm.amount}
                     onChange={e => setCashForm(f => ({ ...f, amount: e.target.value }))}
+                    readOnly={cashForm.payment_mode === 'cash' && noteTrackingEnabled}
                   />
+                  {cashForm.payment_mode === 'cash' && noteTrackingEnabled && (
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                      Note Counting (upar) se bharo
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: '16px' }}>
@@ -669,16 +817,14 @@ function DailySales() {
                   />
                 </div>
 
-                <button
-                  style={{
-                    ...styles.greenBtn,
-                    opacity: !selectedCustomer ? 0.6 : 1,
-                    cursor: !selectedCustomer ? 'not-allowed' : 'pointer'
-                  }}
+                <LoadingButton
+                  loading={cashSubmitting}
+                  disabled={!selectedCustomer}
+                  style={styles.greenBtn}
                   type="submit"
                 >
                   Save Entry
-                </button>
+                </LoadingButton>
               </form>
             </div>
 
@@ -831,11 +977,21 @@ function DailySales() {
                 <div style={{ marginBottom: '12px' }}>
                   <label style={styles.label}>Amount (₹) *</label>
                   <input
-                    style={{ ...styles.input, fontSize: '18px' }}
+                    style={{
+                      ...styles.input, fontSize: '18px',
+                      ...((expenseForm.payment_mode || 'cash') === 'cash' && noteTrackingEnabled
+                        ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {})
+                    }}
                     type="number" placeholder="0"
                     value={expenseForm.amount}
                     onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                    readOnly={(expenseForm.payment_mode || 'cash') === 'cash' && noteTrackingEnabled}
                   />
+                  {(expenseForm.payment_mode || 'cash') === 'cash' && noteTrackingEnabled && (
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                      Note Counting (neeche) se bharo
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
@@ -850,9 +1006,10 @@ function DailySales() {
                   </select>
                 </div>
 
-                {(expenseForm.payment_mode || 'cash') === 'cash' && (
+                {(expenseForm.payment_mode || 'cash') === 'cash' && noteTrackingEnabled && (
                   <DenominationCounter
                     context="expense"
+                    availableNotes={drawerData?.denominations}
                     onApply={(total, counts) => {
                       setExpenseForm(f => ({ ...f, amount: String(total) }))
                       setExpenseDenomination(counts)
@@ -886,7 +1043,7 @@ function DailySales() {
                   />
                 </div>
 
-                <button style={styles.redBtn} type="submit">Add Expense</button>
+                <LoadingButton loading={expenseSubmitting} style={styles.redBtn} type="submit">Add Expense</LoadingButton>
               </form>
             </div>
           </div>
@@ -906,14 +1063,14 @@ function DailySales() {
                 onChange={e => setCashDrawerDate(e.target.value)}
               />
             </div>
-            <button
+            <LoadingButton
+              loading={cashDrawerLoading}
               style={{
                 backgroundColor: '#1a1a2e',
                 color: '#fff',
-                border: 'none',
+                border: '1px solid #1a1a2e',
                 padding: '10px 28px',
                 borderRadius: '8px',
-                cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: 'bold',
                 letterSpacing: '0.3px',
@@ -922,10 +1079,10 @@ function DailySales() {
               onClick={() => fetchCashDrawer(cashDrawerDate)}
             >
               <Wallet size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Load Cash Drawer
-            </button>
+            </LoadingButton>
           </div>
 
-          {cashDrawerLoading && <p style={{ color: '#888' }}>Loading...</p>}
+          {cashDrawerLoading && <SectionLoader label="Cash Drawer load ho raha hai..." size="small" />}
 
           {!cashDrawer && !cashDrawerLoading && (
             <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
@@ -979,28 +1136,59 @@ function DailySales() {
                   {cashDrawer.cash_in.length === 0 ? (
                     <div style={styles.ledgerEmpty}>No cash received on this date.</div>
                   ) : (
-                    cashDrawer.cash_in.map((item, i) => (
-                      <div key={i} style={styles.ledgerRow}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{item.party_name || '—'}</div>
-                          <div style={{ marginTop: '4px' }}>
-                            <span style={{
-                              ...styles.typeBadge,
-                              backgroundColor: item.type === 'Order Payment' ? '#e8f5e9' : '#e3f2fd',
-                              color: item.type === 'Order Payment' ? '#27ae60' : '#1565c0'
-                            }}>
-                              {item.type}
-                            </span>
+                    cashDrawer.cash_in.map((item, i) => {
+                      const key = `in-${i}`
+                      const expandable = hasBreakdown(item)
+                      const isExpanded = expandedDrawerKey === key
+                      return (
+                      <Fragment key={key}>
+                        <div
+                          style={{
+                            ...styles.ledgerRow,
+                            cursor: expandable ? 'pointer' : 'default',
+                            backgroundColor: isExpanded ? '#f8fdf9' : 'transparent'
+                          }}
+                          onClick={() => expandable && setExpandedDrawerKey(isExpanded ? null : key)}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{item.party_name || '—'}</div>
+                            <div style={{ marginTop: '4px' }}>
+                              <span style={{
+                                ...styles.typeBadge,
+                                backgroundColor: item.type === 'Order Payment' ? '#e8f5e9' : '#e3f2fd',
+                                color: item.type === 'Order Payment' ? '#27ae60' : '#1565c0'
+                              }}>
+                                {item.type}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              <Clock size={10} /> {fmtDT(item.created_at || item.payment_date)}
+                            </div>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <Clock size={10} /> {fmtDT(item.created_at || item.payment_date)}
+                          <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
+                            +₹{item.amount}
                           </div>
                         </div>
-                        <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '16px' }}>
-                          +₹{item.amount}
-                        </div>
-                      </div>
-                    ))
+                        {isExpanded && (
+                          <div style={{ backgroundColor: '#f8fdf9', padding: '4px 16px 14px 16px', borderBottom: '1px solid #f5f5f5' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', paddingTop: '6px' }}>
+                              <div>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', marginBottom: '5px' }}>+ Aaye</div>
+                                {renderDenomChips(item.denomination_breakdown.received, '#16a34a')
+                                  || <span style={{ fontSize: '12px', color: '#aaa' }}>—</span>}
+                              </div>
+                              {sumDenom(item.denomination_breakdown.returned) > 0 && (
+                                <div>
+                                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#e74c3c', marginBottom: '5px' }}>− Gaye</div>
+                                  {renderDenomChips(item.denomination_breakdown.returned, '#e74c3c')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </Fragment>
+                      )
+                    })
                   )}
                   {cashDrawer.cash_in.length > 0 && (
                     <div style={styles.ledgerTotal}>
@@ -1018,24 +1206,55 @@ function DailySales() {
                   {cashDrawer.cash_out.length === 0 ? (
                     <div style={styles.ledgerEmpty}>No cash expenses on this date.</div>
                   ) : (
-                    cashDrawer.cash_out.map((exp, i) => (
-                      <div key={i} style={styles.ledgerRow}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{exp.party_name || exp.category}</div>
-                          {exp.description && (
-                            <div style={{ fontSize: '12px', color: '#aaa', marginTop: '3px' }}>{exp.description}</div>
-                          )}
-                          <div style={{ marginTop: '4px' }}>
-                            <span style={{ ...styles.typeBadge, backgroundColor: '#fff0f0', color: '#e74c3c' }}>
-                              {exp.category}
-                            </span>
+                    cashDrawer.cash_out.map((exp, i) => {
+                      const key = `out-${i}`
+                      const expandable = hasBreakdown(exp)
+                      const isExpanded = expandedDrawerKey === key
+                      return (
+                      <Fragment key={key}>
+                        <div
+                          style={{
+                            ...styles.ledgerRow,
+                            cursor: expandable ? 'pointer' : 'default',
+                            backgroundColor: isExpanded ? '#fff8f8' : 'transparent'
+                          }}
+                          onClick={() => expandable && setExpandedDrawerKey(isExpanded ? null : key)}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{exp.party_name || exp.category}</div>
+                            {exp.description && (
+                              <div style={{ fontSize: '12px', color: '#aaa', marginTop: '3px' }}>{exp.description}</div>
+                            )}
+                            <div style={{ marginTop: '4px' }}>
+                              <span style={{ ...styles.typeBadge, backgroundColor: '#fff0f0', color: '#e74c3c' }}>
+                                {exp.category}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px' }}>
+                            -₹{exp.amount}
                           </div>
                         </div>
-                        <div style={{ fontWeight: 'bold', color: '#e74c3c', fontSize: '16px' }}>
-                          -₹{exp.amount}
-                        </div>
-                      </div>
-                    ))
+                        {isExpanded && (
+                          <div style={{ backgroundColor: '#fff8f8', padding: '4px 16px 14px 16px', borderBottom: '1px solid #f5f5f5' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', paddingTop: '6px' }}>
+                              <div>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', marginBottom: '5px' }}>+ Aaye</div>
+                                {renderDenomChips(exp.denomination_breakdown.received, '#16a34a')
+                                  || <span style={{ fontSize: '12px', color: '#aaa' }}>—</span>}
+                              </div>
+                              {sumDenom(exp.denomination_breakdown.returned) > 0 && (
+                                <div>
+                                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#e74c3c', marginBottom: '5px' }}>− Gaye</div>
+                                  {renderDenomChips(exp.denomination_breakdown.returned, '#e74c3c')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </Fragment>
+                      )
+                    })
                   )}
                   {cashDrawer.cash_out.length > 0 && (
                     <div style={{ ...styles.ledgerTotal, borderTop: '2px solid #e74c3c' }}>
@@ -1146,14 +1365,14 @@ function DailySales() {
                 onChange={e => setLedgerDate(e.target.value)}
               />
             </div>
-            <button
+            <LoadingButton
+              loading={ledgerLoading}
               style={{
                 backgroundColor: '#1a1a2e',
                 color: '#fff',
-                border: 'none',
+                border: '1px solid #1a1a2e',
                 padding: '10px 28px',
                 borderRadius: '8px',
-                cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: 'bold',
                 letterSpacing: '0.3px',
@@ -1162,10 +1381,10 @@ function DailySales() {
               onClick={() => fetchLedgerByDate(ledgerDate)}
             >
               <NotebookPen size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />Load Ledger
-            </button>
+            </LoadingButton>
           </div>
 
-          {ledgerLoading && <p style={{ color: '#888' }}>Loading...</p>}
+          {ledgerLoading && <SectionLoader label="Ledger load ho raha hai..." size="small" />}
 
           {ledgerByDate && (
             <div>
@@ -1245,7 +1464,7 @@ function DailySales() {
                             label: `${item.party_name} — ₹${item.amount} (${item.type})`
                           })}
                           style={{
-                            backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c',
+                            backgroundColor: '#800000', color: '#fff', border: '1px solid #800000',
                             borderRadius: '4px', padding: '3px 8px', fontSize: '11px',
                             cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
                           }}
@@ -1314,7 +1533,7 @@ function DailySales() {
                             label: `${exp.party_name} — ₹${exp.amount} (${exp.category || 'Expense'})`
                           })}
                           style={{
-                            backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c',
+                            backgroundColor: '#800000', color: '#fff', border: '1px solid #800000',
                             borderRadius: '4px', padding: '3px 8px', fontSize: '11px',
                             cursor: 'pointer', marginLeft: '8px', whiteSpace: 'nowrap'
                           }}
@@ -1365,6 +1584,47 @@ function DailySales() {
       {/* TAB: GALLA HISAAB (live denomination drawer) */}
       {activeTab === 'galla' && (
         <div>
+          {/* Note-wise Cash Tracking — master ON/OFF switch */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            backgroundColor: '#fff', padding: '14px 18px', borderRadius: '8px',
+            marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+          }}>
+            <div>
+              <div style={{ fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Settings size={14} /> Note-wise Cash Tracking
+              </div>
+              <div style={{ fontSize: '12px', color: '#888', marginTop: '2px', maxWidth: '480px' }}>
+                ON hone par Orders, Sales, Salary aur Vendor — sabme cash amount seedha type nahi hoga,
+                sirf denomination-counter ("Use this total") se hi bharna hoga.
+              </div>
+            </div>
+            <button
+              onClick={toggleNoteTracking}
+              disabled={settingLoading}
+              style={{
+                backgroundColor: noteTrackingEnabled ? '#27ae60' : '#ccc',
+                color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '20px',
+                cursor: settingLoading ? 'not-allowed' : 'pointer', fontSize: '13px',
+                fontWeight: 'bold', opacity: settingLoading ? 0.6 : 1, minWidth: '70px'
+              }}
+            >
+              {settingLoading ? '...' : (noteTrackingEnabled ? 'ON' : 'OFF')}
+            </button>
+          </div>
+
+          {!noteTrackingEnabled && (
+            <div style={{
+              textAlign: 'center', padding: '40px', color: '#888',
+              backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+            }}>
+              <p style={{ fontSize: '15px' }}>Note-wise Cash Tracking abhi OFF hai.</p>
+              <p style={{ fontSize: '13px', marginTop: '6px' }}>Upar switch ON karo Galla count set karne aur track karne ke liye.</p>
+            </div>
+          )}
+
+          {noteTrackingEnabled && (
+          <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <h3 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}><Calculator size={17} /> Galla Hisaab — Live Note Count</h3>
@@ -1380,10 +1640,10 @@ function DailySales() {
               )}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={fetchDrawer} style={{ ...styles.tab, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><RefreshCw size={13} /> Refresh</button>
+              <LoadingButton onClick={fetchDrawer} loading={drawerLoading} style={{ ...styles.tab, fontSize: '13px' }}><RefreshCw size={13} style={{ marginRight: '5px', verticalAlign: 'middle' }} />Refresh</LoadingButton>
               <button
                 onClick={() => setShowBaselineForm(f => !f)}
-                style={{ backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                style={{ backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
                 {showBaselineForm ? 'Cancel' : <><Settings size={13} /> Set Galla Count</>}
               </button>
@@ -1445,18 +1705,18 @@ function DailySales() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <strong>Total: ₹{ALL_DENOMS.reduce((s, d) => s + (Number(baselineCounts[d]) || 0) * d, 0)}</strong>
-                <button
+                <LoadingButton
+                  loading={baselineSaving}
                   onClick={handleSetBaseline}
-                  disabled={baselineSaving}
-                  style={{ backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: baselineSaving ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold', opacity: baselineSaving ? 0.6 : 1 }}
+                  style={{ backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold' }}
                 >
-                  {baselineSaving ? 'Saving...' : 'Save & Start Tracking'}
-                </button>
+                  Save & Start Tracking
+                </LoadingButton>
               </div>
             </div>
           )}
 
-          {drawerLoading && <p style={{ color: '#888' }}>Loading...</p>}
+          {drawerLoading && <SectionLoader label="Galla data load ho raha hai..." size="small" />}
 
           {drawerData && !drawerLoading && (
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -1483,6 +1743,31 @@ function DailySales() {
                 <strong style={{ fontSize: '26px', color: '#27ae60' }}>₹{drawerData.total_value}</strong>
               </div>
             </div>
+          )}
+
+          {/* Set-Galla-Count HISTORY — "ye set kiya hai, iss date ko itna" */}
+          <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginTop: '16px' }}>
+            <h4 style={{ marginBottom: '12px', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={15} /> Set Karne Ki History
+            </h4>
+            {historyLoading && <SectionLoader label="History load ho rahi hai..." size="small" />}
+            {!historyLoading && gallaHistory.length === 0 && (
+              <p style={{ color: '#888', fontSize: '13px' }}>Abhi tak koi history nahi hai.</p>
+            )}
+            {!historyLoading && gallaHistory.map(h => (
+              <div key={h.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '10px 0', borderBottom: '1px solid #f0f0f0'
+              }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold' }}>{fmtDT(h.set_at)}</div>
+                  {h.notes && <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>{h.notes}</div>}
+                </div>
+                <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: '15px' }}>₹{h.total}</div>
+              </div>
+            ))}
+          </div>
+          </>
           )}
         </div>
       )}
@@ -1529,19 +1814,141 @@ function DailySales() {
                 >
                   Cancel
                 </button>
-                <button
+                <LoadingButton
+                  loading={deleteLoading}
+                  loadingText="Deleting..."
                   type="submit"
-                  disabled={deleteLoading}
                   style={{ flex: 1, padding: '10px', borderRadius: '6px',
-                    border: 'none', backgroundColor: '#e74c3c', color: '#fff',
-                    cursor: deleteLoading ? 'not-allowed' : 'pointer',
-                    fontSize: '14px', fontWeight: 'bold',
-                    opacity: deleteLoading ? 0.6 : 1 }}
+                    border: '1px solid #800000', backgroundColor: '#800000', color: '#fff',
+                    fontSize: '14px', fontWeight: 'bold' }}
                 >
-                  {deleteLoading ? 'Deleting...' : <><Trash2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delete</>}
-                </button>
+                  <Trash2 size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delete
+                </LoadingButton>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ENABLE-TRACKING MODAL — OFF se ON karte waqt, fresh baseline lazmi */}
+      {showEnableModal && (
+        <div
+          onClick={() => { setShowEnableModal(false); setBaselineCounts({}) }}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '24px',
+              width: '640px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <h3 style={{ marginBottom: '6px', color: '#27ae60', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Settings size={17} /> Note-wise Cash Tracking ON Karo
+            </h3>
+            <p style={{ fontSize: '13px', color: '#555', marginBottom: '16px' }}>
+              Tracking shuru karne se pehle abhi drawer mein jo bhi note physically hain, unka fresh count set karo.
+              Isi count se aage ka hisaab track hoga.
+            </p>
+
+            {suggestedBaseline !== null && suggestedBaseline > 0 && (
+              <div style={{
+                backgroundColor: '#e8f4fd', border: '1px solid #3498db',
+                borderRadius: '8px', padding: '10px 14px', marginBottom: '14px'
+              }}>
+                <div style={{ fontSize: '11px', color: '#1a5276', fontWeight: 'bold' }}>
+                  Cash Drawer ki closing balance aaj ki: ₹{suggestedBaseline}
+                </div>
+                <div style={{ fontSize: '11px', color: '#888' }}>
+                  Reference ke liye — count phir bhi physically gin kar hi bharo
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+              {ALL_DENOMS.map(d => {
+                const count = Number(baselineCounts[d]) || 0
+                return (
+                  <div key={d} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9f9f9', padding: '8px 10px', borderRadius: '6px', border: '1px solid #eee' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '13px' }}>₹{d}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button type="button" onClick={() => bumpBaseline(d, -1)} style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer' }}>−</button>
+                      <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: 'bold' }}>{count}</span>
+                      <button type="button" onClick={() => bumpBaseline(d, 1)} style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid #27ae60', backgroundColor: '#27ae60', color: '#fff', cursor: 'pointer' }}>+</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ marginBottom: '18px' }}>
+              <strong>Total: ₹{ALL_DENOMS.reduce((s, d) => s + (Number(baselineCounts[d]) || 0) * d, 0)}</strong>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => { setShowEnableModal(false); setBaselineCounts({}) }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' }}
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                loading={enableSaving}
+                type="button"
+                onClick={handleEnableTracking}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#27ae60', color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
+              >
+                Set & Turn ON
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DISABLE-TRACKING WARNING — ON se OFF karte waqt */}
+      {showDisableModal && (
+        <div
+          onClick={() => setShowDisableModal(false)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '24px',
+              width: '420px', maxWidth: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <h3 style={{ marginBottom: '10px', color: '#e67e22', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={17} /> Tracking OFF Karna Chahte Ho?
+            </h3>
+            <p style={{ fontSize: '13px', color: '#555', marginBottom: '10px', lineHeight: 1.5 }}>
+              OFF karte hi Note Counting (denomination counter) ka option Orders, Sales,
+              Expense, Salary, aur Vendor — sabhi jagah se hat jaayega. Amount ab seedha
+              type karna padega.
+            </p>
+            <p style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '20px', lineHeight: 1.5 }}>
+              Galla count tracking bhi ruk jaayegi — jab tak dubara ON na karo, notes ka
+              hisaab match nahi hoga.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setShowDisableModal(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' }}
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                loading={disableSaving}
+                type="button"
+                onClick={handleDisableTracking}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#e67e22', color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
+              >
+                Haan, OFF Karo
+              </LoadingButton>
+            </div>
           </div>
         </div>
       )}
@@ -1609,7 +2016,7 @@ const styles = {
     backgroundColor: categoryColors[category] || '#95a5a6',
     flexShrink: 0
   }),
-  deleteBtn: { backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c', width: '28px', height: '28px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }
+  deleteBtn: { backgroundColor: '#800000', color: '#fff', border: '1px solid #800000', width: '28px', height: '28px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }
 }
 
 export default DailySales

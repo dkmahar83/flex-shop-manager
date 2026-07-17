@@ -93,6 +93,9 @@ export const getCashDrawer = (date) => api.get(`/daily/cash-drawer?date=${date}`
 export const getDenominationDrawer = () => api.get('/daily/denomination-drawer')
 export const setDrawerBaseline = (data) => api.post('/daily/denomination-drawer/set-baseline', data)
 export const deleteLedgerEntry = (password, type, id) => api.delete('/daily/entry', { data: { password, type, id } })
+export const getSetting = (key) => api.get(`/settings/${key}`)
+export const setSetting = (key, value) => api.put(`/settings/${key}`, { value })
+export const getGallaHistory = () => api.get('/daily/denomination-drawer/history')
 
 // Expenses
 export const getExpenses = (month, year) => api.get('/expenses', { params: { month, year } })
@@ -107,7 +110,7 @@ export const addCheque = (data) => api.post('/cheques', data)
 export const updateCheque = (id, data) => api.put(`/cheques/${id}`, data)
 export const updateChequeStatus = (id, status) => api.put(`/cheques/${id}/status`, { status })
 export const deleteCheque = (id) => api.delete(`/cheques/${id}`)
-export const getChequeSummary = () => api.get('/cheques/summary')
+export const getChequeSummary = (params) => api.get('/cheques/summary', { params })
 
 // UPI
 export const getUPI = () => api.get('/upi')

@@ -2,6 +2,15 @@ const express = require('express')
 const router = express.Router()
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
+const rateLimit = require('express-rate-limit')
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 galat/sahi attempts per IP per window
+  message: { error: 'Bahut zyada login attempts. 15 minute baad try karo.' },
+  standardHeaders: true,
+  legacyHeaders: false
+})
 
 // Single user credentials — change PASSWORD to whatever you want
 const USERS = [
@@ -13,11 +22,16 @@ const USERS = [
   }
 ]
 
-const JWT_SECRET = process.env.JWT_SECRET || 'flexshop_manager_secret_2026_pilibangan'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+  console.error('❌ JWT_SECRET .env mein set nahi hai — server start nahi hoga bina iske.')
+  console.error('   .env mein add karo: JWT_SECRET=<koi bhi lambi random string>')
+  process.exit(1)
+}
 const JWT_EXPIRES = '7d' // token valid for 7 days
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body
 
   if (!username || !password) {

@@ -4,33 +4,54 @@ const db = require('../db/database');
 const fs = require('fs');
 const path = require('path');
 const { uploadOrder } = require('../middleware/upload');
+const validate = require('../middleware/validate');
+const { createOrderSchema, updateOrderSchema, updateOrderItemsSchema } = require('../schemas/orderSchemas');
+const { recalculateOrderBalance } = require('../utils/orderBalance');
+const logger = require('../utils/logger');
 
 // ─────────────────────────────────────────
-// GET /api/orders
+// GET /api/orders — ?page & ?limit optional. Bina diye purana behavior (full array).
 // ─────────────────────────────────────────
 router.get('/', (req, res) => {
-  const { status, customer_id, search } = req.query;
+  const { status, customer_id, search, page, limit } = req.query;
 
-  let query = `
-    SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone
-    FROM orders
-    JOIN customers ON orders.customer_id = customers.id
-    WHERE 1=1 AND orders.deleted_at IS NULL
-  `;
+  let whereClause = `WHERE 1=1 AND orders.deleted_at IS NULL`;
   let params = [];
 
-  if (status) { query += ` AND orders.status = ?`; params.push(status); }
-  if (customer_id) { query += ` AND orders.customer_id = ?`; params.push(customer_id); }
+  if (status) { whereClause += ` AND orders.status = ?`; params.push(status); }
+  if (customer_id) { whereClause += ` AND orders.customer_id = ?`; params.push(customer_id); }
   if (search) {
-    query += ` AND (customers.firm_name LIKE ? OR orders.description LIKE ? OR orders.order_number LIKE ?)`;
+    whereClause += ` AND (customers.firm_name LIKE ? OR orders.description LIKE ? OR orders.order_number LIKE ?)`;
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
-  query += ` ORDER BY orders.created_at DESC`;
+  const fromJoin = `FROM orders JOIN customers ON orders.customer_id = customers.id ${whereClause}`;
+  const baseQuery = `SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone ${fromJoin} ORDER BY orders.created_at DESC`;
 
-  db.all(query, params, (err, rows) => {
+  if (!page) {
+    return db.all(baseQuery, params, (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    });
+  }
+
+  const pageNum  = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+  const offset   = (pageNum - 1) * limitNum;
+
+  db.get(`SELECT COUNT(*) as total ${fromJoin}`, params, (err, countRow) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+
+    db.all(`${baseQuery} LIMIT ? OFFSET ?`, [...params, limitNum, offset], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({
+        data: rows,
+        page: pageNum,
+        limit: limitNum,
+        total: countRow.total,
+        total_pages: Math.ceil(countRow.total / limitNum)
+      });
+    });
   });
 });
 
@@ -182,7 +203,7 @@ function deleteAdvanceEntry({ advance_entry_table, advance_entry_id, order_id },
 // ─────────────────────────────────────────
 // POST /api/orders — Create a new order
 // ─────────────────────────────────────────
-router.post('/', (req, res) => {
+router.post('/', validate(createOrderSchema), (req, res) => {
   const {
     customer_id,
     description,
@@ -272,7 +293,7 @@ router.post('/', (req, res) => {
             db.run(`
               UPDATE orders SET advance_entry_table = ?, advance_entry_id = ? WHERE id = ?
             `, [entry.table, entry.id, order_id], (err) => {
-              if (err) console.error('Could not save advance_entry ref:', err.message);
+              if (err) logger.error('Could not save advance_entry ref: ' + err.message);
             });
 
             res.status(201).json({
@@ -331,7 +352,7 @@ router.put('/:id/status', (req, res) => {
 // ─────────────────────────────────────────
 // PUT /api/orders/:id — Update order details
 // ─────────────────────────────────────────
-router.put('/:id', (req, res) => {
+router.put('/:id', validate(updateOrderSchema), (req, res) => {
   const { id } = req.params;
   const {
     description,
@@ -367,29 +388,29 @@ router.put('/:id', (req, res) => {
     }
 
     const doUpdate = (entryTable, entryId) => {
-      db.get('SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE order_id=?', [id], (err, r) => {
-        const fresh_balance = order.total_amount - new_advance - new_discount - (r ? r.paid : 0);
-        db.run(`UPDATE orders SET description=?, notes=?, follow_up_date=?,
-                advance_paid=?, balance_due=?, advance_payment_mode=?,
-                advance_entry_table=?, advance_entry_id=?,
-                discount_amount=?, discount_note=?,
-                updated_at=CURRENT_TIMESTAMP
-                WHERE id=?`,
-          [
-            description !== undefined ? description : order.description,
-            notes !== undefined ? notes : order.notes,
-            follow_up_date !== undefined ? follow_up_date : order.follow_up_date,
-            new_advance, fresh_balance,
-            new_advance > 0 ? (advance_payment_mode || order.advance_payment_mode) : null,
-            entryTable || order.advance_entry_table, entryId || order.advance_entry_id,
-            new_discount, discount_note !== undefined ? discount_note : (order.discount_note || null),
-            id
-          ],
-          function(err) {
+      db.run(`UPDATE orders SET description=?, notes=?, follow_up_date=?,
+              advance_paid=?, advance_payment_mode=?,
+              advance_entry_table=?, advance_entry_id=?,
+              discount_amount=?, discount_note=?,
+              updated_at=CURRENT_TIMESTAMP
+              WHERE id=?`,
+        [
+          description !== undefined ? description : order.description,
+          notes !== undefined ? notes : order.notes,
+          follow_up_date !== undefined ? follow_up_date : order.follow_up_date,
+          new_advance,
+          new_advance > 0 ? (advance_payment_mode || order.advance_payment_mode) : null,
+          entryTable || order.advance_entry_table, entryId || order.advance_entry_id,
+          new_discount, discount_note !== undefined ? discount_note : (order.discount_note || null),
+          id
+        ],
+        function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          recalculateOrderBalance(id, (err, fresh_balance) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ message: 'Order updated successfully', balance_due: fresh_balance });
           });
-      });
+        });
     };
 
     if (!advance_changed) {
@@ -401,7 +422,7 @@ router.put('/:id', (req, res) => {
       advance_entry_id:    order.advance_entry_id,
       order_id:            parseInt(id)
     }, (err) => {
-      if (err) console.error('Could not delete old advance entry:', err.message);
+      if (err) logger.error('Could not delete old advance entry: ' + err.message);
 
       if (new_advance <= 0) {
         return doUpdate(null, null);
@@ -417,7 +438,7 @@ router.put('/:id', (req, res) => {
         date:         today
       }, (err, entry) => {
         if (err) {
-          console.error('Advance re-record failed:', err.message);
+          logger.error('Advance re-record failed: ' + err.message);
           return doUpdate(null, null);
         }
         doUpdate(entry.table, entry.id);
@@ -440,17 +461,17 @@ router.delete('/:id', (req, res) => {
       if (this.changes === 0) return res.status(404).json({ error: 'Order not found' });
 
       db.run(`DELETE FROM payments WHERE order_id = ?`, [id], (err) => {
-        if (err) console.error('Could not delete payments:', err.message);
+        if (err) logger.error('Could not delete payments: ' + err.message);
       });
 
       db.run(`DELETE FROM cash_income WHERE notes = 'Order Payment' AND customer_id = (
         SELECT customer_id FROM orders WHERE id = ?
       )`, [id], (err) => {
-        if (err) console.error('Could not delete cash_income payments:', err.message);
+        if (err) logger.error('Could not delete cash_income payments: ' + err.message);
       });
 
       db.run(`DELETE FROM upi_transactions WHERE order_id = ? AND notes != 'Order Advance Payment'`, [id], (err) => {
-        if (err) console.error('Could not delete upi payments:', err.message);
+        if (err) logger.error('Could not delete upi payments: ' + err.message);
       });
 
       if (order && order.advance_entry_table && order.advance_entry_id) {
@@ -459,7 +480,7 @@ router.delete('/:id', (req, res) => {
           advance_entry_id:    order.advance_entry_id,
           order_id:            parseInt(id)
         }, (err) => {
-          if (err) console.error('Could not remove advance entry on delete:', err.message);
+          if (err) logger.error('Could not remove advance entry on delete: ' + err.message);
         });
       }
 
@@ -499,11 +520,9 @@ router.get('/deleted/recent', (req, res) => {
 // ─────────────────────────────────────────
 // PUT /api/orders/:id/items — replace all items
 // ─────────────────────────────────────────
-router.put('/:id/items', (req, res) => {
+router.put('/:id/items', validate(updateOrderItemsSchema), (req, res) => {
   const { id } = req.params;
   const { items } = req.body;
-  if (!items || items.length === 0)
-    return res.status(400).json({ error: 'At least one item required' });
 
   const total_amount = items.reduce((sum, item) =>
     sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0), 0);
@@ -511,8 +530,6 @@ router.put('/:id/items', (req, res) => {
   db.get(`SELECT * FROM orders WHERE id = ?`, [id], (err, order) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    const new_balance = total_amount - (order.advance_paid || 0);
 
     db.run(`DELETE FROM order_items WHERE order_id = ?`, [id], (err) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -529,13 +546,14 @@ router.put('/:id/items', (req, res) => {
       });
       stmt.finalize();
 
-      db.run(`
-        UPDATE orders SET total_amount = ?, balance_due = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `, [total_amount, new_balance, id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ message: 'Items updated', total_amount, balance_due: new_balance });
-      });
+      db.run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [total_amount, id], (err) => {
+          if (err) return res.status(500).json({ error: err.message });
+          recalculateOrderBalance(id, (err, new_balance) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ message: 'Items updated', total_amount, balance_due: new_balance });
+          });
+        });
     });
   });
 });

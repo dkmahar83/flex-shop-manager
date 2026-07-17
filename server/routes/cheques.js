@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { recalculateOrderBalance } = require('../utils/orderBalance');
+const logger = require('../utils/logger');
+const validate = require('../middleware/validate');
+const { createChequeSchema, updateChequeStatusSchema, updateChequeSchema } = require('../schemas/chequeSchemas');
 
 // Helper — store dates as YYYY-MM-DD always
 function toISO(dateStr) {
@@ -42,13 +46,21 @@ router.get('/', (req, res) => {
   });
 });
 
-// GET /api/cheques/summary
+// GET /api/cheques/summary?month=07&year=2026
 router.get('/summary', (req, res) => {
-  db.all(`
-    SELECT status, COUNT(*) as count, SUM(amount) as total
-    FROM cheques
-    GROUP BY status
-  `, [], (err, rows) => {
+  const { month, year } = req.query;
+  let query = `SELECT status, COUNT(*) as count, SUM(amount) as total FROM cheques WHERE 1=1`;
+  let params = [];
+
+  // GET / (list) wala hi filter-pattern — pehle isme month/year ignore
+  // ho raha tha, isliye cards month-select pe kabhi update nahi hote the.
+  if (month && year) {
+    query += ` AND strftime('%m', received_date) = ? AND strftime('%Y', received_date) = ?`;
+    params.push(month.padStart(2, '0'), year);
+  }
+  query += ` GROUP BY status`;
+
+  db.all(query, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
@@ -70,9 +82,8 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/cheques
-router.post('/', (req, res) => {
+router.post('/', validate(createChequeSchema), (req, res) => {
   const { cheque_number, firm_name, customer_id, bank_name, amount, received_date, order_id, notes } = req.body;
-  if (!firm_name || !amount) return res.status(400).json({ error: 'firm_name and amount required' });
 
   const date = toISO(received_date);
 
@@ -88,11 +99,9 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/cheques/:id/status
-router.put('/:id/status', (req, res) => {
+router.put('/:id/status', validate(updateChequeStatusSchema), (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  const validStatuses = ['received', 'deposited', 'cleared', 'bounced'];
-  if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   db.get(`SELECT * FROM cheques WHERE id = ?`, [id], (err, cheque) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -116,21 +125,12 @@ router.put('/:id/status', (req, res) => {
          `Cheque Cleared${cheque.cheque_number ? ' #' + cheque.cheque_number : ''} (${cheque.firm_name})`,
          createdAt],
         (err) => {
-          if (err) console.error('Could not add cheque-cleared ledger entry:', err.message);
+          if (err) logger.error('Could not add cheque-cleared ledger entry: ' + err.message);
         });
 
         if (cheque.order_id) {
-          db.get(`SELECT total_amount, advance_paid FROM orders WHERE id = ?`, [cheque.order_id], (err, order) => {
-            if (err || !order) return;
-            db.get(`SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE order_id = ?`, [cheque.order_id], (err, r) => {
-              if (err) return;
-              db.get(`SELECT COALESCE(SUM(amount),0) as cleared FROM cheques WHERE order_id = ? AND status = 'cleared'`, [cheque.order_id], (err, c) => {
-                if (err) return;
-                const newBalance = Math.max(0, order.total_amount - order.advance_paid - r.paid - c.cleared);
-                db.run(`UPDATE orders SET balance_due = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                  [newBalance, cheque.order_id], () => {});
-              });
-            });
+          recalculateOrderBalance(cheque.order_id, (err) => {
+            if (err) logger.error('Balance recalc failed after cheque clear: ' + err.message);
           });
         }
       }
@@ -141,7 +141,7 @@ router.put('/:id/status', (req, res) => {
 });
 
 // PUT /api/cheques/:id — update cheque details
-router.put('/:id', (req, res) => {
+router.put('/:id', validate(updateChequeSchema), (req, res) => {
   const { id } = req.params;
   const { cheque_number, bank_name, notes, received_date } = req.body;
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { recalculateOrderBalance } = require('../utils/orderBalance');
 
 // GET /api/daily?month=06&year=2026
 router.get('/', (req, res) => {
@@ -69,26 +70,56 @@ router.get('/today', (req, res) => {
           const orderPayments = [...followupPayments, ...advanceUpi, ...advanceCash];
           const orderPaymentsTotal = orderPayments.reduce((s, p) => s + p.amount, 0);
 
-          // Step 4: Non-order UPI (standalone UPI income, not linked to any order)
+          // Step 4: Non-order UPI — upi_transactions (standalone entries) UNION
+          // cash_income (payment_mode='upi' entries) — jaisa /report, /summary mein
+          // hota hai. Pehle ye sirf upi_transactions padhta tha, aur "accidentally"
+          // kaam karta tha kyunki mirror-row waha bhi ban jaati thi — ab wo mirror
+          // hata di gayi hai, isliye ye union zaroori hai warna UPI-mode Cash Income
+          // entries "UPI Today" se gayab ho jaayengi.
           db.all(`
             SELECT upi_account, SUM(amount) as total, COUNT(*) as count
-            FROM upi_transactions
-            WHERE transaction_date = ?
-              AND order_id IS NULL
-              AND (notes NOT LIKE 'EXPENSE:%' OR notes IS NULL)
+            FROM (
+              SELECT upi_account, amount FROM upi_transactions
+              WHERE transaction_date = ?
+                AND order_id IS NULL
+                AND (notes NOT LIKE 'EXPENSE:%' OR notes IS NULL)
+              UNION ALL
+              SELECT upi_account, amount FROM cash_income
+              WHERE income_date = ?
+                AND payment_mode = 'upi'
+                AND upi_account IS NOT NULL
+                AND (notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance') OR notes IS NULL)
+            )
             GROUP BY upi_account
-          `, [today], (err, upiToday) => {
+          `, [today, today], (err, upiToday) => {
             if (err) return res.status(500).json({ error: err.message });
 
             db.all(`
-              SELECT upi_transactions.*, customers.firm_name as customer_firm
-              FROM upi_transactions
-              LEFT JOIN customers ON upi_transactions.customer_id = customers.id
-              WHERE transaction_date = ?
-                AND order_id IS NULL
-                AND (upi_transactions.notes NOT LIKE 'EXPENSE:%' OR upi_transactions.notes IS NULL)
-              ORDER BY id DESC
-            `, [today], (err, upiDetail) => {
+              SELECT id, upi_account, customer_name, customer_id, amount, transaction_date, utr_number, notes, created_at, customer_firm
+              FROM (
+                SELECT upi_transactions.id, upi_transactions.upi_account, upi_transactions.customer_name,
+                       upi_transactions.customer_id, upi_transactions.amount, upi_transactions.transaction_date,
+                       upi_transactions.utr_number, upi_transactions.notes, upi_transactions.created_at,
+                       customers.firm_name as customer_firm
+                FROM upi_transactions
+                LEFT JOIN customers ON upi_transactions.customer_id = customers.id
+                WHERE upi_transactions.transaction_date = ?
+                  AND upi_transactions.order_id IS NULL
+                  AND (upi_transactions.notes NOT LIKE 'EXPENSE:%' OR upi_transactions.notes IS NULL)
+                UNION ALL
+                SELECT cash_income.id, cash_income.upi_account, customers.firm_name as customer_name,
+                       cash_income.customer_id, cash_income.amount, cash_income.income_date as transaction_date,
+                       NULL as utr_number, cash_income.notes, cash_income.created_at,
+                       customers.firm_name as customer_firm
+                FROM cash_income
+                LEFT JOIN customers ON cash_income.customer_id = customers.id
+                WHERE cash_income.income_date = ?
+                  AND cash_income.payment_mode = 'upi'
+                  AND cash_income.upi_account IS NOT NULL
+                  AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance') OR cash_income.notes IS NULL)
+              )
+              ORDER BY created_at DESC
+            `, [today, today], (err, upiDetail) => {
               if (err) return res.status(500).json({ error: err.message });
 
               db.all(`
@@ -99,13 +130,15 @@ router.get('/today', (req, res) => {
               `, [today], (err, chequesToday) => {
                 if (err) return res.status(500).json({ error: err.message });
 
-                // Non-order cash income (manually recorded, not order-related)
+                // Non-order cash income (manually recorded, not order-related) —
+                // UPI-mode entries exclude, wo alag se upiToday/upiDetail mein aati hain
                 db.all(`
                   SELECT cash_income.*, customers.firm_name
                   FROM cash_income
                   LEFT JOIN customers ON cash_income.customer_id = customers.id
                   WHERE income_date = ?
                     AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance') OR cash_income.notes IS NULL)
+                    AND (cash_income.payment_mode != 'upi' OR cash_income.payment_mode IS NULL)
                   ORDER BY id DESC
                 `, [today], (err, cashIncomeToday) => {
                   if (err) return res.status(500).json({ error: err.message });
@@ -241,22 +274,38 @@ router.get('/report', (req, res) => {
               `, [m, year], (err, totalExpenses) => {
                 if (err) return res.status(500).json({ error: err.message });
 
-                // 8. Dues
+                // 8. Dues — CUSTOMER-WISE (Dashboard ke all_dues jaisa), taaki wo
+                // customers bhi dikhein jinka poora due sirf opening_balance se ho
+                // (koi order-due na ho) — pehle wo yahan se invisible the.
                 db.all(`
-                  SELECT orders.id, orders.description, orders.total_amount,
-                    orders.balance_due, orders.follow_up_date, orders.status,
-                    customers.firm_name, customers.phone
-                  FROM orders
-                  JOIN customers ON orders.customer_id = customers.id
-                  WHERE orders.balance_due > 0 AND orders.deleted_at IS NULL
-                  ORDER BY orders.follow_up_date ASC, orders.balance_due DESC
+                  SELECT
+                    customers.id as customer_id,
+                    customers.firm_name,
+                    customers.phone,
+                    COALESCE(SUM(orders.balance_due), 0) as orders_due,
+                    COUNT(orders.id) as orders_due_count,
+                    COALESCE(customers.opening_balance, 0) as opening_balance,
+                    (COALESCE(SUM(orders.balance_due), 0) + COALESCE(customers.opening_balance, 0)) as total_due,
+                    MIN(orders.follow_up_date) as follow_up_date
+                  FROM customers
+                  LEFT JOIN orders
+                    ON orders.customer_id = customers.id
+                    AND orders.balance_due > 0
+                    AND orders.deleted_at IS NULL
+                  WHERE customers.deleted_at IS NULL
+                  GROUP BY customers.id
+                  HAVING (COALESCE(SUM(orders.balance_due), 0) + COALESCE(customers.opening_balance, 0)) > 0
+                  ORDER BY follow_up_date ASC, total_due DESC
                 `, [], (err, dues) => {
                   if (err) return res.status(500).json({ error: err.message });
 
-                  // 9. Total outstanding
+                  // 9. Total outstanding — orders + opening_balance combined, Dashboard jaisa
                   db.get(`
-                    SELECT COALESCE(SUM(balance_due), 0) as total
-                    FROM orders WHERE balance_due > 0 AND deleted_at IS NULL
+                    SELECT (
+                      COALESCE((SELECT SUM(balance_due) FROM orders WHERE balance_due > 0 AND deleted_at IS NULL), 0)
+                      +
+                      COALESCE((SELECT SUM(opening_balance) FROM customers WHERE deleted_at IS NULL), 0)
+                    ) as total
                   `, [], (err, totalDues) => {
                     if (err) return res.status(500).json({ error: err.message });
 
@@ -423,20 +472,10 @@ router.post('/cash-income', (req, res) => {
   ], function(err) {
     if (err) return res.status(500).json({ error: err.message });
 
-    if (payment_mode === 'upi' && upi_account) {
-      db.get(`SELECT firm_name FROM customers WHERE id = ?`, [customer_id], (err, customer) => {
-        db.run(`
-          INSERT INTO upi_transactions
-            (upi_account, customer_id, customer_name, amount, transaction_date, notes, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [
-          upi_account, customer_id,
-          customer ? customer.firm_name : null,
-          parsedAmount, date, notes || 'Cash Income', createdAt
-        ], () => {});
-      });
-    }
-
+    // Note: ab yahan upi_transactions mein koi mirror-row nahi banti. upi.js ke
+    // GET / aur GET /summary already cash_income (payment_mode='upi') ko union
+    // karte hain — mirror banana usi kaam ko dobara karna tha, jo Accounts>UPI
+    // tab mein aur reports mein double-counting create kar raha tha.
     res.status(201).json({ id: this.lastID, message: 'Income saved' });
   });
 });
@@ -598,7 +637,7 @@ router.get('/ledger/date', (req, res) => {
           FROM cash_income
           LEFT JOIN customers ON cash_income.customer_id = customers.id
           WHERE cash_income.income_date = ?
-            AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment') OR cash_income.notes IS NULL)
+            AND (cash_income.notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance') OR cash_income.notes IS NULL)
             AND (cash_income.payment_mode != 'upi' OR cash_income.payment_mode IS NULL)
         `, [date], (err, cashIncome) => {
           if (err) return res.status(500).json({ error: err.message });
@@ -723,71 +762,130 @@ router.get('/cash-drawer', (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: 'date required' });
 
-  const openingQuery = `
-    SELECT COALESCE(SUM(cash_in), 0) - COALESCE(SUM(cash_out), 0) as opening_balance
-    FROM (
-      SELECT amount as cash_in, 0 as cash_out FROM payments
-      WHERE payment_mode = 'cash' AND payment_date < ?
-      UNION ALL
-      SELECT amount as cash_in, 0 as cash_out FROM cash_income
-      WHERE (payment_mode = 'cash' OR payment_mode IS NULL) AND income_date < ?
-      UNION ALL
-      SELECT 0 as cash_in, amount as cash_out FROM expenses
-      WHERE payment_mode = 'cash' AND expense_date < ?
-    )
-  `;
-
-  db.get(openingQuery, [date, date, date], (err, openingRow) => {
+  // Baseline-aware opening balance: sabse recent "Set Galla Count" (jo query-date se
+  // strictly PEHLE ki calendar-date pe hui ho) ka total anchor point banta hai, aur sirf
+  // uske BAAD ki transactions add/subtract hoti hain — shuru se sab kuch dobara nahi jodte.
+  // Koi baseline na mile (bahut purani date, ya kabhi set hi nahi hui) to purana
+  // din-1-se-sab-jodo behavior fallback hai.
+  db.get(`
+    SELECT denomination_counts, date(set_at) as baseline_date
+    FROM cash_drawer_baseline
+    WHERE date(set_at) < ?
+    ORDER BY set_at DESC
+    LIMIT 1
+  `, [date], (err, baseline) => {
     if (err) return res.status(500).json({ error: err.message });
-    const openingBalance = openingRow?.opening_balance || 0;
 
-    db.all(`
-      SELECT amount, 'Order Payment' as type, customers.firm_name as party_name,
-             payment_date as txn_date, payments.created_at
-      FROM payments
-      JOIN orders ON payments.order_id = orders.id
-      JOIN customers ON payments.customer_id = customers.id
-      WHERE payments.payment_mode = 'cash' AND payments.payment_date = ?
-      UNION ALL
-      SELECT cash_income.amount, 'Cash Income' as type, customers.firm_name as party_name,
-             income_date as txn_date, cash_income.created_at
-      FROM cash_income
-      LEFT JOIN customers ON cash_income.customer_id = customers.id
-      WHERE (cash_income.payment_mode = 'cash' OR cash_income.payment_mode IS NULL)
-        AND cash_income.income_date = ?
-    `, [date, date], (err, cashInRows) => {
+    let baselineTotal = 0;
+    let sinceDate = null;
+    if (baseline) {
+      try {
+        const counts = JSON.parse(baseline.denomination_counts);
+        baselineTotal = Object.entries(counts).reduce((s, [d, c]) => s + Number(d) * Number(c), 0);
+      } catch (e) { baselineTotal = 0; }
+      sinceDate = baseline.baseline_date;
+    }
+
+    const openingQuery = sinceDate ? `
+      SELECT COALESCE(SUM(cash_in), 0) - COALESCE(SUM(cash_out), 0) as delta
+      FROM (
+        SELECT amount as cash_in, 0 as cash_out FROM payments
+        WHERE payment_mode = 'cash' AND payment_date > ? AND payment_date < ?
+        UNION ALL
+        SELECT amount as cash_in, 0 as cash_out FROM cash_income
+        WHERE (payment_mode = 'cash' OR payment_mode IS NULL) AND income_date > ? AND income_date < ?
+          AND (notes IS NULL OR notes != 'Galla Opening Balance')
+        UNION ALL
+        SELECT 0 as cash_in, amount as cash_out FROM expenses
+        WHERE payment_mode = 'cash' AND expense_date > ? AND expense_date < ?
+      )
+    ` : `
+      SELECT COALESCE(SUM(cash_in), 0) - COALESCE(SUM(cash_out), 0) as delta
+      FROM (
+        SELECT amount as cash_in, 0 as cash_out FROM payments
+        WHERE payment_mode = 'cash' AND payment_date < ?
+        UNION ALL
+        SELECT amount as cash_in, 0 as cash_out FROM cash_income
+        WHERE (payment_mode = 'cash' OR payment_mode IS NULL) AND income_date < ?
+          AND (notes IS NULL OR notes != 'Galla Opening Balance')
+        UNION ALL
+        SELECT 0 as cash_in, amount as cash_out FROM expenses
+        WHERE payment_mode = 'cash' AND expense_date < ?
+      )
+    `;
+
+    const openingParams = sinceDate
+      ? [sinceDate, date, sinceDate, date, sinceDate, date]
+      : [date, date, date];
+
+    db.get(openingQuery, openingParams, (err, deltaRow) => {
       if (err) return res.status(500).json({ error: err.message });
+      const openingBalance = baselineTotal + (deltaRow?.delta || 0);
 
       db.all(`
-        SELECT expenses.amount, expenses.category,
-          CASE
-            WHEN paid_to_type = 'employee' THEN employees.name
-            WHEN paid_to_type = 'vendor' THEN vendors.name
-            ELSE expenses.category
-          END as party_name, expenses.description, expense_date as txn_date, expenses.created_at
-        FROM expenses
-        LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
-        LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id
-        WHERE expenses.payment_mode = 'cash' AND expenses.expense_date = ?
-      `, [date], (err, cashOutRows) => {
+        SELECT amount, 'Order Payment' as type, customers.firm_name as party_name,
+               payment_date as txn_date, payments.created_at, payments.denomination_breakdown
+        FROM payments
+        JOIN orders ON payments.order_id = orders.id
+        JOIN customers ON payments.customer_id = customers.id
+        WHERE payments.payment_mode = 'cash' AND payments.payment_date = ?
+        UNION ALL
+        SELECT cash_income.amount, 'Cash Income' as type, customers.firm_name as party_name,
+               income_date as txn_date, cash_income.created_at, cash_income.denomination_breakdown
+        FROM cash_income
+        LEFT JOIN customers ON cash_income.customer_id = customers.id
+        WHERE (cash_income.payment_mode = 'cash' OR cash_income.payment_mode IS NULL)
+          AND cash_income.income_date = ?
+          AND (cash_income.notes IS NULL OR cash_income.notes != 'Galla Opening Balance')
+      `, [date, date], (err, cashInRows) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        const totalCashIn  = cashInRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-        const totalCashOut = cashOutRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+        db.all(`
+          SELECT expenses.amount, expenses.category,
+            CASE
+              WHEN paid_to_type = 'employee' THEN employees.name
+              WHEN paid_to_type = 'vendor' THEN vendors.name
+              ELSE expenses.category
+            END as party_name, expenses.description, expense_date as txn_date, expenses.created_at,
+            expenses.denomination_breakdown
+          FROM expenses
+          LEFT JOIN employees ON paid_to_type = 'employee' AND paid_to_id = employees.id
+          LEFT JOIN vendors ON paid_to_type = 'vendor' AND paid_to_id = vendors.id
+          WHERE expenses.payment_mode = 'cash' AND expenses.expense_date = ?
+        `, [date], (err, cashOutRows) => {
+          if (err) return res.status(500).json({ error: err.message });
 
-        res.json({
-          date,
-          opening_balance: openingBalance,
-          cash_in: cashInRows,
-          cash_out: cashOutRows,
-          total_cash_in: totalCashIn,
-          total_cash_out: totalCashOut,
-          closing_balance: openingBalance + totalCashIn - totalCashOut
+          function parseBreakdown(rows) {
+            return rows.map(r => {
+              let denomination_breakdown = null;
+              if (r.denomination_breakdown) {
+                try { denomination_breakdown = JSON.parse(r.denomination_breakdown); }
+                catch (e) { denomination_breakdown = null; }
+              }
+              return { ...r, denomination_breakdown };
+            });
+          }
+          const cashInParsed  = parseBreakdown(cashInRows);
+          const cashOutParsed = parseBreakdown(cashOutRows);
+
+          const totalCashIn  = cashInParsed.reduce((s, r) => s + Number(r.amount || 0), 0);
+          const totalCashOut = cashOutParsed.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+          res.json({
+            date,
+            opening_balance: openingBalance,
+            cash_in: cashInParsed,
+            cash_out: cashOutParsed,
+            total_cash_in: totalCashIn,
+            total_cash_out: totalCashOut,
+            closing_balance: openingBalance + totalCashIn - totalCashOut
+          });
         });
       });
     });
   });
 });
+
 
 const DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
 
@@ -864,73 +962,56 @@ router.get('/denomination-drawer', (req, res) => {
   });
 });
 
+// GET /api/daily/denomination-drawer/history — sab "Set Galla Count" actions, latest sabse upar
+router.get('/denomination-drawer/history', (req, res) => {
+  db.all(`SELECT id, denomination_counts, set_at, notes FROM cash_drawer_baseline ORDER BY set_at DESC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message })
+
+    const history = rows.map(r => {
+      let total = 0
+      try {
+        const counts = JSON.parse(r.denomination_counts)
+        total = Object.entries(counts).reduce((s, [d, c]) => s + Number(d) * Number(c), 0)
+      } catch (e) { /* corrupt row — skip total */ }
+      return { id: r.id, set_at: r.set_at, notes: r.notes, total }
+    })
+
+    res.json(history)
+  })
+})
+
 // POST /api/daily/denomination-drawer/set-baseline — galla count reset/set karo
 router.post('/denomination-drawer/set-baseline', (req, res) => {
   const { denomination_counts, notes } = req.body;
   if (!denomination_counts) return res.status(400).json({ error: 'denomination_counts required' });
 
   const setAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
-  const today = setAt.split(' ')[0];
 
-  const totalAmount = Object.entries(denomination_counts)
-    .reduce((sum, [denom, count]) => sum + (Number(denom) * Number(count)), 0);
-
+  // Note: ab yahan cash_income mein koi mirror-entry nahi banti. Iski history
+  // sirf cash_drawer_baseline table + Galla Hisaab tab ki "Set Karne Ki History"
+  // mein rehti hai. Cash Drawer/Daily Ledger ka opening-balance ab is baseline
+  // ko seedha /cash-drawer route mein read karke calculate karta hai (neeche) —
+  // isliye alag se cash_income row banana double-counting create karta tha.
   db.run(`
     INSERT INTO cash_drawer_baseline (denomination_counts, set_at, notes)
     VALUES (?, ?, ?)
   `, [JSON.stringify(denomination_counts), setAt, notes || null], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-
-    // Pehle check karo — aaj ka opening balance already hai?
-    db.get(`
-      SELECT id FROM cash_income
-      WHERE income_date = ? AND notes = 'Galla Opening Balance'
-    `, [today], (err, existing) => {
-      if (err || existing) {
-        // Already hai — update karo
-        if (existing) {
-          db.run(`
-            UPDATE cash_income SET amount = ? WHERE id = ?
-          `, [totalAmount, existing.id], () => {});
-        }
-        return res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
-      }
-
-      // Nahi hai — naya insert karo
-      // Pehle "Galla Opening Balance" customer dhundo ya banao
-      db.get(`SELECT id FROM customers WHERE firm_name = 'Opening Balance'`, [], (err, customer) => {
-        const insertIncome = (customerId) => {
-          db.run(`
-            INSERT INTO cash_income (customer_id, amount, income_date, notes, payment_mode, created_at)
-            VALUES (?, ?, ?, 'Galla Opening Balance', 'cash', ?)
-          `, [customerId, totalAmount, today, setAt], () => {});
-        };
-
-        if (customer) {
-          insertIncome(customer.id);
-        } else {
-          db.run(`
-            INSERT INTO customers (firm_name, contact_name, phone, created_at)
-            VALUES ('Opening Balance', 'System', '', ?)
-          `, [setAt], function(err) {
-            insertIncome(this.lastID);
-          });
-        }
-
-        res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
-      });
-    });
+    res.status(201).json({ id: this.lastID, message: 'Galla count set ho gaya' });
   });
 });
 
 // ─────────────────────────────────────────
 // DELETE /api/daily/entry — delete any ledger entry by type+id (password protected)
 // ─────────────────────────────────────────
-const DELETE_PASSWORD = '2354'
+const DELETE_PASSWORD = process.env.DELETE_PASSWORD
 
 router.delete('/entry', (req, res) => {
   const { password, type, id } = req.body
 
+  if (!DELETE_PASSWORD) {
+    return res.status(500).json({ error: 'DELETE_PASSWORD server par configure nahi hai. .env check karo.' })
+  }
   if (password !== DELETE_PASSWORD) {
     return res.status(403).json({ error: 'Wrong password. Entry delete nahi hui.' })
   }
@@ -1041,15 +1122,18 @@ router.delete('/entry', (req, res) => {
 
         db.run(`DELETE FROM customer_payments WHERE source = 'order_advance' AND source_id = ?`, [order.id], () => {})
 
-        // Reset advance on order
-        const newBalance = order.total_amount - (order.discount_amount || 0)
+        // Reset advance on order — balance ab recalculateOrderBalance se aayega
+        // (follow-up payments aur cleared cheques bhi ab account hote hain, jo pehle miss ho rahe the)
         db.run(
-          `UPDATE orders SET advance_paid = 0, balance_due = ?, advance_payment_mode = NULL,
+          `UPDATE orders SET advance_paid = 0, advance_payment_mode = NULL,
            advance_entry_table = NULL, advance_entry_id = NULL WHERE id = ?`,
-          [newBalance, order.id],
+          [order.id],
           function(err) {
             if (err) return res.status(500).json({ error: err.message })
-            res.json({ message: 'Advance deleted and order balance reset' })
+            recalculateOrderBalance(order.id, (err, newBalance) => {
+              if (err) return res.status(500).json({ error: err.message })
+              res.json({ message: 'Advance deleted and order balance reset', balance_due: newBalance })
+            })
           }
         )
       }

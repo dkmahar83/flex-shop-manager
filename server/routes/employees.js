@@ -70,19 +70,19 @@ router.post('/attendance', (req, res) => {
     return res.status(400).json({ error: 'date and records are required' });
   }
 
-  db.serialize(() => {
-    records.forEach(record => {
-      db.run(
-        `INSERT OR IGNORE INTO attendance (employee_id, date, status) VALUES (?, ?, ?)`,
-        [record.employee_id, date, record.status]
-      );
-      db.run(
-        `UPDATE attendance SET status = ? WHERE employee_id = ? AND date = ?`,
-        [record.status, record.employee_id, date]
-      );
-    });
+  const upsert = (record) => new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO attendance (employee_id, date, status)
+       VALUES (?, ?, ?)
+       ON CONFLICT(employee_id, date) DO UPDATE SET status = excluded.status`,
+      [record.employee_id, date, record.status],
+      (err) => err ? reject(err) : resolve()
+    );
   });
-  res.status(201).json({ message: 'Attendance marked successfully' });
+
+  Promise.all(records.map(upsert))
+    .then(() => res.status(201).json({ message: 'Attendance marked successfully' }))
+    .catch(err => res.status(500).json({ error: 'Attendance save failed: ' + err.message }));
 });
 
 // ─────────────────────────────────────────
@@ -168,14 +168,12 @@ router.get('/salary/:employee_id', (req, res) => {
 // ─────────────────────────────────────────
 router.get('/profile/:id', (req, res) => {
   const { id } = req.params;
-  const month = req.query.month || String(new Date().getMonth() + 1).padStart(2, '0');
-  const year  = req.query.year  || String(new Date().getFullYear());
 
   db.get(`SELECT * FROM employees WHERE id = ?`, [id], (err, employee) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-    // Get advances paid from expenses
+    // Advances — ALL-TIME (join date se ab tak)
     db.all(`
       SELECT id, expense_date as date, amount, description, payment_mode, upi_account,
              'advance' as type, created_at
@@ -185,7 +183,7 @@ router.get('/profile/:id', (req, res) => {
     `, [id], (err, advances) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      // Get salary credits
+      // Salary credits — ALL-TIME
       db.all(`
         SELECT id, credited_date as date, salary_amount as amount, notes as description,
               payment_mode, upi_account, 'salary' as type, NULL as created_at
@@ -195,14 +193,15 @@ router.get('/profile/:id', (req, res) => {
       `, [id], (err, salaries) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        // Attendance for selected month
+        // Attendance — ALL-TIME (month/year filter hataya). Wajah: "Salary Earned"
+        // aur "Advance Given" ab hamesha SAME time-period (poora tenure) represent
+        // karte hain — pehle salary_earned sirf ek mahine ka tha jabki advance/salary
+        // history hamesha all-time thi, jisse Net Payable galat/misleading ban jaata tha.
         db.all(`
           SELECT * FROM attendance
           WHERE employee_id = ?
-          AND strftime('%m', date) = ?
-          AND strftime('%Y', date) = ?
           GROUP BY date
-        `, [id, month, year], (err, attendance) => {
+        `, [id], (err, attendance) => {
           if (err) return res.status(500).json({ error: err.message });
 
           const presentDays  = attendance.filter(a => a.status === 'present').length;
@@ -214,7 +213,10 @@ router.get('/profile/:id', (req, res) => {
           const totalAdvancePaid     = advances.reduce((s, a) => s + a.amount, 0);
           const totalSalaryCredited  = salaries.reduce((s, s2) => s + s2.amount, 0);
           const totalPaid            = totalAdvancePaid + totalSalaryCredited;
-          const netPayable           = salaryEarned - totalAdvancePaid;
+          // Ab already-credited salary bhi ghataate hain — warna purani credit hui
+          // salary bhi "abhi dena baaki hai" jaisi dikhti (kyunki salaryEarned ab
+          // poore tenure ka hai, sirf ek mahine ka nahi).
+          const netPayable = salaryEarned - totalAdvancePaid - totalSalaryCredited;
 
           const payment_history = [...advances, ...salaries]
             .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -229,9 +231,7 @@ router.get('/profile/:id', (req, res) => {
             effective_days:        effectiveDays,
             present_days:          presentDays,
             half_days:             halfDays,
-            net_payable:           netPayable,
-            month,
-            year
+            net_payable:           netPayable
           });
         });
       });

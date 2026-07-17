@@ -2,13 +2,20 @@
 // Navbar mein "💾 Backup" button — panel khulta hai
 // Replaces purana BackupButton.jsx
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import api from '../services/api'
 import { Save, XCircle, CheckCircle2, Clock, Trash2, Package, Calendar, Download } from 'lucide-react'
 
 export default function BackupManager() {
   const [showPanel, setShowPanel]       = useState(false)
   const [backups, setBackups]           = useState([])
+  const btnRef = useRef(null)
+  // Portal se render karne ke liye button ka screen-position chahiye —
+  // sidebar ke overflow:hidden se bahar nikal ke document.body mein
+  // render hoga, isliye parent-relative (position:absolute) kaam nahi
+  // karega, seedha fixed-coordinates chahiye.
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0 })
   const [loading, setLoading]           = useState(false)
   const [runningBackup, setRunningBackup] = useState(false)
   const [msg, setMsg]                   = useState('')
@@ -56,14 +63,28 @@ export default function BackupManager() {
     fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px'
   }
 
+  function togglePanel() {
+    if (!showPanel && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const panelWidth = 320
+      let left = rect.left
+      if (left + panelWidth > window.innerWidth - 16) {
+        left = window.innerWidth - panelWidth - 16
+      }
+      if (left < 16) left = 16
+      setPanelPos({ bottom: window.innerHeight - rect.top + 8, left })
+    }
+    setShowPanel(s => !s)
+  }
+
   return (
     <div style={{ position: 'relative' }}>
       {/* Navbar button */}
-      <button onClick={() => setShowPanel(s => !s)} style={btn}>
+      <button ref={btnRef} onClick={togglePanel} style={btn}>
         <Save size={14} /> Backup
       </button>
 
-      {showPanel && (
+      {showPanel && createPortal(
         <>
           {/* Click-outside overlay */}
           <div
@@ -71,11 +92,18 @@ export default function BackupManager() {
             style={{ position: 'fixed', inset: 0, zIndex: 998 }}
           />
 
-          {/* Panel */}
+          {/* Panel — button sidebar ke bottom mein hai, isliye upar (top ki taraf)
+              khulta hai (neeche khulta to viewport ke bahar chala jaata). Aur
+              left:0 se anchor kiya (right:0 nahi) — sidebar khud sirf ~200px
+              chauda hai jabki panel 320px ka hai; right-anchor karne se panel
+              left-direction mein overflow hoke screen ke bahar chala jaata tha.
+              left:0 se ye sidebar ke right-side (main content ke upar) overlay
+              hoga, jahan jagah available hai. */}
           <div style={{
-            position: 'absolute', top: '44px', right: 0, zIndex: 999,
+            position: 'fixed', bottom: `${panelPos.bottom}px`, left: `${panelPos.left}px`, zIndex: 999,
             background: '#fff', borderRadius: '12px', padding: '18px',
             boxShadow: '0 4px 32px rgba(0,0,0,0.18)', width: '320px',
+            maxWidth: 'calc(100vw - 32px)',
             border: '1px solid #eee'
           }}>
             {/* Header */}
@@ -105,7 +133,9 @@ export default function BackupManager() {
               style={{
                 width: '100%', padding: '10px',
                 background: runningBackup ? '#ccc' : '#1a1a2e',
-                color: '#fff', border: 'none', borderRadius: '8px',
+                color: '#fff',
+                border: runningBackup ? '1px solid #ccc' : '1px solid #1a1a2e',
+                borderRadius: '8px',
                 cursor: runningBackup ? 'not-allowed' : 'pointer',
                 fontWeight: '600', fontSize: '13px', marginBottom: '12px'
               }}
@@ -151,7 +181,7 @@ export default function BackupManager() {
                     <button
                       onClick={() => handleDownload(b.filename)}
                       style={{
-                        background: '#e3f2fd', border: '1px solid #90caf9', color: '#1565c0',
+                        background: '#fff', border: '1px solid #1a1a2e', color: '#1a1a2e',
                         borderRadius: '6px', padding: '4px 10px', cursor: 'pointer',
                         fontSize: '11px', fontWeight: '600',
                         display: 'inline-flex', alignItems: 'center', gap: '4px'
@@ -168,7 +198,8 @@ export default function BackupManager() {
               Recovery: backup file ko flexshop.db naam se replace karo, server restart karo
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )

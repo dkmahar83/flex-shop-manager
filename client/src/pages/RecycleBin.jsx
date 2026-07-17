@@ -1,23 +1,36 @@
 import { useState, useEffect } from 'react'
 import api from '../services/api'
 import { Trash2, Undo2 } from 'lucide-react'
+import SectionLoader from '../components/SectionLoader'
 
 function RecycleBin() {
   const [deletedCustomers, setDeletedCustomers] = useState([])
   const [deletedOrders, setDeletedOrders] = useState([])
   const [message, setMessage] = useState('')
+  const [loadingCustomers, setLoadingCustomers] = useState(true)
+  const [loadingOrders, setLoadingOrders] = useState(true)
 
   useEffect(() => {
     fetchDeleted()
   }, [])
 
+  // Message ab khud 4 sec baad gayab ho jaata hai — pehle sirf click-karke
+  // hatao tha.
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [message])
+
   function fetchDeleted() {
     api.get('/customers/deleted/recent')
       .then(res => setDeletedCustomers(res.data))
       .catch(() => {})
+      .finally(() => setLoadingCustomers(false))
     api.get('/orders/deleted/recent')
       .then(res => setDeletedOrders(res.data))
       .catch(() => {})
+      .finally(() => setLoadingOrders(false))
   }
 
   function restoreCustomer(id) {
@@ -50,7 +63,9 @@ function RecycleBin() {
       {/* DELETED CUSTOMERS */}
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>Deleted Customers ({deletedCustomers.length})</h3>
-        {deletedCustomers.length === 0 ? (
+        {loadingCustomers ? (
+          <SectionLoader label="Deleted customers load ho rahe hain..." size="small" />
+        ) : deletedCustomers.length === 0 ? (
           <p style={styles.empty}>No recently deleted customers.</p>
         ) : (
           <div style={styles.tableScroll}>
@@ -85,7 +100,9 @@ function RecycleBin() {
       {/* DELETED ORDERS */}
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>Deleted Orders ({deletedOrders.length})</h3>
-        {deletedOrders.length === 0 ? (
+        {loadingOrders ? (
+          <SectionLoader label="Deleted orders load ho rahe hain..." size="small" />
+        ) : deletedOrders.length === 0 ? (
           <p style={styles.empty}>No recently deleted orders.</p>
         ) : (
           <div style={styles.tableScroll}>

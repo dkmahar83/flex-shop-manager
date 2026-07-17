@@ -59,7 +59,7 @@ function initWhatsApp() {
       }),
       puppeteer: {
         headless: true,
-        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: process.env.CHROME_PATH || undefined,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       }
     })
@@ -97,7 +97,18 @@ function initWhatsApp() {
       clientReady = false
       const c = client
       client = null
-      clearSessionAndReinit(c)
+
+      // Sirf 'LOGOUT' (user ne phone se manually WhatsApp-Web session hataayi)
+      // genuinely corrupted/invalid session hai — usi case mein full wipe+fresh-QR
+      // chahiye. Baaki reasons (NAVIGATION, CONFLICT, temporary drop) transient
+      // hain — inpe seedha reconnect try karo, session delete mat karo, warna
+      // har chhoti internet-hiccup pe shop-owner ko dubara QR scan karna padega.
+      if (reason === 'LOGOUT') {
+        clearSessionAndReinit(c)
+      } else {
+        try { if (c) c.destroy() } catch (e) { /* already dead */ }
+        setTimeout(initWhatsApp, 3000)
+      }
     })
 
     client.initialize().catch(err => {
@@ -124,11 +135,19 @@ async function sendBillToCustomer({ phone, customerName, orderId, totalAmount, a
   // Format phone number — Indian numbers need 91 prefix
   let formattedPhone = phone.replace(/\D/g, '') // remove non-digits
   if (formattedPhone.startsWith('0')) {
-    formattedPhone = '91' + formattedPhone.substring(1)
+    formattedPhone = formattedPhone.substring(1)
   }
-  if (!formattedPhone.startsWith('91')) {
+  // Length-based hi reliable hai — startsWith('91') check ambiguous tha:
+  // ek genuine 10-digit number jo khud '91...' se shuru hota hai (jaise 9198765432)
+  // usse already-prefixed maan leta tha, aur galat 10-digit number WhatsApp ko
+  // bhej deta tha (misdelivery risk — bill/UPI-link kisi aur ko chala jaana).
+  if (formattedPhone.length === 10) {
     formattedPhone = '91' + formattedPhone
   }
+  // agar already 12-digit (91 + 10) hai to as-is chhodo; kisi aur length ka
+  // number ho to bhi as-is bhejte hain — getNumberId khud fail karega aur
+  // 'WhatsApp account nahi mila' error milega, jo galat-number-pe-send se
+  // kahin behtar hai.
   const numberId = await client.getNumberId(formattedPhone)
   if (!numberId) {
     throw new Error(`WhatsApp account nahi mila: ${formattedPhone}`)

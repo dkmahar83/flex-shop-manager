@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const validate = require('../middleware/validate');
+const { createPaymentSchema } = require('../schemas/paymentSchemas');
+const logger = require('../utils/logger');
+const { recalculateOrderBalance } = require('../utils/orderBalance');
 
 function parseToYMD(dateStr) {
   if (!dateStr) return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
@@ -14,12 +18,8 @@ function nowIST() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
 }
 
-router.post('/', (req, res) => {
+router.post('/', validate(createPaymentSchema), (req, res) => {
   const { order_id, customer_id, amount, payment_date, note, payment_mode, upi_account, cheque_number, bank_name, denomination_breakdown } = req.body;
-
-  if (!order_id || !customer_id || !amount) {
-    return res.status(400).json({ error: 'order_id, customer_id and amount are required' });
-  }
 
   const cleanDate = parseToYMD(payment_date);
   const cleanMode = payment_mode || 'cash';
@@ -77,26 +77,13 @@ router.post('/', (req, res) => {
 
       const payment_id = this.lastID;
 
-      // ✅ FIX: balance_due hamesha is formula se banega — SINGLE SOURCE OF TRUTH
-      // balance_due = total_amount - advance_paid - discount_amount - SUM(payments)
-      // Ye formula HAR route (orders.js PUT, payments.js POST, cheques.js) mein
-      // same hona chahiye, warna discount ya advance change hote hi balance galat ho jayega.
-      db.get('SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE order_id = ?',
-      [order_id], (err, result) => {
+      recalculateOrderBalance(order_id, (err, new_balance) => {
         if (err) return res.status(500).json({ error: err.message });
-        const already_paid   = result.total_paid; // includes current payment just inserted
-        const discount       = parseFloat(order.discount_amount) || 0;
-        const new_balance = Math.max(0, order.total_amount - order.advance_paid - discount - already_paid);
-
-        db.run(`
-          UPDATE orders SET balance_due = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `, [new_balance, order_id], (err) => {
-          if (err) return res.status(500).json({ error: err.message });
 
           // ✅ UPI payment ko upi_transactions me bhi mirror karo
           if (cleanMode === 'upi' && cleanUpi) {
             db.get(`SELECT firm_name FROM customers WHERE id = ?`, [customer_id], (err, customer) => {
-              if (err) console.error('Could not fetch customer for UPI record:', err.message);
+              if (err) logger.error('Could not fetch customer for UPI record: ' + err.message);
 
               db.run(`
                 INSERT INTO upi_transactions 
@@ -114,7 +101,7 @@ router.post('/', (req, res) => {
                 createdAt
               ],
               (err) => {
-                if (err) console.error('UPI transaction insert failed:', err.message);
+                if (err) logger.error('UPI transaction insert failed: ' + err.message);
               });
             });
           }
@@ -133,17 +120,33 @@ router.post('/', (req, res) => {
       });
     });
   });
-});
 
 router.get('/dues', (req, res) => {
+  // CUSTOMER-WISE ab, Dashboard ke all_dues jaisa. 2 fixes ek saath:
+  // (1) opening_balance ab include hota hai, warna aise customers invisible
+  //     rehte jinka poora due sirf opening-balance se ho.
+  // (2) orders.deleted_at IS NULL filter add kiya — pehle missing tha, isliye
+  //     soft-deleted orders ka due bhi galti se yahan leak ho sakta tha.
   db.all(`
-    SELECT orders.id as order_id, orders.description, orders.total_amount,
-      orders.advance_paid, orders.balance_due, orders.follow_up_date,
-      orders.status, customers.firm_name, customers.contact_name, customers.phone
-    FROM orders
-    JOIN customers ON orders.customer_id = customers.id
-    WHERE orders.balance_due > 0
-    ORDER BY orders.follow_up_date ASC, orders.balance_due DESC
+    SELECT
+      customers.id as customer_id,
+      customers.firm_name,
+      customers.contact_name,
+      customers.phone,
+      COALESCE(SUM(orders.balance_due), 0) as orders_due,
+      COUNT(orders.id) as orders_due_count,
+      COALESCE(customers.opening_balance, 0) as opening_balance,
+      (COALESCE(SUM(orders.balance_due), 0) + COALESCE(customers.opening_balance, 0)) as total_due,
+      MIN(orders.follow_up_date) as follow_up_date
+    FROM customers
+    LEFT JOIN orders
+      ON orders.customer_id = customers.id
+      AND orders.balance_due > 0
+      AND orders.deleted_at IS NULL
+    WHERE customers.deleted_at IS NULL
+    GROUP BY customers.id
+    HAVING (COALESCE(SUM(orders.balance_due), 0) + COALESCE(customers.opening_balance, 0)) > 0
+    ORDER BY follow_up_date ASC, total_due DESC
   `, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
-import { Lock, KeyRound, AlertTriangle, CheckCircle2, Delete } from 'lucide-react';
+import { Lock, AlertTriangle, Delete } from 'lucide-react';
 
 // ─── PageLock wrapper ─────────────────────────────────────────────────────────
 // Usage: wrap your page with <PageLock pageKey="accounts" pageTitle="Accounts"> ... </PageLock>
@@ -16,14 +16,10 @@ export default function PageLock({ pageKey, pageTitle, children }) {
   async function checkLockStatus() {
     try {
       const res = await api.get(`/page-locks/${pageKey}`);
-      const { is_locked, has_pin } = res.data;
-      if (!has_pin) {
-        setStatus('no-pin'); // PIN never set, show setup screen
-      } else if (is_locked) {
-        setStatus('locked');
-      } else {
-        setStatus('unlocked');
-      }
+      const { is_locked } = res.data;
+      // PIN ab fixed/global hai — 'no-pin' setup-screen ka concept khatam,
+      // koi bhi page seedha 'locked' ya 'unlocked' hi ho sakti hai.
+      setStatus(is_locked ? 'locked' : 'unlocked');
     } catch {
       setStatus('unlocked'); // If error, don't block
     }
@@ -74,12 +70,12 @@ export default function PageLock({ pageKey, pageTitle, children }) {
     return (
       <>
         {children}
-        <LockSettingsButton pageKey={pageKey} pageTitle={pageTitle} onLock={() => setStatus('locked')} />
+        <LockSettingsButton pageKey={pageKey} onLock={() => setStatus('locked')} />
       </>
     );
   }
 
-  // LOCKED or NO-PIN screen
+  // LOCKED screen — PIN fixed hai, isliye ab sirf ek hi state possible hai
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -91,35 +87,27 @@ export default function PageLock({ pageKey, pageTitle, children }) {
         maxWidth: '320px', width: '100%', border: '1px solid #eee'
       }}>
 
-        {/* Lock icon */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px', color: '#e65100' }}>
-          {status === 'no-pin' ? <KeyRound size={44} /> : <Lock size={44} />}
+          <Lock size={44} />
         </div>
 
         <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: '#333' }}>
-          {status === 'no-pin' ? 'PIN Set Karo' : `${pageTitle} Locked`}
+          {pageTitle} Locked
         </h2>
 
         <p style={{ margin: '0 0 24px', fontSize: '13px', color: '#888', lineHeight: '1.5' }}>
-          {status === 'no-pin'
-            ? 'Is page ko protect karne ke liye pehle PIN set karo'
-            : 'Access ke liye apna PIN daalo'
-          }
+          Access ke liye apna PIN daalo
         </p>
 
-        {status === 'locked' ? (
-          <PinEntry
-            pin={pin}
-            setPin={setPin}
-            error={error}
-            verifying={verifying}
-            inputRef={inputRef}
-            onVerify={handleVerify}
-            onKeyDown={handlePinKey}
-          />
-        ) : (
-          <SetPinForm pageKey={pageKey} onSuccess={() => setStatus('locked')} />
-        )}
+        <PinEntry
+          pin={pin}
+          setPin={setPin}
+          error={error}
+          verifying={verifying}
+          inputRef={inputRef}
+          onVerify={handleVerify}
+          onKeyDown={handlePinKey}
+        />
       </div>
     </div>
   );
@@ -210,78 +198,9 @@ function PinEntry({ pin, setPin, error, verifying, inputRef, onVerify, onKeyDown
   );
 }
 
-// ─── Set PIN form ──────────────────────────────────────────────────────────────
-function SetPinForm({ pageKey, onSuccess }) {
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
-
-  const handleSet = async () => {
-    if (newPin.length !== 4) { setErr('4 digit PIN daalo'); return; }
-    if (newPin !== confirmPin) { setErr('PIN match nahi kiya'); return; }
-    setSaving(true);
-    try {
-      await api.post(`/page-locks/${pageKey}/set-pin`, { pin: newPin });
-      onSuccess();
-    } catch (e) {
-      setErr(e.response?.data?.error || 'Error aaya');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div style={{ textAlign: 'left' }}>
-      <div style={{ marginBottom: '12px' }}>
-        <label style={{ fontSize: '12px', color: '#666', display: 'block', marginBottom: '4px' }}>
-          New PIN (4 digits)
-        </label>
-        <input
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={newPin}
-          onChange={e => setNewPin(e.target.value.replace(/\D/g,'').slice(0,4))}
-          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '18px', letterSpacing: '8px', textAlign: 'center', boxSizing: 'border-box' }}
-          placeholder="••••"
-        />
-      </div>
-      <div style={{ marginBottom: '16px' }}>
-        <label style={{ fontSize: '12px', color: '#666', display: 'block', marginBottom: '4px' }}>
-          Confirm PIN
-        </label>
-        <input
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={confirmPin}
-          onChange={e => setConfirmPin(e.target.value.replace(/\D/g,'').slice(0,4))}
-          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '18px', letterSpacing: '8px', textAlign: 'center', boxSizing: 'border-box' }}
-          placeholder="••••"
-        />
-      </div>
-      {err && <div style={{ color: '#c62828', fontSize: '13px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={14} /> {err}</div>}
-      <button
-        onClick={handleSet}
-        disabled={saving}
-        style={{ width: '100%', padding: '12px', background: '#e65100', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-      >
-        {saving ? 'Set ho raha hai...' : <><Lock size={15} /> PIN Set Karo</>}
-      </button>
-    </div>
-  );
-}
-
 // ─── Lock Settings Button (shown when unlocked) ────────────────────────────────
-function LockSettingsButton({ pageKey, pageTitle, onLock }) {
+function LockSettingsButton({ pageKey, onLock }) {
   const [showPanel, setShowPanel] = useState(false);
-  const [currentPin, setCurrentPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [success, setSuccess] = useState(false);
 
   const handleLockNow = async () => {
     try {
@@ -289,23 +208,6 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
       onLock();
     } catch {
       alert('Lock nahi hua');
-    }
-  };
-
-  const handleChangePin = async () => {
-    if (newPin !== confirmPin) { setMsg('PIN match nahi kiya'); setSuccess(false); return; }
-    if (newPin.length !== 4) { setMsg('4 digit PIN daalo'); setSuccess(false); return; }
-    setSaving(true);
-    try {
-      await api.post(`/page-locks/${pageKey}/set-pin`, { pin: newPin, current_pin: currentPin });
-      setMsg('PIN change ho gaya');
-      setSuccess(true);
-      setCurrentPin(''); setNewPin(''); setConfirmPin('');
-    } catch (e) {
-      setMsg(e.response?.data?.error || 'Error');
-      setSuccess(false);
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -327,17 +229,13 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
         <div style={{
           position: 'absolute', bottom: '44px', right: 0,
           background: '#fff', borderRadius: '12px', padding: '16px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.12)', width: '240px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.12)', width: '200px',
           border: '1px solid #eee'
         }}>
-          <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '13px' }}>
-            {pageTitle} Lock Settings
-          </div>
-
           <button
             onClick={handleLockNow}
             style={{
-              width: '100%', padding: '8px', marginBottom: '12px',
+              width: '100%', padding: '8px', marginBottom: '8px',
               background: '#e65100', color: '#fff', border: 'none',
               borderRadius: '6px', cursor: 'pointer', fontSize: '13px',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
@@ -346,53 +244,10 @@ function LockSettingsButton({ pageKey, pageTitle, onLock }) {
             <Lock size={14} /> Abhi Lock Karo
           </button>
 
-          <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', fontWeight: '500' }}>
-            PIN Change Karo
-          </div>
-
-          {[
-            { label: 'Current PIN', val: currentPin, set: setCurrentPin },
-            { label: 'New PIN', val: newPin, set: setNewPin },
-            { label: 'Confirm New PIN', val: confirmPin, set: setConfirmPin },
-          ].map(({ label, val, set }) => (
-            <input
-              key={label}
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
-              placeholder={label}
-              value={val}
-              onChange={e => set(e.target.value.replace(/\D/g,'').slice(0,4))}
-              style={{
-                width: '100%', marginBottom: '6px', padding: '7px 10px',
-                border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px',
-                boxSizing: 'border-box'
-              }}
-            />
-          ))}
-
-          {msg && (
-            <div style={{ fontSize: '12px', color: success ? '#2e7d32' : '#c62828', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {success ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />} {msg}
-            </div>
-          )}
-
-          <button
-            onClick={handleChangePin}
-            disabled={saving}
-            style={{
-              width: '100%', padding: '8px', background: '#1565c0',
-              color: '#fff', border: 'none', borderRadius: '6px',
-              cursor: 'pointer', fontSize: '12px'
-            }}
-          >
-            {saving ? 'Saving...' : 'PIN Change Karo'}
-          </button>
-
           <button
             onClick={() => setShowPanel(false)}
             style={{
-              width: '100%', padding: '6px', marginTop: '8px', background: 'none',
+              width: '100%', padding: '6px', background: 'none',
               border: '1px solid #eee', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#888'
             }}
           >

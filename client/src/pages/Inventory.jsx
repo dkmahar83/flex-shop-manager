@@ -8,6 +8,7 @@ import {
   getInventoryCategories, addInventoryCategory, deleteInventoryCategory,
   getDynamicItems, addDynamicItem, updateDynamicItem, deleteDynamicItem
 } from '../services/api'
+import LoadingButton from '../components/LoadingButton'
 import {
   Package, Image, Stamp, FlaskConical, Printer, Pencil, X, Send,
   AlertTriangle, Siren, CheckCircle2, Palette, Droplet, FolderPlus,
@@ -68,6 +69,12 @@ function Inventory() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [categoryForm, setCategoryForm]           = useState({ label: '', icon: '📦', attr1_label: 'Size', attr2_label: 'Type', unit_default: 'pcs' })
   const [categorySaving, setCategorySaving]       = useState(false)
+  const [flexSaving, setFlexSaving]         = useState(false)
+  const [useSaving, setUseSaving]           = useState(false)
+  const [stampSaving, setStampSaving]       = useState(false)
+  const [chemSaving, setChemSaving]         = useState(false)
+  const [frameSaving, setFrameSaving]       = useState(false)
+  const [inkSaving, setInkSaving]           = useState(false)
 
   // ── fetch helpers ──────────────────────────────────────────────────────────
   function fetchAll() {
@@ -81,6 +88,14 @@ function Inventory() {
     getInventoryCategories().then(r => setCategories(r.data)).catch(() => {})
   }
   useEffect(() => { fetchAll(); fetchCategories() }, [])
+
+  // showMsg() already 3.5 sec baad auto-clear karta hai — bas tab badalte
+  // hi turant clear bhi karna hai, warna "Flex stock updated" jaisa message
+  // Stamps ya Chemicals tab pe bhi dikh sakta tha.
+  useEffect(() => {
+    queueMicrotask(() => setMessage(''))
+  }, [activeTab])
+
 
   function showMsg(text, type = 'success') {
     setMessage(text); setMsgType(type)
@@ -119,17 +134,20 @@ function Inventory() {
   function handleAddFlex(e) {
     e.preventDefault()
     if (!flexForm.brand || !flexForm.size_ft || !flexForm.quantity) return showMsg('All fields required', 'error')
+    setFlexSaving(true)
     addFlexStock(flexForm).then(() => {
       showMsg('Flex stock added/updated')
       setFlexForm({ brand: '', size_ft: '', quantity: '', notes: '' })
       setShowFlexForm(false)
       getFlexStock().then(r => setFlexStock(r.data))
     }).catch(() => showMsg('Error adding flex stock', 'error'))
+      .finally(() => setFlexSaving(false))
   }
 
   function handleUseFlex(e) {
     e.preventDefault()
     if (!useForm.quantity) return showMsg('Enter quantity to use', 'error')
+    setUseSaving(true)
     consumeFlexStock(useForm.id, { quantity: useForm.quantity, notes: useForm.notes })
       .then(() => {
         showMsg('Stock reduced')
@@ -137,6 +155,7 @@ function Inventory() {
         setUseForm({ id: null, quantity: '', notes: '' })
         getFlexStock().then(r => setFlexStock(r.data))
       }).catch(err => showMsg(err.response?.data?.error || 'Error', 'error'))
+      .finally(() => setUseSaving(false))
   }
 
   function handleUpdateFlex(e) {
@@ -161,6 +180,7 @@ function Inventory() {
     const qty = parseFloat(quantity_to_add)
     if (isNaN(qty) || qty <= 0) return showMsg('Enter a valid quantity', 'error')
 
+    setStampSaving(true)
     const existing = stamps.find(s =>
       s.stamp_type.trim().toLowerCase() === stamp_type.trim().toLowerCase() &&
       (s.size || '').trim().toLowerCase() === (size || '').trim().toLowerCase() &&
@@ -174,6 +194,7 @@ function Inventory() {
           setShowStampForm(false)
           getStamps().then(r => setStamps(r.data))
         }).catch(() => showMsg('Error updating stamp', 'error'))
+        .finally(() => setStampSaving(false))
     } else {
       addStamp({ stamp_type, size, design_type, quantity: qty, notes })
         .then(() => {
@@ -182,6 +203,7 @@ function Inventory() {
           setShowStampForm(false)
           getStamps().then(r => setStamps(r.data))
         }).catch(() => showMsg('Error adding stamp', 'error'))
+        .finally(() => setStampSaving(false))
     }
   }
 
@@ -201,6 +223,7 @@ function Inventory() {
     const qty = parseFloat(quantity_to_add)
     if (isNaN(qty) || qty <= 0) return showMsg('Enter a valid quantity', 'error')
 
+    setChemSaving(true)
     const existing = chemicals.find(c =>
       c.chemical_name.trim().toLowerCase() === chemical_name.trim().toLowerCase()
     )
@@ -218,6 +241,7 @@ function Inventory() {
         setShowChemForm(false)
         getChemicals().then(r => setChemicals(r.data))
       }).catch(() => showMsg('Error updating chemical', 'error'))
+        .finally(() => setChemSaving(false))
     } else {
       addChemical({ chemical_name, quantity: qty, unit, items_per_box: unit === 'box' ? items_per_box : null, minimum_stock, notes })
         .then(() => {
@@ -226,8 +250,10 @@ function Inventory() {
           setShowChemForm(false)
           getChemicals().then(r => setChemicals(r.data))
         }).catch(() => showMsg('Error adding chemical', 'error'))
+        .finally(() => setChemSaving(false))
     }
   }
+
 
   function handleChemEdit(e) {
     e.preventDefault()
@@ -250,6 +276,7 @@ function Inventory() {
     const qty = parseFloat(quantity_to_add)
     if (isNaN(qty) || qty <= 0) return showMsg('Enter a valid quantity', 'error')
 
+    setFrameSaving(true)
     const existing = frames.find(f =>
       f.frame_type.trim().toLowerCase() === frame_type.trim().toLowerCase() &&
       (f.size || '').trim().toLowerCase() === (size || '').trim().toLowerCase() &&
@@ -263,6 +290,7 @@ function Inventory() {
           setShowFrameForm(false)
           getFrames().then(r => setFrames(r.data))
         }).catch(() => showMsg('Error updating frame', 'error'))
+        .finally(() => setFrameSaving(false))
     } else {
       addFrame({ frame_type, size, design, quantity: qty, notes })
         .then(() => {
@@ -271,6 +299,7 @@ function Inventory() {
           setShowFrameForm(false)
           getFrames().then(r => setFrames(r.data))
         }).catch(() => showMsg('Error adding frame', 'error'))
+        .finally(() => setFrameSaving(false))
     }
   }
 
@@ -290,6 +319,7 @@ function Inventory() {
     const qty = parseFloat(quantity_to_add)
     if (isNaN(qty) || qty <= 0) return showMsg('Enter a valid quantity', 'error')
 
+    setInkSaving(true)
     const existing = inkStock.find(i =>
       i.item_type === item_type && i.item_name.trim().toLowerCase() === item_name.trim().toLowerCase()
     )
@@ -301,6 +331,7 @@ function Inventory() {
           setShowInkForm(false)
           getInkStock().then(r => setInkStock(r.data))
         }).catch(() => showMsg('Error updating ink', 'error'))
+        .finally(() => setInkSaving(false))
     } else {
       addInkStock({ item_name, item_type, quantity: qty, unit, minimum_level, notes })
         .then(() => {
@@ -309,6 +340,7 @@ function Inventory() {
           setShowInkForm(false)
           getInkStock().then(r => setInkStock(r.data))
         }).catch(() => showMsg('Error adding ink', 'error'))
+        .finally(() => setInkSaving(false))
     }
   }
 
@@ -414,7 +446,7 @@ function Inventory() {
                       onChange={e => setFlexForm({ ...flexForm, notes: e.target.value })} />
                   </div>
                 </div>
-                <button style={S.submitBtn} type="submit">Save Stock</button>
+                <LoadingButton loading={flexSaving} style={S.submitBtn} type="submit">Save Stock</LoadingButton>
               </form>
             </div>
           )}
@@ -457,7 +489,7 @@ function Inventory() {
                     value={useForm.notes}
                     onChange={e => setUseForm({ ...useForm, notes: e.target.value })} />
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={S.submitBtn} type="submit">Confirm Use</button>
+                    <LoadingButton loading={useSaving} style={S.submitBtn} type="submit">Confirm Use</LoadingButton>
                     <button style={{ ...S.submitBtn, backgroundColor: '#888' }} type="button"
                       onClick={() => { setShowUseModal(false); setUseForm({ id: null, quantity: '', notes: '' }) }}>
                       Cancel
@@ -465,6 +497,19 @@ function Inventory() {
                   </div>
                 </form>
               </div>
+            </div>
+          )}
+
+          {flexStock.filter(f => f.quantity === 0).length > 0 && (
+            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b', display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: 0, marginBottom: '12px' }}>
+              <Siren size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Out of Stock: {flexStock.filter(f => f.quantity === 0).map(f => `${f.brand} ${f.size_ft}ft`).join(', ')}</span>
+            </div>
+          )}
+          {flexStock.filter(f => f.quantity === 1).length > 0 && (
+            <div style={{ ...S.warningBox, display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: 0, marginBottom: '12px' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Low Stock: {flexStock.filter(f => f.quantity === 1).map(f => `${f.brand} ${f.size_ft}ft (${f.quantity} left)`).join(', ')}</span>
             </div>
           )}
 
@@ -507,7 +552,7 @@ function Inventory() {
                                   onClick={() => { setUseForm({ id: item.id, quantity: '', notes: '' }); setShowUseModal(true) }}>
                                   <Send size={10} /> {item.size_ft}ft
                                 </button>
-                                <button style={{ backgroundColor: '#3e88dd', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                <button style={{ backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                                   onClick={() => {
                                     if (item.quantity <= 0) return
                                     updateFlexStock(item.id, { ...item, quantity: item.quantity - 1 })
@@ -528,19 +573,6 @@ function Inventory() {
               </div>
             )
           }
-
-          {flexStock.filter(f => f.quantity === 1).length > 0 && (
-            <div style={{ ...S.warningBox, display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <span>Low Stock: {flexStock.filter(f => f.quantity === 1).map(f => `${f.brand} ${f.size_ft}ft (${f.quantity} left)`).join(', ')}</span>
-            </div>
-          )}
-          {flexStock.filter(f => f.quantity === 0).length > 0 && (
-            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-              <Siren size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <span>Out of Stock: {flexStock.filter(f => f.quantity === 0).map(f => `${f.brand} ${f.size_ft}ft`).join(', ')}</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -567,7 +599,7 @@ function Inventory() {
                   <div style={{ flex: 1 }}><label style={S.label}>Quantity to Add *</label><input style={S.input} type="number" placeholder="0" value={stampForm.quantity_to_add} onChange={e => setStampForm({ ...stampForm, quantity_to_add: e.target.value })} /></div>
                   <div style={{ flex: 1 }}><label style={S.label}>Notes</label><input style={S.input} placeholder="Optional" value={stampForm.notes} onChange={e => setStampForm({ ...stampForm, notes: e.target.value })} /></div>
                 </div>
-                <button style={S.submitBtn} type="submit">Save Stock</button>
+                <LoadingButton loading={stampSaving} style={S.submitBtn} type="submit">Save Stock</LoadingButton>
               </form>
             </div>
           )}
@@ -660,7 +692,7 @@ function Inventory() {
                   <div style={{ flex: 1 }}><label style={S.label}>Min Stock Alert</label><input style={S.input} type="number" placeholder="0" value={chemForm.minimum_stock} onChange={e => setChemForm({ ...chemForm, minimum_stock: e.target.value })} /></div>
                   <div style={{ flex: 1 }}><label style={S.label}>Notes</label><input style={S.input} placeholder="Optional" value={chemForm.notes} onChange={e => setChemForm({ ...chemForm, notes: e.target.value })} /></div>
                 </div>
-                <button style={S.submitBtn} type="submit">Save Stock</button>
+                <LoadingButton loading={chemSaving} style={S.submitBtn} type="submit">Save Stock</LoadingButton>
               </form>
             </div>
           )}
@@ -753,7 +785,7 @@ function Inventory() {
                   <div style={{ flex: 1 }}><label style={S.label}>Quantity to Add *</label><input style={S.input} type="number" placeholder="0" value={frameForm.quantity_to_add} onChange={e => setFrameForm({ ...frameForm, quantity_to_add: e.target.value })} /></div>
                   <div style={{ flex: 1 }}><label style={S.label}>Notes</label><input style={S.input} placeholder="Optional" value={frameForm.notes} onChange={e => setFrameForm({ ...frameForm, notes: e.target.value })} /></div>
                 </div>
-                <button style={S.submitBtn} type="submit">Save Stock</button>
+                <LoadingButton loading={frameSaving} style={S.submitBtn} type="submit">Save Stock</LoadingButton>
               </form>
             </div>
           )}
@@ -775,6 +807,19 @@ function Inventory() {
                   <button style={{ ...S.submitBtn, backgroundColor: '#888' }} type="button" onClick={() => setEditFrame(null)}>Cancel</button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {frames.filter(f => f.quantity === 0).length > 0 && (
+            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b', display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: 0, marginBottom: '12px' }}>
+              <Siren size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Out of Stock: {frames.filter(f => f.quantity === 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''}`).join(', ')}</span>
+            </div>
+          )}
+          {frames.filter(f => f.quantity < 5 && f.quantity > 0).length > 0 && (
+            <div style={{ ...S.warningBox, display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: 0, marginBottom: '12px' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Low Stock: {frames.filter(f => f.quantity < 5 && f.quantity > 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''} (${f.quantity} left)`).join(', ')}</span>
             </div>
           )}
 
@@ -804,19 +849,6 @@ function Inventory() {
             </tbody>
           </table>
           </div>
-
-          {frames.filter(f => f.quantity < 5 && f.quantity > 0).length > 0 && (
-            <div style={{ ...S.warningBox, display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <span>Low Stock: {frames.filter(f => f.quantity < 5 && f.quantity > 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''} (${f.quantity} left)`).join(', ')}</span>
-            </div>
-          )}
-          {frames.filter(f => f.quantity === 0).length > 0 && (
-            <div style={{ ...S.warningBox, backgroundColor: '#fff0f0', borderColor: '#e74c3c', color: '#c0392b', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-              <Siren size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <span>Out of Stock: {frames.filter(f => f.quantity === 0).map(f => `${f.frame_type} ${f.size ? f.size + ' ' : ''}${f.design || ''}`).join(', ')}</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -865,7 +897,7 @@ function Inventory() {
                   <div style={{ flex: 1 }}><label style={S.label}>Min Level Alert</label><input style={S.input} type="number" step="0.1" placeholder="0" value={inkForm.minimum_level} onChange={e => setInkForm({ ...inkForm, minimum_level: e.target.value })} /></div>
                   <div style={{ flex: 1 }}><label style={S.label}>Notes</label><input style={S.input} placeholder="Optional" value={inkForm.notes} onChange={e => setInkForm({ ...inkForm, notes: e.target.value })} /></div>
                 </div>
-                <button style={S.submitBtn} type="submit">Save Stock</button>
+                <LoadingButton loading={inkSaving} style={S.submitBtn} type="submit">Save Stock</LoadingButton>
               </form>
             </div>
           )}
@@ -1064,7 +1096,7 @@ function DynamicCategoryTab({ category, showMsg, onDeleted }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
         <button
           onClick={() => { if (window.confirm(`Delete category "${category.label}"? Iske saare items bhi delete ho jayenge.`)) onDeleted() }}
-          style={{ background: 'none', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+          style={{ background: '#800000', border: '1px solid #800000', color: '#fff', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
           <Trash2 size={12} /> Delete this Category
         </button>
         <button style={S.addBtn} onClick={() => { setShowForm(!showForm); setEditItem(null) }}>
@@ -1221,23 +1253,23 @@ const S = {
   tabRow:    { display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' },
   tab:       { padding: '10px 18px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' },
   activeTab: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
-  addBtn:    { backgroundColor: '#e94560', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  addBtn:    { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   formBox:   { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
   formHint:  { fontSize: '12px', color: '#27ae60', backgroundColor: '#f0faf0', padding: '8px 12px', borderRadius: '4px', marginBottom: '12px', border: '1px solid #c8e6c9' },
   formRow:   { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' },
   input:     { width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' },
   label:     { fontSize: '12px', color: '#888', display: 'block', marginBottom: '4px' },
-  submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
   table:     { width: '100%', minWidth: '600px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '20px' },
   th:        { padding: '10px 14px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td:        { padding: '10px 14px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr:        { backgroundColor: '#fff' },
   badge:     { padding: '3px 10px', borderRadius: '12px', color: '#fff', fontSize: '11px' },
-  useBtn:    { backgroundColor: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
-  reduceBtn: { backgroundColor: '#7792ea', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
-  editBtn:   { backgroundColor: '#f39c12', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
-  delBtn:    { backgroundColor: '#e74c3c', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
+  useBtn:    { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
+  reduceBtn: { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
+  editBtn:   { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
+  delBtn:    { backgroundColor: '#800000', color: '#fff', border: '1px solid #800000', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
   warningBox:{ backgroundColor: '#fff9e6', border: '1px solid #f39c12', color: '#856404', padding: '12px 16px', borderRadius: '8px', marginTop: '12px', fontSize: '13px' },
   modal:     { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modalBox:  { backgroundColor: '#fff', padding: '24px', borderRadius: '12px', minWidth: '320px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' },

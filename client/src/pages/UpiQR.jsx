@@ -5,6 +5,7 @@ import {
   Smartphone, Printer, ClipboardList, Check, Zap, Download,
   RefreshCw, StickyNote, Trash2, X, CheckCircle2, Calendar,
 } from 'lucide-react'
+import SectionLoader from '../components/SectionLoader'
 
 const UPI_ACCOUNTS = [
   { label: 'BOI Shop Account',               upi: 'boism-9950580621@boi',        name: 'Vijay Flex' },
@@ -268,7 +269,7 @@ export default function UpiQR() {
           </div>
 
           {loadingHistory ? (
-            <div style={{ textAlign: 'center', padding: '60px', color: '#aaa' }}>Loading…</div>
+            <SectionLoader label="History load ho rahi hai..." size="large" />
           ) : history.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px', color: '#aaa', background: '#fff', borderRadius: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}><ClipboardList size={36} /></div>

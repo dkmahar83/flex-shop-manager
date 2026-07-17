@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF, getOrderPhotos, uploadOrderPhoto, deleteOrderPhoto } from '../services/api'
+import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF, getOrderPhotos, uploadOrderPhoto, deleteOrderPhoto, getSetting, getDenominationDrawer } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
+import LoadingButton from '../components/LoadingButton'
+import SectionLoader from '../components/SectionLoader'
 import {
   Ruler,
   X,
@@ -22,8 +24,8 @@ import {
   Paperclip,
   AlertTriangle,
   CheckCircle2,
-  XCircle,
   Send,
+  ListFilter,
 } from 'lucide-react'
 
 const UPI_ACCOUNTS = [
@@ -68,6 +70,22 @@ function Orders() {
   const [selectedUpiForWA, setSelectedUpiForWA] = useState('')
   const [advanceDenomination, setAdvanceDenomination] = useState({})
   const [paymentDenomination, setPaymentDenomination] = useState({})
+  // Note-wise Cash Tracking — global setting (Galla Hisaab tab wali hi key).
+  // Default true jab tak fetch nahi hoti, taaki tracking-ON shops ke liye
+  // field galti se ek pal ke liye bhi unlocked na dikhe.
+  const [noteTrackingEnabled, setNoteTrackingEnabled] = useState(true)
+  // Live drawer notes — "Change Returned" ko available notes se zyada nahi badhne dena
+  const [availableNotes, setAvailableNotes] = useState(null)
+  // Search+Filter ab single-row hain — status filter ab dropdown-menu se select hota hai
+  const [showFilterMenu, setShowFilterMenu] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false)
+  const [downloadingBillId, setDownloadingBillId] = useState(null)
+  const [waSending, setWaSending] = useState(false)
+  // Order-create ka customer field — pehle plain <select> tha, ab daily-sales
+  // "Record Other Payment" jaisa search-as-you-type + filtered dropdown.
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -94,9 +112,27 @@ function Orders() {
   }, [])
 
   useEffect(() => {
+    getSetting('note_tracking_enabled')
+      .then(res => setNoteTrackingEnabled(res.data.value === null ? true : res.data.value === 'true'))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshAvailableNotes()
+  }, [])
+
+  useEffect(() => {
     fetchOrders()
     getCustomers().then(res => setCustomers(res.data))
   }, [filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Message ab khud 4 sec baad gayab ho jaata hai — pehle sirf click-karke
+  // hatao tha, isliye purana "Order created" wagaira screen pe atka rehta tha.
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [message])
 
   function fetchOrders() {
     setLoading(true)
@@ -104,6 +140,12 @@ function Orders() {
     getOrders(filters)
       .then(res => { setOrders(res.data); setLoading(false) })
       .catch(() => setLoading(false))
+  }
+
+  function refreshAvailableNotes() {
+    getDenominationDrawer()
+      .then(res => setAvailableNotes(res.data.denominations))
+      .catch(() => {})
   }
 
   function handleFormChange(e) {
@@ -156,6 +198,10 @@ function Orders() {
 
   function openEditForm(order) {
     setEditingOrder(order)
+    // order list-query pehle se firm_name/contact_name JOIN karke deti hai (jaisa
+    // table row mein use hota hai), isliye customers array load hone ka wait nahi
+    // karna padta — seedha order object se display-text ban jaata hai.
+    setCustomerSearchQuery(`${order.firm_name || ''}${order.contact_name ? ` (${order.contact_name})` : ''}`)
     setForm({
       customer_id: order.customer_id,
       description: order.description || '',
@@ -196,6 +242,8 @@ function Orders() {
     setEditingOrder(null)
     setShowForm(false)
     setAdvanceDenomination({})
+    setCustomerSearchQuery('')
+    setShowCustomerDropdown(false)
   }
 
   function handleSubmit(e) {
@@ -212,6 +260,7 @@ function Orders() {
       const validItems = items.filter(i => i.item_name && (parseFloat(i.quantity) > 0))
       if (validItems.length === 0) return setMessage('Add at least one valid item.')
 
+      setSubmitting(true)
       api.put(`/orders/${editingOrder.id}/items`, {
         items: validItems.map(i => ({
           item_name: i.item_name,
@@ -238,6 +287,7 @@ function Orders() {
         resetForm()
         fetchOrders()
       }).catch(() => setMessage('Error updating order.'))
+        .finally(() => setSubmitting(false))
       return
     }
 
@@ -264,13 +314,16 @@ function Orders() {
       }))
     }
 
+    setSubmitting(true)
     createOrder(payload)
       .then(res => {
         setMessage(`✅ ${res.data.order_number} created successfully!`)
         resetForm()
         fetchOrders()
+        refreshAvailableNotes()
       })
       .catch(() => setMessage('Error creating order.'))
+      .finally(() => setSubmitting(false))
   }
 
   function handleStatusChange(orderId, newStatus) {
@@ -323,6 +376,7 @@ function Orders() {
       return setMessage('UPI ke liye account select karo.')
     }
 
+    setPaymentSubmitting(true)
     const discountPromise = discountAmt > 0
       ? api.put(`/orders/${orderDetail.id}`, {
           discount_amount: (parseFloat(orderDetail.discount_amount) || 0) + discountAmt,
@@ -372,8 +426,10 @@ function Orders() {
           setOrderDetail(res.data)
           fetchOrders()
         })
+        refreshAvailableNotes()
       })
       .catch(() => setMessage('Error recording payment.'))
+      .finally(() => setPaymentSubmitting(false))
   }
 
   function fetchOrderPhotos(id) {
@@ -427,13 +483,30 @@ function Orders() {
     )
   })
 
+  const filteredCustomers = customers.filter(c => {
+    if (!customerSearchQuery.trim()) return true
+    const q = customerSearchQuery.toLowerCase()
+    return (
+      (c.firm_name && c.firm_name.toLowerCase().includes(q)) ||
+      (c.contact_name && c.contact_name.toLowerCase().includes(q)) ||
+      (c.phone && c.phone.toLowerCase().includes(q))
+    )
+  })
+
   const total    = calculateTotal()
   const advance  = parseFloat(form.advance_paid) || 0
   const discount = parseFloat(form.discount_amount) || 0
   const balance  = total - advance - discount
+  // Cash advance amount ab sirf Denomination Counter se bharega jab tracking
+  // ON ho. advance === 0 tak field open rehti hai (mode-selector reveal karne
+  // ke liye), uske baad — agar cash hai — lock ho jaati hai.
+  const advanceAmountLocked = noteTrackingEnabled && advance > 0 && form.advance_payment_mode === 'cash'
+  // Record-payment form mein ye issue nahi hai (mode-buttons hamesha visible
+  // hain), isliye seedha lock kar sakte hain.
+  const paymentAmountLocked = noteTrackingEnabled && paymentForm.payment_mode === 'cash'
 
   return (
-    <div>
+    <div style={{ maxWidth: '100%', overflowX: 'hidden' }}>
       <div style={styles.header}>
         <h2>Orders</h2>
         <button style={styles.addBtn} onClick={() => showForm ? resetForm() : setShowForm(true)}>
@@ -455,20 +528,58 @@ function Orders() {
           <form onSubmit={handleSubmit}>
 
             <div style={styles.formRow}>
-              <select
-                style={styles.input}
-                name="customer_id"
-                value={form.customer_id}
-                onChange={handleFormChange}
-                disabled={!!editingOrder}
-              >
-                <option value="">Select Customer *</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.firm_name} {c.contact_name ? `(${c.contact_name})` : ''}
-                  </option>
-                ))}
-              </select>
+              <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                <input
+                  type="text"
+                  style={{
+                    ...styles.input, width: '100%',
+                    ...(editingOrder ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {})
+                  }}
+                  placeholder="Search customer name... *"
+                  value={customerSearchQuery}
+                  autoComplete="off"
+                  disabled={!!editingOrder}
+                  onChange={e => {
+                    setCustomerSearchQuery(e.target.value)
+                    setShowCustomerDropdown(true)
+                    // Text badalte hi purani selection invalid ho jaati hai — jab tak
+                    // dropdown se dobara select na ho, customer_id khaali rahega
+                    // (yehi behavior "Record Other Payment" search-select mein bhi hai).
+                    if (form.customer_id) setForm(f => ({ ...f, customer_id: '' }))
+                  }}
+                  onFocus={() => !editingOrder && setShowCustomerDropdown(true)}
+                />
+
+                {showCustomerDropdown && !editingOrder && (
+                  <>
+                    <div onClick={() => setShowCustomerDropdown(false)} style={styles.filterMenuBackdrop} />
+                    <div style={{ ...styles.filterMenu, width: '100%', maxHeight: '260px', overflowY: 'auto' }}>
+                      {filteredCustomers.length === 0 ? (
+                        <div style={{ padding: '10px 16px', fontSize: '13px', color: '#999' }}>
+                          Koi customer nahi mila
+                        </div>
+                      ) : (
+                        filteredCustomers.map(c => (
+                          <button
+                            type="button"
+                            key={c.id}
+                            onClick={() => {
+                              setForm(f => ({ ...f, customer_id: c.id }))
+                              setCustomerSearchQuery(`${c.firm_name}${c.contact_name ? ` (${c.contact_name})` : ''}`)
+                              setShowCustomerDropdown(false)
+                            }}
+                            style={{ ...styles.filterMenuItem, textTransform: 'none' }}
+                          >
+                            <strong>{c.firm_name}</strong>
+                            {c.contact_name && <span style={{ color: '#888' }}> — {c.contact_name}</span>}
+                            {c.phone && <div style={{ color: '#aaa', fontSize: '11px' }}>{c.phone}</div>}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
               <input
                 style={styles.input}
                 placeholder="Description (e.g. Dukan ka flex)"
@@ -485,17 +596,17 @@ function Orders() {
                 )}
               </p>
               {items.map((item, index) => (
-                <div key={index} style={{ marginBottom: '10px', backgroundColor: '#f9f9f9', padding: '12px', borderRadius: '8px' }}>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                <div key={index} style={{ marginBottom: '10px', backgroundColor: '#f9f9f9', padding: '12px', borderRadius: '8px', boxSizing: 'border-box', maxWidth: '100%', overflowX: 'hidden' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap', rowGap: '8px' }}>
                     <input
-                      style={{ ...styles.input, flex: 3 }}
+                      style={{ ...styles.input, flex: 3, minWidth: '160px' }}
                       placeholder="Item name (e.g. Flex 180GSM, Pipe 3kg, Labour)"
                       value={item.item_name}
                       onChange={e => handleItemChange(index, 'item_name', e.target.value)}
                     />
                     <input
                       type="date"
-                      style={{ ...styles.input, maxWidth: '150px', flex: 'none' }}
+                      style={{ ...styles.input, maxWidth: '150px', minWidth: '130px', flex: 'none' }}
                       value={item.item_date || ''}
                       onChange={e => handleItemChange(index, 'item_date', e.target.value)}
                     />
@@ -506,53 +617,70 @@ function Orders() {
                         ...styles.toggleBtn,
                         backgroundColor: item.useSize ? '#1a1a2e' : '#fff',
                         color: item.useSize ? '#fff' : '#333',
-                        display: 'inline-flex', alignItems: 'center', gap: '4px'
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        flexShrink: 0
                       }}
                     >
                       <Ruler size={13} /> {item.useSize ? 'Size ON' : 'L×B'}
                     </button>
-                    <button type="button" onClick={() => removeItemRow(index)} style={{ ...styles.removeBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={14} /></button>
+                    <button type="button" onClick={() => removeItemRow(index)} style={{ ...styles.removeBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><X size={14} /></button>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', rowGap: '10px', width: '100%' }}>
                     {item.useSize ? (
-                      <>
-                        <div style={{ flex: 1 }}>
-                          <label style={styles.label}>Length (ft)</label>
-                          <input style={styles.input} type="number" placeholder="e.g. 10"
-                            value={item.length} onChange={e => handleItemChange(index, 'length', e.target.value)} />
+                      // Pehle Length/×/Breadth/×/Pcs/=/Sq.ft — 7 alag flex-items the, jinka
+                      // total minWidth-demand narrow screen pe container se zyada ho jaata
+                      // tha aur flex-wrap reliably wrap nahi kar pata tha (page horizontal-
+                      // overflow karta tha). Ab ek CSS Grid (auto-fit) mein — ye guaranteed
+                      // wrap karta hai, chahe screen kitni bhi narrow ho. × aur = signs ab
+                      // ek chhoti formula-preview line mein hain (bonus: live calculation
+                      // dikhta rehta hai).
+                      <div style={{ flex: '1 1 100%', minWidth: 0 }}>
+                        {(item.length || item.breadth || item.pieces) && (
+                          <div style={{ fontSize: '12px', color: '#888', marginBottom: '6px' }}>
+                            {item.length || 0} ft × {item.breadth || 0} ft × {item.pieces || 1} pcs = <strong style={{ color: '#27ae60' }}>{item.quantity || 0} sq.ft</strong>
+                          </div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))', gap: '8px' }}>
+                          <div>
+                            <label style={styles.label}>Length (ft)</label>
+                            <input style={{ ...styles.input, minWidth: 0, width: '100%' }} type="number" placeholder="e.g. 10"
+                              value={item.length} onChange={e => handleItemChange(index, 'length', e.target.value)} />
+                          </div>
+                          <div>
+                            <label style={styles.label}>Breadth (ft)</label>
+                            <input style={{ ...styles.input, minWidth: 0, width: '100%' }} type="number" placeholder="e.g. 4"
+                              value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
+                          </div>
+                          <div>
+                            <label style={styles.label}>Pcs</label>
+                            <input style={{ ...styles.input, minWidth: 0, width: '100%' }} type="number" placeholder="1"
+                              value={item.pieces} onChange={e => handleItemChange(index, 'pieces', e.target.value)} />
+                          </div>
+                          <div>
+                            <label style={styles.label}>Sq.ft (auto)</label>
+                            <input style={{ ...styles.input, minWidth: 0, width: '100%', backgroundColor: '#e8f5e9' }} value={item.quantity} readOnly />
+                          </div>
                         </div>
-                        <div style={{ paddingTop: '16px', fontSize: '18px' }}>×</div>
-                        <div style={{ flex: 1 }}>
-                          <label style={styles.label}>Breadth (ft)</label>
-                          <input style={styles.input} type="number" placeholder="e.g. 4"
-                            value={item.breadth} onChange={e => handleItemChange(index, 'breadth', e.target.value)} />
-                        </div>
-                        <div style={{ paddingTop: '16px', fontSize: '18px' }}>×</div>
-                        <div style={{ flex: 1 }}>
-                          <label style={styles.label}>Pcs</label>
-                          <input style={styles.input} type="number" placeholder="1"
-                            value={item.pieces} onChange={e => handleItemChange(index, 'pieces', e.target.value)} />
-                        </div>
-                        <div style={{ paddingTop: '16px', fontSize: '18px' }}>=</div>
-                        <div style={{ flex: 1 }}>
-                          <label style={styles.label}>Sq.ft (auto)</label>
-                          <input style={{ ...styles.input, backgroundColor: '#e8f5e9' }} value={item.quantity} readOnly />
-                        </div>
-                      </>
+                      </div>
                     ) : (
-                      <div style={{ flex: 1 }}>
+                      // flex:1 pehle wide-screen par teeno columns ko poori row-width
+                      // equally baant deta tha — input apni chhoti intrinsic-width hi
+                      // leta tha (width:100% missing), isliye Subtotal door chala jaata
+                      // tha bade khaali gap ke saath. Ab flex-grow band, maxWidth-capped
+                      // — compact rehta hai chahe screen kitni bhi wide ho.
+                      <div style={{ flex: '0 1 150px', minWidth: '90px', maxWidth: '180px' }}>
                         <label style={styles.label}>Quantity / Sq.ft</label>
-                        <input style={styles.input} type="number" placeholder="0"
+                        <input style={{ ...styles.input, minWidth: '0', width: '100%' }} type="number" placeholder="0"
                           value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} />
                       </div>
                     )}
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: '0 1 150px', minWidth: '90px', maxWidth: '180px' }}>
                       <label style={styles.label}>Rate (₹)</label>
-                      <input style={styles.input} type="number" placeholder="0"
+                      <input style={{ ...styles.input, minWidth: '0', width: '100%' }} type="number" placeholder="0"
                         value={item.unit_price} onChange={e => handleItemChange(index, 'unit_price', e.target.value)} />
                     </div>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: '0 1 150px', minWidth: '90px', maxWidth: '180px' }}>
                       <label style={styles.label}>Subtotal</label>
                       <div style={{ padding: '10px', fontWeight: 'bold', fontSize: '16px' }}>
                         ₹{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
@@ -573,11 +701,22 @@ function Orders() {
 
               <div style={styles.totalRow}>
                 <span>Advance Paid:</span>
-                <input
-                  style={{ ...styles.input, width: '150px', flex: 'none' }}
-                  placeholder="0" type="number" name="advance_paid"
-                  value={form.advance_paid} onChange={handleFormChange}
-                />
+                <div>
+                  <input
+                    style={{
+                      ...styles.input, width: '150px', flex: 'none',
+                      ...(advanceAmountLocked ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {})
+                    }}
+                    placeholder="0" type="number" name="advance_paid"
+                    value={form.advance_paid} onChange={handleFormChange}
+                    readOnly={advanceAmountLocked}
+                  />
+                  {advanceAmountLocked && (
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
+                      Denomination counter se bharo (neeche)
+                    </div>
+                  )}
+                </div>
               </div>
 
               {advance > 0 && (
@@ -626,8 +765,9 @@ function Orders() {
                     </div>
                   </div>
 
-                  {form.advance_payment_mode === 'cash' && (
+                  {form.advance_payment_mode === 'cash' && noteTrackingEnabled && (
                     <DenominationCounter
+                      availableNotes={availableNotes}
                       onApply={(total, counts) => {
                         setForm(f => ({ ...f, advance_paid: String(total) }))
                         setAdvanceDenomination(counts)
@@ -696,41 +836,66 @@ function Orders() {
               </div>
             </div>
 
-            <button style={styles.submitBtn} type="submit">
+            <LoadingButton loading={submitting} style={styles.submitBtn} type="submit">
               {editingOrder ? 'Update Order' : 'Create Order'}
-            </button>
+            </LoadingButton>
           </form>
         </div>
       )}
       <div style={styles.searchRow}>
-      <div style={{ position: 'relative', flex: 1, maxWidth: '340px' }}>
-        <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
-        <input
-          type="text"
-          placeholder="Search by Order No. / Firm Name / Phone..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          style={{ ...styles.searchInput, width: '100%', paddingLeft: '36px' }}
-        />
-      </div>
-      {searchQuery && (
-        <button onClick={() => setSearchQuery('')} style={{ ...styles.clearSearchBtn, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-          <X size={13} /> Clear
-        </button>
-      )}
-    </div>
-      <div style={styles.filterRow}>
-        {['', 'pending', 'in_progress', 'ready', 'delivered'].map(s => (
-          <button key={s}
-            style={{ ...styles.filterBtn, ...(filterStatus === s ? styles.filterActive : {}) }}
-            onClick={() => setFilterStatus(s)}
-          >
-            {s === '' ? 'All' : s.replace('_', ' ')}
+        <div style={{ position: 'relative', flex: 1, maxWidth: '340px' }}>
+          <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+          <input
+            type="text"
+            placeholder="Search by Order No. / Firm Name / Phone..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ ...styles.searchInput, width: '100%', paddingLeft: '36px' }}
+          />
+        </div>
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} style={{ ...styles.clearSearchBtn, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <X size={13} /> Clear
           </button>
-        ))}
+        )}
+
+        {/* Status filter — ab dropdown mein, search ke saath hi single line */}
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowFilterMenu(o => !o)}
+            style={{
+              ...styles.filterDropdownBtn,
+              ...(filterStatus ? styles.filterDropdownBtnActive : {})
+            }}
+          >
+            <ListFilter size={14} />
+            {filterStatus === '' ? 'Filter' : filterStatus.replace('_', ' ')}
+            <ChevronDown size={13} />
+          </button>
+
+          {showFilterMenu && (
+            <>
+              <div onClick={() => setShowFilterMenu(false)} style={styles.filterMenuBackdrop} />
+              <div style={styles.filterMenu}>
+                {['', 'pending', 'in_progress', 'ready', 'delivered'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => { setFilterStatus(s); setShowFilterMenu(false) }}
+                    style={{
+                      ...styles.filterMenuItem,
+                      ...(filterStatus === s ? styles.filterMenuItemActive : {})
+                    }}
+                  >
+                    {s === '' ? 'All' : s.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {loading ? <p>Loading...</p> : orders.length === 0 ? (
+          {loading ? <SectionLoader label="Orders load ho rahe hain..." /> : orders.length === 0 ? (
           <p style={{ color: '#888' }}>No orders found.</p>
         ) : filteredOrders.length === 0 ? (
           <p style={{ color: '#888' }}>No orders match your search.</p>
@@ -835,8 +1000,11 @@ function Orders() {
                     <button onClick={() => openEditForm(o)} style={{ ...styles.editBtn, marginLeft: '6px' }}>
                       Edit
                     </button>
-                    <button
+                    <LoadingButton
+                      loading={downloadingBillId === o.id}
+                      loadingText="..."
                       onClick={() => {
+                        setDownloadingBillId(o.id)
                         generatePDF(o.id)
                           .then(res => {
                             const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
@@ -849,21 +1017,20 @@ function Orders() {
                             setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000)
                           })
                           .catch(() => setMessage('Error loading bill PDF.'))
+                          .finally(() => setDownloadingBillId(null))
                       }}
                       style={{
                         backgroundColor: '#fff',
-                        color: '#8e44ad',
-                        border: '1px solid #8e44ad',
+                        color: '#1a1a2e',
+                        border: '1px solid #1a1a2e',
                         padding: '5px 12px',
                         borderRadius: '4px',
-                        cursor: 'pointer',
                         fontSize: '12px',
-                        marginLeft: '6px',
-                        display: 'inline-flex', alignItems: 'center', gap: '4px'
+                        marginLeft: '6px'
                       }}
                     >
                       <FileText size={12} /> Bill
-                    </button>
+                    </LoadingButton>
                     <button
                       onClick={() => {
                         if (!o.phone) return setMessage('Customer has no phone number.')
@@ -871,9 +1038,9 @@ function Orders() {
                         setWaSendModal(o)
                       }}
                       style={{
-                        backgroundColor: waStatus === 'ready' ? '#25D366' : '#ccc',
-                        color: '#fff',
-                        border: 'none',
+                        backgroundColor: waStatus === 'ready' ? '#fff' : '#f5f5f5',
+                        color: waStatus === 'ready' ? '#1a1a2e' : '#aaa',
+                        border: waStatus === 'ready' ? '1px solid #1a1a2e' : '1px solid #ddd',
                         padding: '5px 12px',
                         borderRadius: '4px',
                         cursor: waStatus === 'ready' ? 'pointer' : 'not-allowed',
@@ -1132,12 +1299,23 @@ function Orders() {
                               )}
 
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                                <input
-                                  style={{ ...styles.input, maxWidth: '150px' }}
-                                  type="number" placeholder="Amount ₹"
-                                  value={paymentForm.amount}
-                                  onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                                />
+                                <div>
+                                  <input
+                                    style={{
+                                      ...styles.input, maxWidth: '150px',
+                                      ...(paymentAmountLocked ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {})
+                                    }}
+                                    type="number" placeholder="Amount ₹"
+                                    value={paymentForm.amount}
+                                    onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                                    readOnly={paymentAmountLocked}
+                                  />
+                                  {paymentAmountLocked && (
+                                    <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>
+                                      Denomination counter se bharo
+                                    </div>
+                                  )}
+                                </div>
                                 <input
                                   style={{ ...styles.input, maxWidth: '160px' }}
                                   type="date"
@@ -1186,9 +1364,10 @@ function Orders() {
                                   </div>
                                 </div>
 
-                                {paymentForm.payment_mode === 'cash' && (
+                                {paymentForm.payment_mode === 'cash' && noteTrackingEnabled && (
                                   <div style={{ flexBasis: '100%' }}>
                                     <DenominationCounter
+                                      availableNotes={availableNotes}
                                       onApply={(total, counts) => {
                                         setPaymentForm(f => ({ ...f, amount: String(total) }))
                                         setPaymentDenomination(counts)
@@ -1247,7 +1426,7 @@ function Orders() {
                                   />
                                 </div>
 
-                                <button type="submit" style={styles.submitBtn}>Save Payment</button>
+                                <LoadingButton loading={paymentSubmitting} type="submit" style={styles.submitBtn}>Save Payment</LoadingButton>
                               </div>
                             </form>
                           )}
@@ -1399,17 +1578,20 @@ function Orders() {
               >
                 Cancel
               </button>
-              <button
+              <LoadingButton
+                loading={waSending}
                 onClick={() => {
                   const o = waSendModal
+                  setWaSending(true)
                   sendBillWhatsApp(o.id, selectedUpiForWA)
                     .then(res => { setMessage(res.data.message); setWaSendModal(null) })
                     .catch(err => { setMessage('WhatsApp error: ' + (err.response?.data?.error || 'Not connected')); setWaSendModal(null) })
+                    .finally(() => setWaSending(false))
                 }}
-                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#25D366', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#25D366', color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
               >
                 <Send size={14} /> Send
-              </button>
+              </LoadingButton>
             </div>
           </div>
         </div>
@@ -1447,33 +1629,36 @@ function statusColor(status) {
 
 const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  addBtn: { backgroundColor: '#e94560', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  addBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
   message: { backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '10px 16px', borderRadius: '6px', marginBottom: '16px', cursor: 'pointer' },
-  formBox: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
+  formBox: { backgroundColor: '#fff', padding: '20px', borderRadius: '8px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', boxSizing: 'border-box', maxWidth: '100%', overflowX: 'hidden' },
   formRow: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' },
   input: { padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', flex: '1', minWidth: '120px', boxSizing: 'border-box' },
   label: { fontSize: '12px', color: '#888', display: 'block', marginBottom: '4px' },
   toggleBtn: { padding: '8px 12px', borderRadius: '6px', border: '1px solid #ddd', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap' },
   removeBtn: { width: '32px', height: '32px', backgroundColor: '#fee', color: '#e74c3c', border: '1px solid #e74c3c', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' },
-  deleteBtn: { backgroundColor: '#fff', color: '#e74c3c', border: '1px solid #e74c3c', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  deleteBtn: { backgroundColor: '#800000', color: '#fff', border: '1px solid #800000', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   addItemBtn: { backgroundColor: '#f0f0f0', border: '1px solid #ddd', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', marginTop: '4px' },
-  totalsBox: { backgroundColor: '#f8f8f8', padding: '16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '460px' },
-  totalRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '15px' },
+  totalsBox: { backgroundColor: '#f8f8f8', padding: '16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '460px', width: '100%', boxSizing: 'border-box' },
+  totalRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '15px', flexWrap: 'wrap', gap: '8px' },
   submitBtn: { backgroundColor: '#1a1a2e', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-  filterRow: { display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' },
-  searchRow: { display: 'flex', gap: '10px', marginBottom: '14px', alignItems: 'center' },
+  searchRow: { display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' },
   searchInput: { padding: '10px 16px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px', width: '340px', maxWidth: '100%', boxSizing: 'border-box' },
   clearSearchBtn: { backgroundColor: '#fff', border: '1px solid #ddd', color: '#888', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
-  filterBtn: { padding: '7px 16px', borderRadius: '20px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', textTransform: 'capitalize' },
-  filterActive: { backgroundColor: '#1a1a2e', color: '#fff', border: '1px solid #1a1a2e' },
+  filterDropdownBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: '#fff', color: '#555', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textTransform: 'capitalize', whiteSpace: 'nowrap' },
+  filterDropdownBtnActive: { border: '1px solid #1a1a2e', color: '#1a1a2e' },
+  filterMenuBackdrop: { position: 'fixed', inset: 0, zIndex: 90 },
+  filterMenu: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', border: '1px solid #eee', zIndex: 100, minWidth: '160px', overflow: 'hidden' },
+  filterMenuItem: { display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', color: '#333', textTransform: 'capitalize' },
+  filterMenuItemActive: { backgroundColor: '#1a1a2e', color: '#fff', fontWeight: 'bold' },
   table: { width: '100%', minWidth: '900px', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   tableScroll: { overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
   th: { padding: '12px 16px', textAlign: 'left', backgroundColor: '#f8f8f8', fontSize: '13px', color: '#555', borderBottom: '1px solid #eee' },
   td: { padding: '12px 16px', fontSize: '14px', borderBottom: '1px solid #f0f0f0' },
   tr: { backgroundColor: '#fff' },
   statusSelect: { border: 'none', padding: '5px 10px', borderRadius: '12px', color: '#fff', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' },
-  editBtn: { backgroundColor: '#fff', color: '#3498db', border: '1px solid #3498db', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
-  detailBtn: { backgroundColor: '#fff', color: '#555', border: '1px solid #ddd', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  editBtn: { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  detailBtn: { backgroundColor: '#fff', color: '#1a1a2e', border: '1px solid #1a1a2e', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   detailCell: { padding: '0', backgroundColor: '#f0f7ff', borderBottom: '2px solid #ddd' },
   detailBox: { padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' },
   detailSection: { backgroundColor: '#fff', padding: '16px', borderRadius: '8px' },

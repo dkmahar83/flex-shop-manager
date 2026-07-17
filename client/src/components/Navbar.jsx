@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -80,17 +80,35 @@ function Navbar({ user, onLogout, onLayoutChange }) {
     return acc
   }, {})
   const [openGroups, setOpenGroups] = useState(defaultOpen)
-
-  // Track viewport size
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  // Track viewport size — debounced. Continuous resize-drag ke dauraan browser
+  // bahut saare resize events fire karta hai; har event pe turant setIsMobile
+  // karne se baar-baar transition re-trigger hota tha, jo resize ke exact
+  // moment mein transient visual glitch (labels overlap/blend) create karta
+  // tha. Ab sirf resize thoda ruk jaane ke baad (120ms) state update hoga.
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    let timeoutId
+    const handleResize = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        setIsMobile(window.innerWidth < 768)
+      }, 120)
+    }
     window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(timeoutId)
+    }
   }, [])
 
   // Tell App.jsx how much left-margin the main content needs.
   // Mobile drawer floats OVER content (overlay) so margin stays at rail width.
-  useEffect(() => {
+  // useLayoutEffect (na ki useEffect) — ye paint se PEHLE synchronously chalta
+  // hai, isliye sidebar-width aur content-margin hamesha ek hi frame mein
+  // sync ho jaate hain. useEffect se ek frame ka gap aata tha (sidebar width
+  // badal chuki, margin abhi purana) — usi stale-frame ke dauraan resize ke
+  // waqt text (jaise "Accounts") gayab/glitch dikhta tha.
+  useLayoutEffect(() => {
     const margin = isMobile ? RAIL_WIDTH : (desktopCollapsed ? RAIL_WIDTH : FULL_WIDTH)
     onLayoutChange?.(margin)
   }, [isMobile, desktopCollapsed, onLayoutChange])
@@ -155,7 +173,11 @@ function Navbar({ user, onLogout, onLayoutChange }) {
         </div>
 
         {/* Nav Groups */}
-        <nav style={styles.navLinks}>
+        <style>{`
+          .navlinks-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+          .navlinks-scroll::-webkit-scrollbar { display: none; }
+        `}</style>
+        <nav className="navlinks-scroll" style={styles.navLinks}>
           {groups.map(group => {
             const GroupIcon = group.icon
             const isGroupOpen = expanded && !!openGroups[group.id]
@@ -229,7 +251,7 @@ function Navbar({ user, onLogout, onLayoutChange }) {
           )}
 
           <button
-            onClick={onLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             style={{ ...styles.logoutBtn, justifyContent: expanded ? 'flex-start' : 'center' }}
             title="Logout"
           >
@@ -238,6 +260,42 @@ function Navbar({ user, onLogout, onLayoutChange }) {
           </button>
         </div>
       </div>
+
+      {showLogoutConfirm && (
+        <div
+          onClick={() => setShowLogoutConfirm(false)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '24px',
+              width: '340px', maxWidth: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <h3 style={{ marginBottom: '10px', color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <LogOut size={17} /> Logout Karna Hai?
+            </h3>
+            <p style={{ fontSize: '13px', color: '#555', marginBottom: '20px' }}>
+              Dobara login karna padega session shuru karne ke liye.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setShowLogoutConfirm(false); onLogout() }}
+                style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #800000', backgroundColor: '#800000', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+              >
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

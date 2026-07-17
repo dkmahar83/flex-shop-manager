@@ -4,6 +4,7 @@ const db = require('../db/database')
 const PDFDocument = require('pdfkit')
 const axios = require('axios')
 const { getStatus, getLastQR, sendBillToCustomer } = require('../whatsapp')
+const { getUpiAccountName } = require('../config/upiAccounts')
 
 // GET /api/whatsapp/status
 router.get('/status', (req, res) => {
@@ -35,7 +36,7 @@ router.post('/send-bill/:orderId', async (req, res) => {
       try {
         // Fetch the SAME PDF that the download button uses
         const pdfResponse = await axios.get(
-          `http://localhost:5000/api/pdf/bill/${orderId}`,
+          `http://localhost:${process.env.PORT || 5000}/api/pdf/bill/${orderId}`,
           {
             responseType: 'arraybuffer',
             headers: { Authorization: req.headers.authorization }
@@ -63,12 +64,7 @@ router.post('/send-bill/:orderId', async (req, res) => {
 
         // Activity log save karo
         if (upiId && (order.balance_due || 0) > 0) {
-          const label = [
-            { upiId: 'boism-9950580621@boi', name: 'BOI Shop Account' },
-            { upiId: 'gpay-11263065173@okbizaxis', name: 'Google Pay - Rampratap Painter' },
-            { upiId: 'q214575569@ybl', name: 'PhonePe - Bhavya Printers' },
-            { upiId: '7073580621@yapl', name: 'Amazon Pay - Deepak' }
-          ].find(a => a.upiId === upiId)?.name || upiId
+          const label = getUpiAccountName(upiId)
 
           const activity = `📲 Payment request of ₹${order.balance_due} sent via UPI QR (${label}) on ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}`
 
@@ -193,7 +189,7 @@ router.post('/send-statement/:customerId', async (req, res) => {
         db.all(`
           SELECT * FROM cash_income
           WHERE customer_id = ?
-            AND (notes NOT IN ('Order Advance Payment', 'Galla Opening Balance') OR notes IS NULL)
+            AND (notes IS NULL OR notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance'))
         `, [customerId], async (err, cashIncomes) => {
           if (err) return res.status(500).json({ error: err.message })
 
@@ -206,16 +202,18 @@ router.post('/send-statement/:customerId', async (req, res) => {
 
           try {
             const pdfResponse = await axios.get(
-              `http://localhost:5000/api/pdf/statement/${customerId}`,
+              `http://localhost:${process.env.PORT || 5000}/api/pdf/statement/${customerId}`,
               { responseType: 'arraybuffer', headers: { Authorization: req.headers.authorization } }
             )
             const pdfBuffer = Buffer.from(pdfResponse.data)
             const { upiId } = req.body
 
             let formattedPhone = customer.phone.replace(/\D/g, '')
-            if (formattedPhone.startsWith('0')) formattedPhone = '91' + formattedPhone.substring(1)
-            if (!formattedPhone.startsWith('91')) formattedPhone = '91' + formattedPhone
-            const chatId = `${formattedPhone}@c.us`
+            if (formattedPhone.startsWith('0')) formattedPhone = formattedPhone.substring(1)
+            // Length-based — root whatsapp.js (sendBillToCustomer) mein jo fix diya
+            // tha, wo yahan cover nahi karta kyunki ye route apna khud ka client-call
+            // use karta hai. Same ambiguous startsWith('91') bug yahan duplicate tha.
+            if (formattedPhone.length === 10) formattedPhone = '91' + formattedPhone
 
             const { getClient, getStatus } = require('../whatsapp')
             const { MessageMedia } = require('whatsapp-web.js')
@@ -223,6 +221,13 @@ router.post('/send-statement/:customerId', async (req, res) => {
             const status = getStatus()
             if (!status.ready) throw new Error('WhatsApp not connected. Please scan QR code first.')
             const waClient = getClient()
+
+            // send-bill (sendBillToCustomer ke through) already getNumberId se confirm
+            // karta hai number WhatsApp pe hai ya nahi — yahan missing thi, add kar di
+            // taaki dono routes consistent behave karein (silent-wrong-send se bachne ke liye).
+            const numberId = await waClient.getNumberId(formattedPhone)
+            if (!numberId) throw new Error(`WhatsApp account nahi mila: ${formattedPhone}`)
+            const chatId = numberId._serialized
 
             const message = `📋 *Account Statement — ${customer.firm_name}*\n\n` +
               `Generated: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}\n\n` +

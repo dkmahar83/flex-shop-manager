@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const validate = require('../middleware/validate');
+const { createExpenseSchema } = require('../schemas/expenseSchemas');
 
 // GET /api/expenses?month=06&year=2026
 router.get('/', (req, res) => {

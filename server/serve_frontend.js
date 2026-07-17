@@ -8,7 +8,7 @@ const app = express();
 const PORT = 5173;
 
 // Serve static files from React build
-const BUILD_PATH = 'C:\\Users\\dkmah\\flex-shop-manager\\client\\dist';
+const BUILD_PATH = process.env.FRONTEND_BUILD_PATH || path.join(__dirname, '..', 'client', 'dist');
 
 app.use(express.static(BUILD_PATH));
 

@@ -617,12 +617,36 @@ router.get('/statement/:customerId', (req, res) => {
           db.all(`
             SELECT * FROM cash_income
             WHERE customer_id = ?
-              AND (notes NOT IN ('Order Advance Payment', 'Galla Opening Balance') OR notes IS NULL)
+              AND (notes IS NULL OR (
+                notes NOT IN ('Order Advance Payment', 'Order Payment', 'Galla Opening Balance')
+                AND notes NOT LIKE 'Cheque Cleared%'
+              ))
             ORDER BY income_date ASC
           `, [customerId], (err, cashIncomes) => {
             if (err) return res.status(500).json({ error: err.message })
 
-            renderCustomerStatement(res, customer, orders, allItems, allPayments, cashIncomes || [])
+            // Commission entries expenses table mein hain (customer_id linked),
+            // cash_income mein nahi — Accounts page inhe customer ke against
+            // count karta hai (Due badhta hai), isliye alag se fetch karke
+            // Balance Due mein wapas add karna hai.
+            db.all(`
+              SELECT * FROM expenses
+              WHERE customer_id = ? AND category = 'Commission'
+              ORDER BY expense_date ASC, id ASC
+            `, [customerId], (err, commissions) => {
+              if (err) return res.status(500).json({ error: err.message })
+
+              // Cheques table hi source-of-truth — cash_income ka 'Cheque Cleared%' row
+              // ab exclude ho chuka hai upar, statement seedha yahan se sahi label +
+              // order-link nikaalta hai.
+              db.all(`
+                SELECT * FROM cheques WHERE customer_id = ? ORDER BY received_date ASC
+              `, [customerId], (err, cheques) => {
+                if (err) return res.status(500).json({ error: err.message })
+
+                renderCustomerStatement(res, customer, orders, allItems, allPayments, cashIncomes || [], commissions || [], cheques || [])
+              })
+            })
           })
         })
       })
@@ -630,7 +654,7 @@ router.get('/statement/:customerId', (req, res) => {
   })
 })
 
-function renderCustomerStatement(res, customer, orders, allItems, allPayments, cashIncomes) {
+function renderCustomerStatement(res, customer, orders, allItems, allPayments, cashIncomes, commissions, cheques) {
   const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true })
   const filename = `Statement-${customer.firm_name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
   res.setHeader('Content-Type', 'application/pdf')
@@ -767,18 +791,24 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
   if (customer.contact_name) { doc.fill(GRAY).fontSize(9).font('Helvetica').text(`Contact : ${customer.contact_name}`, MARGIN + 14, cY); cY += 14 }
   if (customer.phone) doc.fill(GRAY).fontSize(9).text(`Phone   : ${customer.phone}`, MARGIN + 14, cY)
 
-  const totalBilled   = orders.reduce((s, o) => s + parseFloat(o.total_amount || 0), 0)
-  const totalAdvance  = orders.reduce((s, o) => s + parseFloat(o.advance_paid || 0), 0)
-  const totalPayments = allPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
-  const totalCash     = cashIncomes.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
-  const totalDiscount = orders.reduce((s, o) => s + parseFloat(o.discount_amount || 0), 0)
-  const totalPaid     = totalAdvance + totalPayments + totalCash
-  // ✅ FIX: Balance Due must be Total Billed − Total Paid − Discount.
-  // Previously this summed each order's own balance_due, which only reflects
-  // advances/payments tied to that specific order — it never subtracted
-  // "Other Payments Received" (unallocated cash_income against the customer),
-  // so the statement overstated Balance Due by exactly that amount.
-  const totalDue      = totalBilled - totalPaid - totalDiscount
+  // Opening Balance ab order nahi — customer.opening_balance field se seedha.
+  const openingBalance  = parseFloat(customer.opening_balance || 0)
+  const totalBilled     = orders.reduce((s, o) => s + parseFloat(o.total_amount || 0), 0) + openingBalance
+  const totalAdvance    = orders.reduce((s, o) => s + parseFloat(o.advance_paid || 0), 0)
+  const totalPayments   = allPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+  const totalCash       = cashIncomes.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+  const totalDiscount   = orders.reduce((s, o) => s + parseFloat(o.discount_amount || 0), 0)
+  const totalCommission = commissions.reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+  // Cleared cheques ka paisa ab cash_income ke mirror-row se nahi (wo exclude ho chuka
+  // hai), seedha cheques table se — order-linked aur standalone dono, ek hi baar count.
+  const totalChequesCleared = cheques.filter(c => c.status === 'cleared').reduce((s, c) => s + parseFloat(c.amount || 0), 0)
+  const totalPaid       = totalAdvance + totalPayments + totalCash + totalChequesCleared
+  // Balance Due = Total Billed − Total Paid − Discount + Commission.
+  // Commission ("Commission Wapas Ki") shop se customer ko diya gaya cash hai,
+  // order se related nahi — isliye Due mein wapas add hota hai (Accounts page
+  // ke Total Due se exactly match karega). Discount iska ulta hai — maaf kiya
+  // gaya amount, isliye subtract hota hai.
+  const totalDue        = totalBilled - totalPaid - totalDiscount + totalCommission
 
   const sumX = MARGIN + CONTENT - 190
   doc.fill(GRAY).fontSize(8).font('Helvetica-Bold').text('SUMMARY', sumX, INFO_TOP + 10)
@@ -796,12 +826,30 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
   hRule(INFO_TOP + 80)
   currentY = INFO_TOP + 80 + 20
 
+  // ── OPENING BALANCE — ab order nahi, ek chhoti highlighted line ──
+  if (openingBalance > 0) {
+    checkPageBreak(36)
+    doc.rect(MARGIN, currentY, CONTENT, 30).fill('#f5f0ff')
+    doc.rect(MARGIN, currentY, 4, 30).fill('#8e44ad')
+    doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold')
+       .text('Opening Balance (Purana Bakaya)', MARGIN + 14, currentY + 6, { lineBreak: false })
+    doc.fill(GRAY).fontSize(8).font('Helvetica')
+       .text(
+         `${customer.opening_balance_notes || ''}${customer.opening_balance_date ? '  |  ' + fmtDate(customer.opening_balance_date) : ''}`,
+         MARGIN + 14, currentY + 19, { width: CONTENT - 180, lineBreak: false }
+       )
+    doc.fill('#8e44ad').fontSize(12).font('Helvetica-Bold')
+       .text(rs(openingBalance), MARGIN + CONTENT - 110, currentY + 9, { width: 96, align: 'right', lineBreak: false })
+    currentY += 40
+  }
+
   // ══════════════════════════════════════════
   // ORDERS
   // ══════════════════════════════════════════
   orders.forEach((order, orderIdx) => {
     const orderItems    = allItems.filter(i => i.order_id === order.id)
     const orderPayments = allPayments.filter(p => p.order_id === order.id)
+    const orderCheques  = cheques.filter(c => c.order_id === order.id)
 
     checkPageBreak(80)
 
@@ -862,10 +910,12 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
     const oDiscount = parseFloat(order.discount_amount || 0)
     const oBalance  = parseFloat(order.balance_due || 0)
 
+    const oChequesCleared = orderCheques.filter(c => c.status === 'cleared').reduce((s, c) => s + parseFloat(c.amount || 0), 0)
     const sumCols = [
       { label: 'Total',    value: rs(oTotal),                               color: PRIMARY },
       { label: 'Advance',  value: oAdvance  > 0 ? `- ${rs(oAdvance)}`  : '—', color: oAdvance  > 0 ? GREEN  : GRAY },
       { label: 'Payments', value: oPmts     > 0 ? `- ${rs(oPmts)}`     : '—', color: oPmts     > 0 ? GREEN  : GRAY },
+      { label: 'Cheques',  value: oChequesCleared > 0 ? `- ${rs(oChequesCleared)}` : '—', color: oChequesCleared > 0 ? GREEN : GRAY },
       { label: 'Discount', value: oDiscount > 0 ? `- ${rs(oDiscount)}` : '—', color: oDiscount > 0 ? ORANGE : GRAY },
       { label: 'Balance',  value: rs(oBalance),                             color: oBalance  > 0 ? RED    : GREEN },
     ]
@@ -882,7 +932,7 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
     currentY += 34
 
     // Order payment detail lines
-    if (oAdvance > 0 || orderPayments.length > 0) {
+    if (oAdvance > 0 || orderPayments.length > 0 || orderCheques.length > 0) {
       checkPageBreak(20)
       doc.fill(GRAY).fontSize(7.5).font('Helvetica-Bold')
          .text('Payment history for this order:', MARGIN + 6, currentY + 2)
@@ -908,25 +958,69 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
                  MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
         currentY += 13
       })
+
+      // Pehle yahan cheques bilkul missing the — isliye order-bill mein "Cheque Payment"
+      // dikhta tha lekin statement mein disconnected "Cash" ban jaata tha.
+      orderCheques.forEach(c => {
+        checkPageBreak(14)
+        const dt          = fmtDateTime(c.received_date)
+        const statusLabel = c.status === 'cleared' ? 'Cleared' : c.status === 'bounced' ? 'Bounced' : c.status === 'deposited' ? 'Deposited' : 'Received'
+        const modeText     = `Cheque${c.cheque_number ? ' #' + c.cheque_number : ''}${c.bank_name ? ' — ' + c.bank_name : ''}  [${statusLabel}]`
+        const color        = c.status === 'cleared' ? GREEN : (c.status === 'bounced' ? RED : ORANGE)
+        doc.fill(color).fontSize(8).font('Helvetica-Bold').text(`+ ${rs(c.amount)}`, MARGIN + 10, currentY + 2)
+        doc.fill(GRAY).fontSize(7.5).font('Helvetica')
+           .text(`${modeText}  |  ${dt.date}${dt.time ? ', ' + dt.time : ''}  [Order ${order.order_number || '#' + order.id}]`,
+                 MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
+        currentY += 13
+      })
     }
 
     currentY += orderIdx < orders.length - 1 ? 10 : 16
     if (orderIdx < orders.length - 1) { hRule(currentY, '#cccccc', 0.8); currentY += 14 }
   })
 
-  // ── OTHER CASH INCOME ──
-  if (cashIncomes.length > 0) {
+  // ── OTHER ACCOUNT ENTRIES — cash_income (+, green) merged with Commission (−, red) ──
+  // Ek hi date-sorted list mein, jaisa Accounts page ki "Complete Payment History" dikhati hai.
+  const otherEntries = [
+    ...cashIncomes.map(c => ({
+      amount: parseFloat(c.amount || 0),
+      sign: 1,
+      date: c.income_date || c.created_at,
+      mode: c.payment_mode === 'upi' ? `UPI${c.upi_account ? ' — ' + c.upi_account : ''}` : 'Cash',
+      label: c.notes || null
+    })),
+    ...commissions.map(c => ({
+      amount: parseFloat(c.amount || 0),
+      sign: -1,
+      date: c.expense_date,
+      mode: c.payment_mode === 'upi' ? `UPI${c.upi_account ? ' — ' + c.upi_account : ''}` : 'Cash',
+      label: 'Commission Wapas Ki' + (c.description ? ' — ' + c.description : '')
+    })),
+    // Sirf standalone (kisi order se link na hone waale) cleared cheques — order-linked
+    // waale ab apne order ke "Payment history" mein dikhte hain, dono jagah dikhane se
+    // double ho jaata.
+    ...cheques.filter(c => !c.order_id && c.status === 'cleared').map(c => ({
+      amount: parseFloat(c.amount || 0),
+      sign: 1,
+      date: c.received_date,
+      mode: `Cheque${c.cheque_number ? ' #' + c.cheque_number : ''}${c.bank_name ? ' — ' + c.bank_name : ''}  [Cleared]`,
+      label: c.notes || c.firm_name || null
+    }))
+  ].sort((a, b) => new Date(String(a.date).replace(' ', 'T')) - new Date(String(b.date).replace(' ', 'T')))
+
+  if (otherEntries.length > 0) {
     checkPageBreak(40)
     hRule(currentY); currentY += 12
-    doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold').text('Other Payments Received', MARGIN, currentY)
+    doc.fill(PRIMARY).fontSize(10).font('Helvetica-Bold').text('Other Account Entries', MARGIN, currentY)
     currentY += 18
-    cashIncomes.forEach(c => {
+    otherEntries.forEach(e => {
       checkPageBreak(14)
-      const dt   = fmtDateTime(c.income_date || c.created_at)
-      const mode = c.payment_mode === 'upi' ? `UPI${c.upi_account ? ' — ' + c.upi_account : ''}` : 'Cash'
-      doc.fill(GREEN).fontSize(8).font('Helvetica-Bold').text(`+ ${rs(c.amount)}`, MARGIN + 10, currentY + 2)
+      const dt    = fmtDateTime(e.date)
+      const color = e.sign > 0 ? GREEN : RED
+      const sign  = e.sign > 0 ? '+' : '-'
+      doc.fill(color).fontSize(8).font('Helvetica-Bold').text(`${sign} ${rs(e.amount)}`, MARGIN + 10, currentY + 2)
       doc.fill(GRAY).fontSize(7.5).font('Helvetica')
-         .text(`${mode}  |  ${dt.date}${c.notes ? '  |  ' + c.notes : ''}`, MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
+         .text(`${e.mode}  |  ${dt.date}${e.label ? '  |  ' + e.label : ''}`, MARGIN + 80, currentY + 2, { width: CONTENT - 90, lineBreak: false })
       currentY += 13
     })
     currentY += 10

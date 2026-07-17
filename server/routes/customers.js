@@ -4,25 +4,48 @@ const db = require('../db/database');
 const fs = require('fs');
 const path = require('path');
 const { upload } = require('../middleware/upload');
+const validate = require('../middleware/validate');
+const { createCustomerSchema, updateCustomerSchema, openingBalanceSchema } = require('../schemas/customerSchemas');
 
-// GET /api/customers
+// GET /api/customers — ?page & ?limit optional. Bina diye purana behavior (full array).
 router.get('/', (req, res) => {
   const search = req.query.search;
+  const { page, limit } = req.query;
 
-  let query = `SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY created_at ASC`;
+  let whereClause = `WHERE deleted_at IS NULL`;
   let params = [];
 
   if (search) {
-    query = `SELECT * FROM customers 
-         WHERE deleted_at IS NULL
-         AND (firm_name LIKE ? OR contact_name LIKE ? OR phone LIKE ?)
-         ORDER BY created_at ASC`;
+    whereClause += ` AND (firm_name LIKE ? OR contact_name LIKE ? OR phone LIKE ?)`;
     params = [`%${search}%`, `%${search}%`, `%${search}%`];
   }
 
-  db.all(query, params, (err, rows) => {
+  const baseQuery = `SELECT * FROM customers ${whereClause} ORDER BY created_at ASC`;
+
+  if (!page) {
+    return db.all(baseQuery, params, (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    });
+  }
+
+  const pageNum  = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+  const offset   = (pageNum - 1) * limitNum;
+
+  db.get(`SELECT COUNT(*) as total FROM customers ${whereClause}`, params, (err, countRow) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+
+    db.all(`${baseQuery} LIMIT ? OFFSET ?`, [...params, limitNum, offset], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({
+        data: rows,
+        page: pageNum,
+        limit: limitNum,
+        total: countRow.total,
+        total_pages: Math.ceil(countRow.total / limitNum)
+      });
+    });
   });
 });
 
@@ -73,9 +96,9 @@ router.get('/:id', (req, res) => {
                 created_at
               FROM cash_income 
               WHERE customer_id = ?
-              AND (notes NOT IN ('Order Advance Payment', 'Order Payment') OR notes IS NULL)
-              AND (notes NOT LIKE 'Cheque Cleared%')
-              AND (notes NOT LIKE 'Galla Opening Balance%')
+              AND (notes IS NULL OR notes NOT IN ('Order Advance Payment', 'Order Payment'))
+              AND (notes IS NULL OR notes NOT LIKE 'Cheque Cleared%')
+              AND (notes IS NULL OR notes NOT LIKE 'Galla Opening Balance%')
             `, [id], (err, cashIncomePayments) => {
               if (err) return res.status(500).json({ error: err.message });
 
@@ -101,7 +124,9 @@ router.get('/:id', (req, res) => {
               `, [id], (err, commissionPayments) => {
                 if (err) return res.status(500).json({ error: err.message });
 
-                const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+                // Opening balance ab order nahi — customer.opening_balance field se
+                // seedha yahan add hota hai.
+                const totalBilled = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0) + Number(customer.opening_balance || 0);
                 const totalDiscount = orders.reduce((sum, o) => sum + Number(o.discount_amount || 0), 0);
                 const totalAdvance = orders.reduce((sum, o) => sum + Number(o.advance_paid || 0), 0);
                 const totalOrderPayments = orderPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
@@ -109,7 +134,14 @@ router.get('/:id', (req, res) => {
                 const totalChequeCleared = chequePayments
                   .filter(p => p.status === 'cleared')
                   .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-                const totalCashIncome = cashIncomePayments.filter(p => p.payment_type === 'Cash Income').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                // Pehle sirf 'Cash Income' type sum hota tha — UPI-mode cash_income
+                // entries (payment_type='UPI') exclude ho jaati thi, kyunki pehle
+                // inka ek mirror-row upi_transactions mein bhi banta tha (totalUpi
+                // usko already count kar leta tha). Wo mirror-insert ab hata diya
+                // gaya hai (UPI double-counting fix ke time) — isliye cash_income hi
+                // in entries ka sole source hai, isse yahan bhi count karna zaroori
+                // hai, warna Balance Due se ye paisa poora gayab ho jaata hai.
+                const totalCashIncome = cashIncomePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
                 const totalCommission = commissionPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
                 const totalPaid = totalAdvance + totalOrderPayments + totalUpi + totalChequeCleared + totalCashIncome;
@@ -127,7 +159,11 @@ router.get('/:id', (req, res) => {
                   ...orderPayments,
                   ...upiPayments,
                   ...chequePayments,
-                  ...cashIncomePayments.filter(p => p.payment_type !== 'UPI'),
+                  // Pehle UPI-type cash_income entries yahan se exclude hoti thi,
+                  // assume karke ki unka duplicate upiPayments (upi_transactions)
+                  // array mein already hai — jo purane mirror-insert ki wajah se sahi
+                  // tha. Wo mirror ab nahi banta, isliye ab sab include kar rahe hain.
+                  ...cashIncomePayments,
                   ...commissionPayments
                 ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
@@ -156,10 +192,8 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/customers
-router.post('/', (req, res) => {
+router.post('/', validate(createCustomerSchema), (req, res) => {
   const { firm_name, contact_name, phone } = req.body;
-
-  if (!firm_name) return res.status(400).json({ error: 'firm_name is required' });
 
   db.run(`INSERT INTO customers (firm_name, contact_name, phone) VALUES (?, ?, ?)`,
     [firm_name, contact_name, phone], function(err) {
@@ -169,7 +203,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/customers/:id
-router.put('/:id', (req, res) => {
+router.put('/:id', validate(updateCustomerSchema), (req, res) => {
   const { id } = req.params;
   const { firm_name, contact_name, phone } = req.body;
 
@@ -214,27 +248,30 @@ router.get('/deleted/recent', (req, res) => {
 });
 
 // POST /api/customers/:id/opening-balance
-router.post('/:id/opening-balance', (req, res) => {
+// Pehle ye ek order create karta tha ('Opening Balance' description wala) —
+// ab seedha customer record ke field mein jaata hai. Additive hai (jaisa
+// pehle bhi tha — har "Add" click ek naya order jodta tha), taaki purana
+// behavior/expectation na tootay.
+router.post('/:id/opening-balance', validate(openingBalanceSchema), (req, res) => {
   const { id } = req.params;
   const { amount, date, notes } = req.body;
 
-  if (!amount || isNaN(amount) || Number(amount) <= 0) {
-    return res.status(400).json({ error: 'Valid amount required' });
-  }
-
-  const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
   const entryDate = date || new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).split(' ')[0];
 
-  db.run(`
-    INSERT INTO orders
-      (customer_id, description, status, total_amount, advance_paid, balance_due,
-       advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id, created_at)
-    VALUES (?, 'Opening Balance', 'pending', ?, 0, ?, NULL, NULL, ?, NULL, NULL, ?)
-  `,
-  [id, Number(amount), Number(amount), notes || 'Pichle saal ka bakaya', createdAt],
-  function(err) {
+  db.get(`SELECT opening_balance FROM customers WHERE id = ? AND deleted_at IS NULL`, [id], (err, customer) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: this.lastID, message: 'Opening balance added successfully' });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const newBalance = Number(customer.opening_balance || 0) + Number(amount);
+
+    db.run(`
+      UPDATE customers
+      SET opening_balance = ?, opening_balance_date = ?, opening_balance_notes = ?
+      WHERE id = ?
+    `, [newBalance, entryDate, notes || 'Pichle saal ka bakaya', id], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.status(201).json({ opening_balance: newBalance, message: 'Opening balance added successfully' });
+    });
   });
 });
 
