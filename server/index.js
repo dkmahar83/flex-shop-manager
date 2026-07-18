@@ -40,7 +40,8 @@ app.use(cors({
 app.use(express.json());
 
 const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const requireUploadAuth = require('./middleware/uploadAuth');
+app.use('/api/uploads', requireUploadAuth, express.static(path.join(__dirname, 'uploads')));
 
 // ── ROUTES ──
 const authRoutes      = require('./routes/auth')

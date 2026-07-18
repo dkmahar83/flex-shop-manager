@@ -27,6 +27,8 @@ db.serialize(() => {
 
   // Enable foreign keys (SQLite has them off by default)
   db.run('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA journal_mode = WAL');
+  db.run('PRAGMA busy_timeout = 5000');
 
   // ── PHASE 1: Create all tables ──────────────────────────────────────
 

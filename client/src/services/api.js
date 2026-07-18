@@ -12,6 +12,16 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// Protected upload URLs for customer/order photos (JWT via query param for <img> tags)
+export function getUploadUrl(relativePath) {
+  if (!relativePath) return ''
+  const token = localStorage.getItem('flexshop_token')
+  const base = `http://${window.location.hostname}:5000/api`
+  const path = relativePath.replace(/^uploads[/\\]/, '')
+  const qs = token ? `?token=${encodeURIComponent(token)}` : ''
+  return `${base}/uploads/${path}${qs}`
+}
+
 api.interceptors.response.use(
   response => response,
   error => {
