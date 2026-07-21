@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF, getOrderPhotos, uploadOrderPhoto, deleteOrderPhoto, getSetting, getDenominationDrawer, getUploadUrl } from '../services/api'
+import api, { getOrders, getCustomers, createOrder, updateOrderStatus, getOrderDetail, addPayment, deleteOrder, sendBillWhatsApp, generatePDF, getOrderPhotos, uploadOrderPhoto, deleteOrderPhoto, getSetting, getDenominationDrawer } from '../services/api'
 import DenominationCounter from '../components/DenominationCounter'
 import LoadingButton from '../components/LoadingButton'
 import SectionLoader from '../components/SectionLoader'
@@ -1490,7 +1490,7 @@ function Orders() {
                               {orderPhotos.map(p => (
                                 <div key={p.id} style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid #eee' }}>
                                   <img
-                                    src={getUploadUrl(p.photo_path)}
+                                    src={`http://localhost:5000/${p.photo_path}`}
                                     alt={p.caption || 'Order photo'}
                                     style={{ width: '100%', height: '100px', objectFit: 'cover', cursor: 'pointer', display: 'block' }}
                                     onClick={() => setLightboxPhoto(p)}
@@ -1604,7 +1604,7 @@ function Orders() {
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.88)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'pointer' }}
         >
           <img
-            src={getUploadUrl(lightboxPhoto.photo_path)}
+            src={`http://localhost:5000/${lightboxPhoto.photo_path}`}
             alt={lightboxPhoto.caption || 'Order photo'}
             style={{ maxWidth: '92%', maxHeight: '82%', borderRadius: '8px', cursor: 'default' }}
             onClick={e => e.stopPropagation()}

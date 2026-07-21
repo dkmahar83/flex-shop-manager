@@ -25,19 +25,14 @@ router.post('/run', (req, res) => {
 // GET /api/backup/download/:filename
 router.get('/download/:filename', (req, res) => {
   const { filename } = req.params
-  const safeName = path.basename(filename)
-  if (!safeName.startsWith('VijayFlexPro-Backup-') || !safeName.endsWith('.db')) {
+  if (!filename.startsWith('VijayFlexPro-Backup-') || !filename.endsWith('.db')) {
     return res.status(400).json({ error: 'Invalid filename' })
   }
-  const backupRoot = path.resolve(BACKUP_DIR)
-  const filePath = path.resolve(BACKUP_DIR, safeName)
-  if (!filePath.startsWith(backupRoot + path.sep) && filePath !== backupRoot) {
-    return res.status(400).json({ error: 'Invalid filename' })
-  }
+  const filePath = path.join(BACKUP_DIR, filename)
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Backup file nahi mila' })
   }
-  res.download(filePath, safeName)
+  res.download(filePath, filename)
 })
 
 module.exports = router

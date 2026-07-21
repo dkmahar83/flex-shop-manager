@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto, generateCustomerStatement, sendStatementWhatsApp, getUploadUrl } from '../services/api'
+import { getCustomerProfile, addOpeningBalance, uploadCustomerPhoto, deleteCustomerPhoto, generateCustomerStatement, sendStatementWhatsApp } from '../services/api'
 import PageLock from '../components/PageLock'
 import SectionLoader from '../components/SectionLoader'
 import {
@@ -198,7 +198,7 @@ function handlePhotoRemove() {
           <div style={{ position: 'relative' }}>
             {customer.photo_path ? (
               <img
-                src={getUploadUrl(customer.photo_path)}
+                src={`http://localhost:5000/${customer.photo_path}`}
                 alt={customer.firm_name}
                 style={{ ...styles.photoCircle, cursor: 'pointer' }}
                 onClick={() => setShowPhotoModal(true)}
@@ -677,7 +677,7 @@ function handlePhotoRemove() {
           style={styles.photoModalOverlay}
         >
           <img
-            src={getUploadUrl(customer.photo_path)}
+            src={`http://localhost:5000/${customer.photo_path}`}
             alt={customer.firm_name}
             style={styles.photoModalImg}
             onClick={e => e.stopPropagation()}
