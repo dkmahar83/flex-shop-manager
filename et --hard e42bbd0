@@ -1,0 +1,64 @@
+[33m2099217[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Bugs removed
+[33m82d4d08[m VijayFlex Pro v1.0 ready
+[33m96660cf[m VijayFlex Pro v1.0 ready
+[33mce41384[m Emogi's Replaced by Lucid Icons
+[33m1c17223[m dashboard changes
+[33m62b27f7[m Merge branch 'main' of https://github.com/dkmahar83/flex-shop-manager
+[33mc73e978[m Bugs fixed
+[33m9a1fe37[m ignore serve_frontend.js
+[33me42bbd0[m Update login and latest changes
+[33mf8d5592[m bugs fixed
+[33m0ae8a36[m security: remove hardcoded credentials, move JWT secret to env
+[33m4d599cc[m All privacy bugs fixed
+[33m709aea5[m Merge branch 'main' of https://github.com/dkmahar83/flex-shop-manager
+[33mc86d824[m chore: remove sensitive data from version control
+[33mb6b5c2a[m Add MIT License to the project
+[33mdff0847[m Add files via upload
+[33m88846de[m Delete screenshots directory
+[33m255a1c5[m Delete screenshots/cheque-register.png
+[33maa51c0c[m Merge branch 'main' of https://github.com/dkmahar83/flex-shop-manager
+[33m1b52041[m feat: README.md file uploaded
+[33m5615825[m Add files via upload
+[33m873c62f[m[33m ([m[1;31morigin/online-deploy[m[33m, [m[1;32monline-deploy[m[33m)[m Bugs fixed
+[33me6c7c44[m feat: customer statement PDF + WhatsApp send
+[33mdfb04ad[m Fix RecycleBin auth token and hardcoded localhost
+[33ma3dd6b3[m feat : Add feature of UPI link for payment above 2000
+[33m3d93e20[m feat: whatsapp bug fix
+[33m8acf56a[m feat: Bill PDF design updated
+[33m45f0f19[m bin fixed
+[33m7994ef1[m Fix UPI account display in customer payments, ledger sync, and delete bugs
+[33ma05e5c9[m feat : Auto Run of Frontend & Backend without opening CMD'
+[33m57cf5ac[m feat : Nav Bar Changed to side bar with nested structure
+[33m87d0b4b[m feat: LAN deployment — 0.0.0.0 binding + dynamic hostname in api.js
+[33mce7fd78[m feat: add order activity log for UPI QR bill sends
+[33m2e3771a[m fix: WhatsApp crash fix, backup manager, watermark, dashboard & orders update
+[33ma398418[m Fix WhatsApp crash on disconnect with global error handler
+[33me7fd47f[m Merge branch 'main' of https://github.com/dkmahar83/flex-shop-manager
+[33m36d04bb[m Added backup button and moved UPI QR history to database
+[33m2043b65[m Add initial README for VijayFlex Pro project
+[33md6e9fad[m feat: add UPI QR Generator page with fixed amount QR, history tracking and mark paid feature
+[33m63f8724[m fix: inventory migrations use db.exec for better-sqlite3 compatibility; add PageLock to Reports page
+[33mfa67ab2[m feat: add dynamic inventory category system with UI-based item/category management
+[33m39563b5[m Add PIN lock feature for Accounts, Employees and Customer Profile pages
+[33m67e0c86[m feat: Commission system via Expenses + Customer profile integration
+[33m1dfd44b[m feat: customer photo, order photos, denomination counter, commission system
+[33mf13f79f[m Feat: Login Page added
+[33mcabcb3c[m rebrand: FlexShop Manager to VijayFlex Pro
+[33md7224ad[m feat: complete shop management system
+[33m43d3cd4[m feat: PDF bill generation for orders
+[33m774f0d2[m feat: Ghar Khata owner account, UPI income fix, yearly report fix, rounding fix
+[33mbe34bd8[m feat: Reports page - monthly P&L, yearly summary, all dues
+[33m2e5eb7e[m fix: clean Employees.jsx - removed all ChatGPT errors, added Profile tab
+[33ma966c16[m feat: unified payment tracking - UPI and cheques linked to customer profile
+[33mdd9d6b3[m feat: Accounts module - cheques, UPI, vendor accounts
+[33m1a094d8[m feat: soft delete with 24hr recovery for customers and orders
+[33m2850420[m feat: Customers page with add, search and delete
+[33me26552b[m feat: Dashboard page with live data from API
+[33maa67640[m feat: React frontend setup with routing and navbar
+[33m09691c1[m feat: dashboard API - backend complete
+[33mab6291d[m feat: employees API with attendance and salary calculation
+[33m55a13c0[m feat: payments API with dues tracking
+[33maf18806[m feat: orders API with line items and status update
+[33m6fa4a1f[m feat: customers API with GET, POST, PUT routes
+[33m3ccf065[m feat: database setup with all 11 tables
+[33m149c0db[m feat: backend server setup with express and sqlite3

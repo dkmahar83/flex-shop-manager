@@ -1,5 +1,7 @@
 const { z } = require('zod')
 
+const emptyToUndefined = (val) => (val === '' || val === null ? undefined : val);
+
 const orderItemSchema = z.object({
   item_name: z.string().trim().min(1, 'item_name is required'),
   quantity: z.coerce.number().positive('quantity must be greater than 0'),
@@ -13,7 +15,7 @@ const createOrderSchema = z.object({
   customer_id: z.coerce.number().int().positive('customer_id is required'),
   description: z.string().optional().nullable(),
   advance_paid: z.coerce.number().min(0).optional(),
-  advance_payment_mode: z.enum(['cash', 'upi']).optional(),
+  advance_payment_mode: z.preprocess(emptyToUndefined, z.enum(['cash', 'upi']).optional()),
   advance_upi_account: z.string().optional().nullable(),
   follow_up_date: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -35,7 +37,7 @@ const updateOrderSchema = z.object({
   notes: z.string().optional().nullable(),
   follow_up_date: z.string().optional().nullable(),
   advance_paid: z.coerce.number().min(0).optional(),
-  advance_payment_mode: z.enum(['cash', 'upi']).optional().nullable(),
+  advance_payment_mode: z.preprocess(emptyToUndefined, z.enum(['cash', 'upi']).optional().nullable()),advance_payment_mode: z.enum(['cash', 'upi']).optional().nullable(),
   advance_upi_account: z.string().optional().nullable(),
   discount_amount: z.coerce.number().min(0).optional(),
   discount_note: z.string().optional().nullable()
