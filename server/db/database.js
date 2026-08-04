@@ -45,6 +45,20 @@ db.serialize(() => {
     value TEXT NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  // Notification "read" tracker — notifications aren't stored anywhere
+  // themselves (generated live per-request: follow-ups, low-stock,
+  // attendance-reminder), so "read" state is tracked against a deterministic
+  // key (e.g. "followup-42-2026-08-03"). The date is baked into the key, so
+  // it automatically becomes unread again the next day unless the underlying
+  // thing (e.g. balance due) has actually been resolved.
+  db.run(`CREATE TABLE IF NOT EXISTS notification_reads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    notification_key TEXT NOT NULL UNIQUE,
+    notif_date TEXT NOT NULL,
+    read_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_notification_reads_date ON notification_reads(notif_date)`);
   db.run(`CREATE TABLE IF NOT EXISTS order_photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL,
@@ -416,6 +430,7 @@ db.run(`CREATE TABLE IF NOT EXISTS order_items (
 
   db.run(`ALTER TABLE customers ADD COLUMN deleted_at DATETIME DEFAULT NULL`, () => {})
   db.run(`ALTER TABLE customers ADD COLUMN photo_path TEXT DEFAULT NULL`, () => {})
+  db.run(`ALTER TABLE employees ADD COLUMN photo_path TEXT DEFAULT NULL`, () => {})
   db.run(`ALTER TABLE customers ADD COLUMN opening_balance REAL DEFAULT 0`, () => {})
   db.run(`ALTER TABLE customers ADD COLUMN opening_balance_date TEXT DEFAULT NULL`, () => {})
   db.run(`ALTER TABLE customers ADD COLUMN opening_balance_notes TEXT DEFAULT NULL`, () => {})

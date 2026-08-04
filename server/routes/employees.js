@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const fs = require('fs');
+const path = require('path');
+const { uploadEmployee } = require('../middleware/upload');
 
 // ─────────────────────────────────────────
 // HELPER: IST timestamp (consistent with orders.js)
@@ -360,6 +363,59 @@ router.delete('/:id', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: `${employee.name} aur unka saara data delete ho gaya.` });
       });
+    });
+  });
+});
+
+// ─────────────────────────────────────────
+// POST /api/employees/:id/photo
+// ─────────────────────────────────────────
+router.post('/:id/photo', uploadEmployee.single('photo'), (req, res) => {
+  const { id } = req.params;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No photo file received' });
+  }
+
+  db.get(`SELECT photo_path FROM employees WHERE id = ?`, [id], (err, employee) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!employee) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const newPhotoPath = `uploads/employees/${req.file.filename}`;
+
+    db.run(`UPDATE employees SET photo_path = ? WHERE id = ?`, [newPhotoPath, id], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+
+      if (employee.photo_path) {
+        const oldFullPath = path.join(__dirname, '..', employee.photo_path);
+        fs.unlink(oldFullPath, () => {});
+      }
+
+      res.json({ message: 'Photo uploaded successfully', photo_path: newPhotoPath });
+    });
+  });
+});
+
+// ─────────────────────────────────────────
+// DELETE /api/employees/:id/photo
+// ─────────────────────────────────────────
+router.delete('/:id/photo', (req, res) => {
+  const { id } = req.params;
+
+  db.get(`SELECT photo_path FROM employees WHERE id = ?`, [id], (err, employee) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    if (!employee.photo_path) return res.status(400).json({ error: 'No photo to delete' });
+
+    const fullPath = path.join(__dirname, '..', employee.photo_path);
+
+    db.run(`UPDATE employees SET photo_path = NULL WHERE id = ?`, [id], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      fs.unlink(fullPath, () => {});
+      res.json({ message: 'Photo removed successfully' });
     });
   });
 });

@@ -27,6 +27,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }))
@@ -49,6 +50,7 @@ const orderRoutes     = require('./routes/orders')
 const paymentRoutes   = require('./routes/payments')
 const employeeRoutes  = require('./routes/employees')
 const dashboardRoutes = require('./routes/dashboard')
+const notificationRoutes = require('./routes/notifications')
 const dailyRoutes     = require('./routes/daily')
 const expenseRoutes   = require('./routes/expenses')
 const chequeRoutes    = require('./routes/cheques')
@@ -57,8 +59,7 @@ const vendorRoutes    = require('./routes/vendors')
 const inventoryRoutes = require('./routes/inventory')
 const pdfRoutes       = require('./routes/pdf')
 const whatsappRoutes  = require('./routes/whatsapp')
-const commissionRoutes = require('./routes/commission')
-const pageLockRoutes = require('./routes/pageLocks')
+const pageLockRoutes = require('./routes/pagelocks')
 const backupRoutes = require('./routes/backup')
 const settingsRoutes = require('./routes/settings')
 const { startBackupScheduler } = require('./backup')
@@ -81,6 +82,7 @@ app.use('/api/orders',     requireAuth, orderRoutes)
 app.use('/api/payments',   requireAuth, paymentRoutes)
 app.use('/api/employees',  requireAuth, employeeRoutes)
 app.use('/api/dashboard',  requireAuth, dashboardRoutes)
+app.use('/api/notifications', requireAuth, notificationRoutes)
 app.use('/api/daily',      requireAuth, dailyRoutes)
 app.use('/api/expenses',   requireAuth, expenseRoutes)
 app.use('/api/cheques',    requireAuth, chequeRoutes)
@@ -89,7 +91,6 @@ app.use('/api/vendors',    requireAuth, vendorRoutes)
 app.use('/api/inventory',  requireAuth, inventoryRoutes)
 app.use('/api/pdf',        requireAuth, pdfRoutes)
 app.use('/api/whatsapp',   requireAuth, whatsappRoutes)
-app.use('/api/commission', requireAuth, commissionRoutes)
 app.use('/api/page-locks', requireAuth, pageLockRoutes)
 app.use('/api/backup', requireAuth, backupRoutes)
 app.use('/api/settings', requireAuth, settingsRoutes)
@@ -106,8 +107,15 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   logger.info(`Server running on http://localhost:${PORT}`)
-  setTimeout(initWhatsApp, 3000)
+  // Demo/Render deployment mein WhatsApp init nahi chalana — Puppeteer/Chromium
+  // Render ke default environment mein available nahi hota (extra buildpack
+  // chahiye), aur QR-scan bhi demo-user ke liye practical nahi hai. .env mein
+  // DISABLE_WHATSAPP=true set karo demo ke liye; asli production .env mein
+  // ye unset/false rakhna, normal behavior chalega.
+  if (process.env.DISABLE_WHATSAPP !== 'true') {
+    setTimeout(initWhatsApp, 3000)
+  } else {
+    logger.info('WhatsApp init skipped (DISABLE_WHATSAPP=true)')
+  }
   startBackupScheduler()
 })
-
-

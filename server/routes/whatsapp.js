@@ -237,7 +237,8 @@ router.post('/send-statement/:customerId', async (req, res) => {
             await waClient.sendMessage(chatId, message)
 
             if (totalDue > 0 && upiId) {
-              const upiString = `upi://pay?pa=${upiId}&pn=VijayFlex%20Pro&am=${totalDue.toFixed(0)}&cu=INR&tn=Account%20Balance`
+              const payeeName = encodeURIComponent(getUpiAccountName(upiId))
+              const upiString = `upi://pay?pa=${upiId}&pn=${payeeName}&am=${totalDue.toFixed(0)}&cu=INR&tn=Account%20Balance`
               if (totalDue > 2000) {
                 await waClient.sendMessage(chatId,
                   `💳 *Payment Link — ₹${totalDue.toFixed(0)}*\n\n${upiString}\n\n_VijayFlex Pro, Pilibangan_`

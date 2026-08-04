@@ -33,6 +33,11 @@ export const verifyToken = (token) =>
 // Dashboard
 export const getDashboard = () => api.get('/dashboard')
 
+// Notifications
+export const getNotifications = () => api.get('/notifications')
+export const markNotificationRead = (key) => api.post('/notifications/read', { key })
+export const markAllNotificationsRead = (keys) => api.post('/notifications/read-all', { keys })
+
 // Customers
 export const getCustomers = (search) => api.get('/customers', { params: search ? { search } : {} })
 export const createCustomer = (data) => api.post('/customers', data)
@@ -79,6 +84,14 @@ export const markAttendance = (data) => api.post('/employees/attendance', data)
 export const getAttendance = (employeeId, params) => api.get(`/employees/attendance/${employeeId}`, { params })
 export const getSalary = (employeeId, params) => api.get(`/employees/salary/${employeeId}`, { params })
 export const generateSalary = (data) => api.post('/employees/generate-salary', data)
+export const uploadEmployeePhoto = (id, file) => {
+  const formData = new FormData()
+  formData.append('photo', file)
+  return api.post(`/employees/${id}/photo`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+export const deleteEmployeePhoto = (id) => api.delete(`/employees/${id}/photo`)
 
 // Daily Sales
 export const getDailySales = (params) => api.get('/daily', { params })

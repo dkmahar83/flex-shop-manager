@@ -96,7 +96,7 @@ function Login({ onLogin }) {
 
         <div style={styles.footer}>
           <p style={{ color: '#aaa', fontSize: '12px' }}>
-            FlexShop Manager v1.0 — Secure Access
+            FlexShop Manager v1.1 — Secure Access
           </p>
         </div>
       </div>

@@ -276,7 +276,9 @@ router.get('/report', (req, res) => {
 
                 // 8. Dues — CUSTOMER-WISE, TRUE net-due formula (Dashboard jaisa hi:
                 // orders + opening_balance - advance - order-payments - UPI -
-                // cleared-cheques - cash-income - discount + commission).
+                // cleared-cheques - cash-income - discount). Commission is formula
+                // mein include NAHI hoti — wo poori tarah alag, independent expense
+                // hai (sirf Accounts → Commission tab mein track hoti).
                 db.all(`
                   SELECT * FROM (
                     SELECT
@@ -295,7 +297,6 @@ router.get('/report', (req, res) => {
                         - COALESCE(cheq.total_cheque_cleared, 0)
                         - COALESCE(cash.total_cash_income, 0)
                         - COALESCE(oa.orders_discount, 0)
-                        + COALESCE(comm.total_commission, 0)
                       ) as total_due
                     FROM customers c
                     LEFT JOIN (
@@ -326,9 +327,6 @@ router.get('/report', (req, res) => {
                         AND (notes IS NULL OR notes NOT LIKE 'Galla Opening Balance%')
                       GROUP BY customer_id
                     ) cash ON cash.customer_id = c.id
-                    LEFT JOIN (
-                      SELECT customer_id, SUM(amount) as total_commission FROM expenses WHERE category = 'Commission' GROUP BY customer_id
-                    ) comm ON comm.customer_id = c.id
                     WHERE c.deleted_at IS NULL
                   )
                   WHERE total_due > 0
@@ -338,7 +336,7 @@ router.get('/report', (req, res) => {
 
                   // 9. Total outstanding — SUM of same net-due formula, Dashboard jaisa hi
                   // (pehle sirf raw balance_due+opening_balance jodta tha, jo cash/UPI/
-                  // cheque/commission payments ignore kar deta tha).
+                  // cheque payments ignore kar deta tha).
                   db.get(`
                     WITH customer_net_due AS (
                       SELECT
@@ -350,7 +348,6 @@ router.get('/report', (req, res) => {
                           - COALESCE(cheq.total_cheque_cleared, 0)
                           - COALESCE(cash.total_cash_income, 0)
                           - COALESCE(oa.orders_discount, 0)
-                          + COALESCE(comm.total_commission, 0)
                         ) as total_due
                       FROM customers c
                       LEFT JOIN (
@@ -378,9 +375,6 @@ router.get('/report', (req, res) => {
                           AND (notes IS NULL OR notes NOT LIKE 'Galla Opening Balance%')
                         GROUP BY customer_id
                       ) cash ON cash.customer_id = c.id
-                      LEFT JOIN (
-                        SELECT customer_id, SUM(amount) as total_commission FROM expenses WHERE category = 'Commission' GROUP BY customer_id
-                      ) comm ON comm.customer_id = c.id
                       WHERE c.deleted_at IS NULL
                     )
                     SELECT COALESCE(SUM(total_due), 0) as total FROM customer_net_due WHERE total_due > 0
@@ -562,10 +556,30 @@ router.post('/cash-income', (req, res) => {
 router.get('/summary', (req, res) => {
   const { month, year } = req.query;
 
+  // "Days Recorded" = distinct calendar days in the month that had ANY real
+  // activity — an order payment, cash income, UPI transaction, or expense.
+  // Earlier this counted rows in `daily_records`, a separate legacy table
+  // used only for the old manual "total sales" entry — it is not populated
+  // by any of the flows above (payments/cash_income/upi_transactions/expenses),
+  // so a day with real transactions but no manual daily_records row always
+  // showed up as 0 recorded days, like Gupta Enterprises' Aug 1 UPI payment.
   db.get(`
-    SELECT COUNT(*) as days_recorded FROM daily_records
-    WHERE strftime('%m', record_date) = ? AND strftime('%Y', record_date) = ?
-  `, [month, year], (err, daily) => {
+    SELECT COUNT(*) as days_recorded FROM (
+      SELECT DISTINCT d FROM (
+        SELECT payment_date as d FROM payments
+        WHERE strftime('%m', payment_date) = ? AND strftime('%Y', payment_date) = ?
+        UNION
+        SELECT income_date as d FROM cash_income
+        WHERE strftime('%m', income_date) = ? AND strftime('%Y', income_date) = ?
+        UNION
+        SELECT transaction_date as d FROM upi_transactions
+        WHERE strftime('%m', transaction_date) = ? AND strftime('%Y', transaction_date) = ?
+        UNION
+        SELECT expense_date as d FROM expenses
+        WHERE strftime('%m', expense_date) = ? AND strftime('%Y', expense_date) = ?
+      )
+    )
+  `, [month, year, month, year, month, year, month, year], (err, daily) => {
     if (err) return res.status(500).json({ error: err.message });
 
     // Follow-up payments
