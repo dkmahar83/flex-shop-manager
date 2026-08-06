@@ -4,12 +4,29 @@ const db = require('../db/database');
 const fs = require('fs');
 const path = require('path');
 const { uploadEmployee } = require('../middleware/upload');
+const { getLiveCashBalance } = require('../utils/cashBalance');
 
 // ─────────────────────────────────────────
 // HELPER: IST timestamp (consistent with orders.js)
 // ─────────────────────────────────────────
 function nowIST() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
+}
+// ─────────────────────────────────────────
+// HELPER: Advance jo SIRF is specific month/year mein diya gaya
+// (poore tenure ka outstanding nahi — sirf current month ka advance)
+// ─────────────────────────────────────────
+function getMonthAdvance(employeeId, month, year, callback) {
+  db.get(`
+    SELECT COALESCE(SUM(amount), 0) AS total_advance
+    FROM expenses
+    WHERE paid_to_type = 'employee' AND paid_to_id = ?
+    AND strftime('%m', expense_date) = ?
+    AND strftime('%Y', expense_date) = ?
+  `, [employeeId, month, year], (err, row) => {
+    if (err) return callback(err);
+    callback(null, row.total_advance);
+  });
 }
 
 // ─────────────────────────────────────────
@@ -143,19 +160,29 @@ router.get('/salary/:employee_id', (req, res) => {
       const calculated_salary = Math.round(per_day_salary * effective_days);
       const deduction = employee.monthly_salary - calculated_salary;
 
-      res.json({
-        employee_name: employee.name,
-        monthly_salary: employee.monthly_salary,
-        per_day_salary: Math.round(per_day_salary),
-        total_days_marked: total_days,
-        present_days,
-        half_days,
-        absent_days,
-        effective_days,
-        calculated_salary,
-        deduction,
-        month,
-        year
+      getMonthAdvance(employee_id, month, year, (err, monthAdvance) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const net_payable = calculated_salary - monthAdvance;
+        const payable_salary = Math.max(0, net_payable);
+
+        res.json({
+          employee_name: employee.name,
+          monthly_salary: employee.monthly_salary,
+          per_day_salary: Math.round(per_day_salary),
+          total_days_marked: total_days,
+          present_days,
+          half_days,
+          absent_days,
+          effective_days,
+          calculated_salary,
+          deduction,
+          outstanding_advance: monthAdvance,
+          net_payable,
+          payable_salary,
+          month,
+          year
+        });
       });
     });
   });
@@ -282,31 +309,60 @@ router.post('/generate-salary', (req, res) => {
         // Use IST date, not UTC
         const today = nowIST().split(' ')[0];
 
-        db.run(`
-          INSERT INTO employee_salary_credits
-            (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account, denomination_breakdown)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          employee_id, month, year, calculatedSalary, today,
-          notes || `${month}/${year} salary`,
-          payment_mode || 'cash', upi_account || null, breakdownToSave
-        ], function(err) {
+        getMonthAdvance(employee_id, month, year, (err, monthAdvance) => {
           if (err) return res.status(500).json({ error: err.message });
 
-          db.run(`
-            INSERT INTO expenses
-              (category, amount, expense_date, description, paid_to_type, paid_to_id,
-               payment_mode, upi_account, created_at)
+          const payableNow = Math.max(0, calculatedSalary - monthAdvance);
+
+          function creditSalary() {
+            db.run(`
+            INSERT INTO employee_salary_credits
+              (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account, denomination_breakdown)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, [
-            'Employee Salary', calculatedSalary, today,
-            `${employee.name} salary (${month}/${year})`,
-            'employee', employee_id,
-            payment_mode || 'cash', upi_account || null, createdAt
-          ], (err) => {
+            employee_id, month, year, calculatedSalary, today,
+            notes || `${month}/${year} salary${monthAdvance > 0 ? ` (₹${monthAdvance} advance adjust)` : ''}`,
+            payment_mode || 'cash', upi_account || null, breakdownToSave
+          ], function(err) {
             if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: 'Salary generated successfully', salary_amount: calculatedSalary });
-          });
+
+            db.run(`
+              INSERT INTO expenses
+                (category, amount, expense_date, description, paid_to_type, paid_to_id,
+                 payment_mode, upi_account, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              'Employee Salary', payableNow, today,
+              `${employee.name} salary (${month}/${year})${monthAdvance > 0 ? ` — ₹${monthAdvance} advance adjusted` : ''}`,
+              'employee', employee_id,
+              payment_mode || 'cash', upi_account || null, createdAt
+            ], (err) => {
+              if (err) return res.status(500).json({ error: err.message });
+              res.json({
+                message: 'Salary generated successfully',
+                salary_amount: calculatedSalary,
+                advance_adjusted: monthAdvance,
+                net_paid: payableNow
+              });
+            });
+            });
+          }
+
+          // A cash payout can't exceed what's actually in the drawer. UPI
+          // payouts don't touch the physical cash balance, so they skip this.
+          if ((payment_mode || 'cash') === 'cash') {
+            getLiveCashBalance((err, liveBalance) => {
+              if (err) return res.status(500).json({ error: err.message });
+              if (payableNow > liveBalance) {
+                return res.status(400).json({
+                  error: `Galla mein sirf ₹${liveBalance} hai — ₹${payableNow} salary cash mein nahi de sakte.`
+                });
+              }
+              creditSalary();
+            });
+          } else {
+            creditSalary();
+          }
         });
       });
     });

@@ -217,8 +217,13 @@ function Employees() {
       denomination_breakdown: salaryPaymentMode === 'cash' && Object.keys(salaryDenomination).length > 0
         ? salaryDenomination : null
     })
-      .then(() => {
-        setMessage(`✅ ₹${salaryData.calculated_salary} salary credited to ${selectedEmployee.name}`)
+      .then(res => {
+        const adv = res.data.advance_adjusted
+        setMessage(
+          adv > 0
+            ? `✅ ₹${res.data.net_paid} cash diya ${selectedEmployee.name} ko (₹${adv} advance adjust hua, total ₹${res.data.salary_amount} salary settle)`
+            : `✅ ₹${res.data.net_paid} salary credited to ${selectedEmployee.name}`
+        )
         setSalaryDenomination({})
         fetchSalary(selectedEmployee.id, salaryMonth, salaryYear)
         refreshAvailableNotes()
@@ -766,9 +771,24 @@ function Employees() {
                     <div className="text-lg font-bold text-red-400 font-mono">- ₹{salaryData.deduction}</div>
                   </div>
                 </div>
+                {salaryData.outstanding_advance > 0 && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl flex items-center justify-between mb-4">
+                    <span className="text-sm text-amber-300 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" /> Advance Outstanding (adjust hoga)
+                    </span>
+                    <strong className="text-lg font-bold text-amber-400 font-mono">- ₹{salaryData.outstanding_advance}</strong>
+                  </div>
+                )}
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center justify-between mb-4">
-                  <span className="text-sm text-slate-300">Payable Salary</span>
-                  <strong className="text-2xl font-bold text-emerald-400 font-mono">₹{salaryData.calculated_salary}</strong>
+                  <span className="text-sm text-slate-300">
+                    Payable Salary
+                    {salaryData.outstanding_advance > 0 && (
+                      <span className="text-[11px] text-slate-500 block">
+                        (₹{salaryData.calculated_salary} earned − ₹{salaryData.outstanding_advance} advance)
+                      </span>
+                    )}
+                  </span>
+                  <strong className="text-2xl font-bold text-emerald-400 font-mono">₹{salaryData.payable_salary}</strong>
                 </div>
 
                 {/* CREDIT SALARY */}
@@ -823,7 +843,7 @@ function Employees() {
                     loadingText="Crediting..."
                     className="mt-3 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold shadow-lg shadow-blue-600/25"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Credit ₹{salaryData.calculated_salary} to {selectedEmployee?.name}
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Credit ₹{salaryData.payable_salary} to {selectedEmployee?.name}
                   </LoadingButton>
                 </div>
               </div>

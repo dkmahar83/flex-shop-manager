@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db/database');
 const validate = require('../middleware/validate');
 const { createExpenseSchema } = require('../schemas/expenseSchemas');
+const { getLiveCashBalance } = require('../utils/cashBalance');
 
 // GET /api/expenses?month=06&year=2026
 router.get('/', (req, res) => {
@@ -97,7 +98,8 @@ router.post('/', (req, res) => {
     ? JSON.stringify(denomination_breakdown)
     : null;
 
-  db.run(`
+  function insertExpense() {
+    db.run(`
     INSERT INTO expenses 
       (category, amount, expense_date, description, paid_to_type, paid_to_id, payment_mode, upi_account, utr_number, created_at, denomination_breakdown, customer_id, customer_name)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -136,7 +138,24 @@ router.post('/', (req, res) => {
       if (err2) return res.status(500).json({ error: err2.message });
       res.status(201).json({ id: expenseId, message: 'Expense recorded' });
     });
-  });
+    });
+  }
+
+  // Cash expenses can't exceed what's actually in the drawer. UPI/other
+  // modes don't touch the physical cash balance, so they skip this check.
+  if ((payment_mode || 'cash') === 'cash') {
+    getLiveCashBalance((err, liveBalance) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (parseFloat(amount) > liveBalance) {
+        return res.status(400).json({
+          error: `Galla mein sirf ₹${liveBalance} hai — ₹${amount} ka cash expense nahi ho sakta.`
+        });
+      }
+      insertExpense();
+    });
+  } else {
+    insertExpense();
+  }
 });
 
 // DELETE /api/expenses/:id
