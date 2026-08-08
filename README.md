@@ -113,12 +113,12 @@ The entire client was rebuilt on a single Tailwind CSS design system — one con
 | | |
 |---|---|
 | **Login**<br>![Login screen](screenshots/login.png) | **Dashboard**<br>![Dashboard](screenshots/dashboard.png) |
-| **Create Order**<br>![New order form](docs/screenshots/new-order.png) | **Invoice PDF**<br>![Generated invoice PDF](docs/screenshots/invoice-pdf.png) |
-| **Customer Profile**<br>![Customer profile with dues and payment history](docs/screenshots/customer-profile.png) | **WhatsApp Delivery**<br>![Statement and payment link delivered via WhatsApp](docs/screenshots/whatsapp-delivery.png) |
-| **Cheque Register**<br>![Cheque tracking with status lifecycle](docs/screenshots/cheque-register.png) | **UPI Accounts**<br>![UPI accounts and transaction log](docs/screenshots/upi-accounts.png) |
-| **Inventory**<br>![Category-based inventory with low stock warnings](docs/screenshots/inventory.png) | **Galla Hisaab (Cash Reconciliation)**<br>![Physical cash note-count reconciliation](docs/screenshots/galla-hisaab.png) |
-| **Employees & Salary**<br>![Employee salary calculator](docs/screenshots/employee-salary.png) | **Monthly P&L Report**<br>![Monthly profit and loss report](docs/screenshots/reports-plnl.png) |
-| **Recycle Bin**<br>![Soft-deleted customers and orders, recoverable for 30 days](docs/screenshots/recycle-bin.png) | **Employees**<br>![Employee list](docs/screenshots/employees.png) |
+| **Create Order**<br>![New order form](screenshots/new-order.png) | **Invoice PDF**<br>![Generated invoice PDF](screenshots/invoice-pdf.png) |
+| **Customer Profile**<br>![Customer profile with dues and payment history](screenshots/customer-profile.png) | **WhatsApp Delivery**<br>![Statement and payment link delivered via WhatsApp](screenshots/whatsapp-delivery.png) |
+| **Cheque Register**<br>![Cheque tracking with status lifecycle](screenshots/cheque-register.png) | **UPI Accounts**<br>![UPI accounts and transaction log](screenshots/upi-accounts.png) |
+| **Inventory**<br>![Category-based inventory with low stock warnings](screenshots/inventory.png) | **Galla Hisaab (Cash Reconciliation)**<br>![Physical cash note-count reconciliation](screenshots/galla-hisaab.png) |
+| **Employees & Salary**<br>![Employee salary calculator](screenshots/employee-salary.png) | **Monthly P&L Report**<br>![Monthly profit and loss report](screenshots/reports-plnl.png) |
+| **Recycle Bin**<br>![Soft-deleted customers and orders, recoverable for 30 days](screenshots/recycle-bin.png) | **Employees**<br>![Employee list](screenshots/employees.png) |
 
 ---
 
