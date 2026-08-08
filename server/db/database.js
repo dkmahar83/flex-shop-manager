@@ -154,6 +154,21 @@ db.run(`CREATE TABLE IF NOT EXISTS order_items (
     join_date TEXT,
     is_active INTEGER DEFAULT 1
   )`);
+
+  // Salary revision history — "kis date se kitni salary thi", taaki
+  // day-wise salary calculation mahine ke beech hui promotion ko sahi
+  // se handle kar sake (purane din purani rate se, naye din nayi rate se).
+  db.run(`CREATE TABLE IF NOT EXISTS salary_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    old_salary REAL,
+    new_salary REAL NOT NULL,
+    effective_date TEXT NOT NULL,
+    reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  )`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_salary_history_employee ON salary_history(employee_id, effective_date)`);
   db.run(`
   CREATE TABLE IF NOT EXISTS employee_salary_credits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

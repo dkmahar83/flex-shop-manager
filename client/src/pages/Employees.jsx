@@ -970,6 +970,11 @@ function Employees() {
                     <div className={`text-2xl font-bold font-mono ${employeeProfile.net_payable >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {employeeProfile.net_payable >= 0 ? '+' : '-'} ₹{Math.abs(employeeProfile.net_payable)}
                     </div>
+                    {(employeeProfile.total_advance_paid > 0 || employeeProfile.total_salary_cash_paid > 0) && (
+                      <div className="text-[11px] text-slate-500 mt-1.5">
+                        ₹{employeeProfile.total_advance_paid} via advance + ₹{employeeProfile.total_salary_cash_paid} via cash = ₹{employeeProfile.total_advance_paid + employeeProfile.total_salary_cash_paid} settled
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -997,22 +1002,33 @@ function Employees() {
                             )}
                           </Td>
                           <Td>
-                            <Badge tone={p.type === 'advance' ? 'amber' : 'emerald'} icon={p.type === 'advance' ? Banknote : Wallet}>
-                              {p.type === 'advance' ? 'Advance' : 'Salary'}
+                            <Badge
+                              tone={p.type === 'advance' ? 'amber' : p.type === 'revision' ? 'blue' : 'emerald'}
+                              icon={p.type === 'advance' ? Banknote : p.type === 'revision' ? Pencil : Wallet}
+                            >
+                              {p.type === 'advance' ? 'Advance' : p.type === 'revision' ? 'Revision' : 'Salary'}
                             </Badge>
                           </Td>
                           <Td className="text-slate-300">{p.description || '—'}</Td>
                           <Td className="text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              {p.payment_mode === 'upi' && p.upi_account
-                                ? <><Smartphone className="w-3 h-3" /> {p.upi_account}</>
-                                : <><Banknote className="w-3 h-3" /> Cash</>}
-                            </span>
+                            {p.type === 'revision' ? (
+                              <span className="text-slate-600">—</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5">
+                                {p.payment_mode === 'upi' && p.upi_account
+                                  ? <><Smartphone className="w-3 h-3" /> {p.upi_account}</>
+                                  : <><Banknote className="w-3 h-3" /> Cash</>}
+                              </span>
+                            )}
                           </Td>
                           <Td>
-                            <strong className={`font-mono ${p.type === 'advance' ? 'text-red-400' : 'text-emerald-400'}`}>
-                              {p.type === 'advance' ? '- ' : '+ '}₹{p.amount}
-                            </strong>
+                            {p.type === 'revision' ? (
+                              <strong className="font-mono text-blue-400">Δ ₹{p.amount}</strong>
+                            ) : (
+                              <strong className={`font-mono ${p.type === 'advance' ? 'text-red-400' : 'text-emerald-400'}`}>
+                                {p.type === 'advance' ? '- ' : '+ '}₹{p.amount}
+                              </strong>
+                            )}
                           </Td>
                         </Tr>
                       ))}

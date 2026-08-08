@@ -12,8 +12,9 @@ const { getLiveCashBalance } = require('../utils/cashBalance');
 function nowIST() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace('T', ' ');
 }
+
 // ─────────────────────────────────────────
-// HELPER: Advance jo SIRF is specific month/year mein diya gaya
+// HELPER: Advance jo SIRF specific month/year mein diya gaya
 // (poore tenure ka outstanding nahi — sirf current month ka advance)
 // ─────────────────────────────────────────
 function getMonthAdvance(employeeId, month, year, callback) {
@@ -27,6 +28,63 @@ function getMonthAdvance(employeeId, month, year, callback) {
     if (err) return callback(err);
     callback(null, row.total_advance);
   });
+}
+
+// ─────────────────────────────────────────
+// HELPER: Employee ki poori salary_history (ascending by effective_date) —
+// day-wise salary calculation ke liye.
+// ─────────────────────────────────────────
+function getSalaryHistory(employeeId, callback) {
+  db.all(`
+    SELECT old_salary, new_salary, effective_date
+    FROM salary_history
+    WHERE employee_id = ?
+    ORDER BY effective_date ASC, id ASC
+  `, [employeeId], (err, rows) => {
+    if (err) return callback(err);
+    callback(null, rows);
+  });
+}
+
+// HELPER: ek specific date par employee ki monthly_salary rate kya thi,
+// salary_history se nikaalta hai. Agar kabhi revision hui hi nahi (history
+// khaali), hamesha currentSalary use hota hai — purana behavior bilkul
+// waisa hi rehta hai jaisa is fix se pehle tha.
+function rateOnDate(history, date, currentSalary) {
+  let applicable = null;
+  for (const row of history) {
+    if (row.effective_date <= date) {
+      applicable = row;
+    } else {
+      break;
+    }
+  }
+  if (applicable) return applicable.new_salary;
+  // date sabse pehli tracked revision se bhi pehle ki hai — us revision ke
+  // old_salary ko hi tab tak ki rate maano.
+  if (history.length > 0 && history[0].old_salary != null) {
+    return history[0].old_salary;
+  }
+  return currentSalary;
+}
+
+// ─────────────────────────────────────────
+// HELPER: Din-wise salary — har attendance record ko USI DIN effective
+// thi wahi rate se count karta hai. Mahine/tenure ke beech hui revision
+// sahi se handle hoti hai: revision se pehle purani rate, revision ke
+// din se aage nayi rate.
+// ─────────────────────────────────────────
+function calcDayWiseSalary(attendance, history, currentSalary) {
+  let total = 0;
+  let effectiveDays = 0;
+  for (const rec of attendance) {
+    const multiplier = rec.status === 'present' ? 1 : rec.status === 'half_day' ? 0.5 : 0;
+    if (multiplier === 0) continue;
+    const rate = rateOnDate(history, rec.date, currentSalary);
+    total += (rate / 30) * multiplier;
+    effectiveDays += multiplier;
+  }
+  return { calculated_salary: Math.round(total), effective_days: effectiveDays };
 }
 
 // ─────────────────────────────────────────
@@ -156,32 +214,38 @@ router.get('/salary/:employee_id', (req, res) => {
       const half_days      = attendance.filter(a => a.status === 'half_day').length;
       const absent_days    = attendance.filter(a => a.status === 'absent').length;
       const per_day_salary = employee.monthly_salary / 30;
-      const effective_days = present_days + (half_days * 0.5);
-      const calculated_salary = Math.round(per_day_salary * effective_days);
-      const deduction = employee.monthly_salary - calculated_salary;
 
-      getMonthAdvance(employee_id, month, year, (err, monthAdvance) => {
+      getSalaryHistory(employee_id, (err, history) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        const net_payable = calculated_salary - monthAdvance;
-        const payable_salary = Math.max(0, net_payable);
+        // Din-wise — mahine ke beech salary revise hui ho to purane din
+        // purani rate se, naye din nayi rate se count honge.
+        const { calculated_salary, effective_days } = calcDayWiseSalary(attendance, history, employee.monthly_salary);
+        const deduction = employee.monthly_salary - calculated_salary;
 
-        res.json({
-          employee_name: employee.name,
-          monthly_salary: employee.monthly_salary,
-          per_day_salary: Math.round(per_day_salary),
-          total_days_marked: total_days,
-          present_days,
-          half_days,
-          absent_days,
-          effective_days,
-          calculated_salary,
-          deduction,
-          outstanding_advance: monthAdvance,
-          net_payable,
-          payable_salary,
-          month,
-          year
+        getMonthAdvance(employee_id, month, year, (err, monthAdvance) => {
+          if (err) return res.status(500).json({ error: err.message });
+
+          const net_payable = calculated_salary - monthAdvance;
+          const payable_salary = Math.max(0, net_payable);
+
+          res.json({
+            employee_name: employee.name,
+            monthly_salary: employee.monthly_salary,
+            per_day_salary: Math.round(per_day_salary),
+            total_days_marked: total_days,
+            present_days,
+            half_days,
+            absent_days,
+            effective_days,
+            calculated_salary,
+            deduction,
+            outstanding_advance: monthAdvance,
+            net_payable,
+            payable_salary,
+            month,
+            year
+          });
         });
       });
     });
@@ -203,17 +267,21 @@ router.get('/profile/:id', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-    // Advances — ALL-TIME (join date se ab tak)
+    // Advances — ALL-TIME (join date se ab tak). Salary payouts (category
+    // 'Employee Salary') aur salary-revision log entries yahan se EXCLUDE
+    // kiye — warna generate-salary ne jo net-cash row 'expenses' mein daali
+    // thi wahi dobara "Advance" ban ke dikhne/count hone lagti (double count).
     db.all(`
       SELECT id, expense_date as date, amount, description, payment_mode, upi_account,
              'advance' as type, created_at
       FROM expenses
       WHERE paid_to_type = 'employee' AND paid_to_id = ?
+      AND category NOT IN ('Employee Salary', 'Salary Revision')
       ORDER BY expense_date DESC
     `, [id], (err, advances) => {
       if (err) return res.status(500).json({ error: err.message });
 
-      // Salary credits — ALL-TIME
+      // Salary credits — ALL-TIME (gross amount, record/display ke liye)
       db.all(`
         SELECT id, credited_date as date, salary_amount as amount, notes as description,
               payment_mode, upi_account, 'salary' as type, NULL as created_at
@@ -223,45 +291,88 @@ router.get('/profile/:id', (req, res) => {
       `, [id], (err, salaries) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        // Attendance — ALL-TIME (month/year filter hataya). Wajah: "Salary Earned"
-        // aur "Advance Given" ab hamesha SAME time-period (poora tenure) represent
-        // karte hain — pehle salary_earned sirf ek mahine ka tha jabki advance/salary
-        // history hamesha all-time thi, jisse Net Payable galat/misleading ban jaata tha.
-        db.all(`
-          SELECT * FROM attendance
-          WHERE employee_id = ?
-          GROUP BY date
-        `, [id], (err, attendance) => {
+        // Actual NET cash jo salary ke roop mein diya gaya (expenses table se,
+        // category 'Employee Salary'). Ye employee_salary_credits ke gross
+        // amount se kam ho sakta hai jab us month ka advance adjust hua ho.
+        db.get(`
+          SELECT COALESCE(SUM(amount), 0) as total
+          FROM expenses
+          WHERE paid_to_type = 'employee' AND paid_to_id = ?
+          AND category = 'Employee Salary'
+        `, [id], (err, salaryCashRow) => {
           if (err) return res.status(500).json({ error: err.message });
+          const totalSalaryCashPaid = salaryCashRow.total;
 
-          const presentDays  = attendance.filter(a => a.status === 'present').length;
-          const halfDays     = attendance.filter(a => a.status === 'half_day').length;
-          const effectiveDays = presentDays + (halfDays * 0.5);
-          const perDay        = employee.monthly_salary / 30;
-          const salaryEarned  = Math.round(perDay * effectiveDays);
+          // Salary revisions — real rate changes only (old_salary IS NOT NULL).
+          // Payment History mein "Revision" ke roop mein dikhti hain AND
+          // day-wise salary calculation mein use hoti hain.
+          db.all(`
+            SELECT id, old_salary, new_salary, effective_date as date, reason, created_at
+            FROM salary_history
+            WHERE employee_id = ? AND old_salary IS NOT NULL
+            ORDER BY effective_date DESC
+          `, [id], (err, revisionRows) => {
+            if (err) return res.status(500).json({ error: err.message });
 
-          const totalAdvancePaid     = advances.reduce((s, a) => s + a.amount, 0);
-          const totalSalaryCredited  = salaries.reduce((s, s2) => s + s2.amount, 0);
-          const totalPaid            = totalAdvancePaid + totalSalaryCredited;
-          // Ab already-credited salary bhi ghataate hain — warna purani credit hui
-          // salary bhi "abhi dena baaki hai" jaisi dikhti (kyunki salaryEarned ab
-          // poore tenure ka hai, sirf ek mahine ka nahi).
-          const netPayable = salaryEarned - totalAdvancePaid - totalSalaryCredited;
+            const revisions = revisionRows.map(r => ({
+              id: r.id,
+              date: r.date,
+              type: 'revision',
+              description: `Salary revised: ₹${r.old_salary} → ₹${r.new_salary}${r.reason ? ' | ' + r.reason : ''}`,
+              amount: r.new_salary - r.old_salary,
+              payment_mode: null,
+              upi_account: null,
+              created_at: r.created_at
+            }));
 
-          const payment_history = [...advances, ...salaries]
-            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            getSalaryHistory(id, (err, history) => {
+              if (err) return res.status(500).json({ error: err.message });
 
-          res.json({
-            employee,
-            payment_history,
-            total_advance_paid:    totalAdvancePaid,
-            total_salary_credited: totalSalaryCredited,
-            total_paid:            totalPaid,
-            salary_earned:         salaryEarned,
-            effective_days:        effectiveDays,
-            present_days:          presentDays,
-            half_days:             halfDays,
-            net_payable:           netPayable
+              // Attendance — ALL-TIME (month/year filter hataya). Wajah: "Salary Earned"
+              // aur "Advance Given" ab hamesha SAME time-period (poora tenure) represent
+              // karte hain — pehle salary_earned sirf ek mahine ka tha jabki advance/salary
+              // history hamesha all-time thi, jisse Net Payable galat/misleading ban jaata tha.
+              db.all(`
+                SELECT * FROM attendance
+                WHERE employee_id = ?
+                GROUP BY date
+              `, [id], (err, attendance) => {
+                if (err) return res.status(500).json({ error: err.message });
+
+                const presentDays = attendance.filter(a => a.status === 'present').length;
+                const halfDays    = attendance.filter(a => a.status === 'half_day').length;
+
+                // Din-wise — poore tenure mein salary revise hui ho to purane
+                // din purani rate se, naye din nayi rate se count honge.
+                const { calculated_salary: salaryEarned, effective_days: effectiveDays } =
+                  calcDayWiseSalary(attendance, history, employee.monthly_salary);
+
+                const totalAdvancePaid    = advances.reduce((s, a) => s + a.amount, 0);
+                const totalSalaryCredited = salaries.reduce((s, s2) => s + s2.amount, 0);
+                // Total actually paid = genuine advances + ACTUAL net cash diya gaya
+                // salary mein (gross salary_credited nahi — warna jo advance already
+                // us month mein adjust ho chuka, wo dobara ghat jaata).
+                const totalPaid  = totalAdvancePaid + totalSalaryCashPaid;
+                const netPayable = salaryEarned - totalAdvancePaid - totalSalaryCashPaid;
+
+                const payment_history = [...advances, ...salaries, ...revisions]
+                  .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+                res.json({
+                  employee,
+                  payment_history,
+                  total_advance_paid:      totalAdvancePaid,
+                  total_salary_credited:   totalSalaryCredited,
+                  total_salary_cash_paid:  totalSalaryCashPaid,
+                  total_paid:              totalPaid,
+                  salary_earned:           salaryEarned,
+                  effective_days:          effectiveDays,
+                  present_days:            presentDays,
+                  half_days:               halfDays,
+                  net_payable:             netPayable
+                });
+              });
+            });
           });
         });
       });
@@ -301,68 +412,71 @@ router.post('/generate-salary', (req, res) => {
       `, [employee_id, month, year], (err, attendance) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        const presentDays = attendance.filter(a => a.status === 'present').length;
-        const halfDays    = attendance.filter(a => a.status === 'half_day').length;
-        const effectiveDays = presentDays + (halfDays * 0.5);
-        const calculatedSalary = Math.round((employee.monthly_salary / 30) * effectiveDays);
-
         // Use IST date, not UTC
         const today = nowIST().split(' ')[0];
 
-        getMonthAdvance(employee_id, month, year, (err, monthAdvance) => {
+        getSalaryHistory(employee_id, (err, history) => {
           if (err) return res.status(500).json({ error: err.message });
 
-          const payableNow = Math.max(0, calculatedSalary - monthAdvance);
+          // Din-wise — mahine ke beech salary revise hui ho to purane din
+          // purani rate se, naye din nayi rate se count honge.
+          const { calculated_salary: calculatedSalary } = calcDayWiseSalary(attendance, history, employee.monthly_salary);
 
-          function creditSalary() {
-            db.run(`
-            INSERT INTO employee_salary_credits
-              (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account, denomination_breakdown)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
-            employee_id, month, year, calculatedSalary, today,
-            notes || `${month}/${year} salary${monthAdvance > 0 ? ` (₹${monthAdvance} advance adjust)` : ''}`,
-            payment_mode || 'cash', upi_account || null, breakdownToSave
-          ], function(err) {
+          getMonthAdvance(employee_id, month, year, (err, monthAdvance) => {
             if (err) return res.status(500).json({ error: err.message });
 
-            db.run(`
-              INSERT INTO expenses
-                (category, amount, expense_date, description, paid_to_type, paid_to_id,
-                 payment_mode, upi_account, created_at)
+            const payableNow = Math.max(0, calculatedSalary - monthAdvance);
+
+            function creditSalary() {
+              db.run(`
+              INSERT INTO employee_salary_credits
+                (employee_id, month, year, salary_amount, credited_date, notes, payment_mode, upi_account, denomination_breakdown)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
-              'Employee Salary', payableNow, today,
-              `${employee.name} salary (${month}/${year})${monthAdvance > 0 ? ` — ₹${monthAdvance} advance adjusted` : ''}`,
-              'employee', employee_id,
-              payment_mode || 'cash', upi_account || null, createdAt
-            ], (err) => {
+              employee_id, month, year, calculatedSalary, today,
+              notes || `${month}/${year} salary${monthAdvance > 0 ? ` (₹${monthAdvance} advance adjust)` : ''}`,
+              payment_mode || 'cash', upi_account || null, breakdownToSave
+            ], function(err) {
               if (err) return res.status(500).json({ error: err.message });
-              res.json({
-                message: 'Salary generated successfully',
-                salary_amount: calculatedSalary,
-                advance_adjusted: monthAdvance,
-                net_paid: payableNow
-              });
-            });
-            });
-          }
 
-          // A cash payout can't exceed what's actually in the drawer. UPI
-          // payouts don't touch the physical cash balance, so they skip this.
-          if ((payment_mode || 'cash') === 'cash') {
-            getLiveCashBalance((err, liveBalance) => {
-              if (err) return res.status(500).json({ error: err.message });
-              if (payableNow > liveBalance) {
-                return res.status(400).json({
-                  error: `Galla mein sirf ₹${liveBalance} hai — ₹${payableNow} salary cash mein nahi de sakte.`
+              db.run(`
+                INSERT INTO expenses
+                  (category, amount, expense_date, description, paid_to_type, paid_to_id,
+                   payment_mode, upi_account, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `, [
+                'Employee Salary', payableNow, today,
+                `${employee.name} salary (${month}/${year})${monthAdvance > 0 ? ` — ₹${monthAdvance} advance adjusted` : ''}`,
+                'employee', employee_id,
+                payment_mode || 'cash', upi_account || null, createdAt
+              ], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({
+                  message: 'Salary generated successfully',
+                  salary_amount: calculatedSalary,
+                  advance_adjusted: monthAdvance,
+                  net_paid: payableNow
                 });
-              }
+              });
+              });
+            }
+
+            // A cash payout can't exceed what's actually in the drawer. UPI
+            // payouts don't touch the physical cash balance, so they skip this.
+            if ((payment_mode || 'cash') === 'cash') {
+              getLiveCashBalance((err, liveBalance) => {
+                if (err) return res.status(500).json({ error: err.message });
+                if (payableNow > liveBalance) {
+                  return res.status(400).json({
+                    error: `Galla mein sirf ₹${liveBalance} hai — ₹${payableNow} salary cash mein nahi de sakte.`
+                  });
+                }
+                creditSalary();
+              });
+            } else {
               creditSalary();
-            });
-          } else {
-            creditSalary();
-          }
+            }
+          });
         });
       });
     });
@@ -384,18 +498,19 @@ router.put('/:id/salary', (req, res) => {
 
     const old_salary = employee.monthly_salary;
     const date = effective_date || nowIST().split(' ')[0];
+    const createdAt = nowIST();
 
     db.run(`UPDATE employees SET monthly_salary = ? WHERE id = ?`, [new_salary, id], function(err) {
       if (err) return res.status(500).json({ error: err.message });
 
+      // salary_history mein log karo — isi table se day-wise salary
+      // calculate hoti hai (is date se pehle purani rate, is date se
+      // aage nayi rate use hogi), aur ye Payment History mein "Revision"
+      // ke roop mein bhi dikhta hai.
       db.run(`
-        INSERT INTO expenses (category, amount, expense_date, description, payment_mode, created_at)
-        VALUES ('Salary Revision', 0, ?, ?, 'cash', ?)
-      `, [
-        date,
-        `${employee.name} salary revised: ₹${old_salary} → ₹${new_salary}${reason ? ' | Reason: ' + reason : ''}`,
-        nowIST()
-      ], (err) => {
+        INSERT INTO salary_history (employee_id, old_salary, new_salary, effective_date, reason, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [id, old_salary, new_salary, date, reason || null, createdAt], (err) => {
         if (err) console.warn('History log failed:', err.message);
         res.json({ message: 'Salary updated', old_salary, new_salary: parseInt(new_salary) });
       });
