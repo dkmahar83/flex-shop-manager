@@ -108,8 +108,6 @@ This is the design principle that ties the whole system together: record a payme
 
 The entire client was rebuilt on a single Tailwind CSS design system — one consistent dark UI across every page (Dashboard, Orders, Customers, Customer Profile, Employees, Inventory, Reports, UPI QR, Daily Sales, Accounts, WhatsApp Setup, Recycle Bin), replacing what used to be page-by-page inline styling. A shared component library (`Card`, `Badge`, `Button` variants, `Table`, `Modal`, `PageHeader`, `SectionCard`, `StatCard`, `StatusDropdown`) means every page's spacing, typography, and color language now come from the same source instead of being reinvented per page.
 
-> 📸 The screenshots below predate this redesign and are due for a refresh — the underlying features and data shown are still accurate, the visual styling is not.
-
 | | |
 |---|---|
 | **Login**<br>![Login screen](screenshots/login.png) | **Dashboard**<br>![Dashboard](screenshots/dashboard.png) |
