@@ -112,7 +112,7 @@ The entire client was rebuilt on a single Tailwind CSS design system — one con
 
 | | |
 |---|---|
-| **Login**<br>![Login screen](docs/screenshots/login.png) | **Dashboard**<br>![Dashboard](docs/screenshots/dashboard.png) |
+| **Login**<br>![Login screen](screenshots/login.png) | **Dashboard**<br>![Dashboard](screenshots/dashboard.png) |
 | **Create Order**<br>![New order form](docs/screenshots/new-order.png) | **Invoice PDF**<br>![Generated invoice PDF](docs/screenshots/invoice-pdf.png) |
 | **Customer Profile**<br>![Customer profile with dues and payment history](docs/screenshots/customer-profile.png) | **WhatsApp Delivery**<br>![Statement and payment link delivered via WhatsApp](docs/screenshots/whatsapp-delivery.png) |
 | **Cheque Register**<br>![Cheque tracking with status lifecycle](docs/screenshots/cheque-register.png) | **UPI Accounts**<br>![UPI accounts and transaction log](docs/screenshots/upi-accounts.png) |
