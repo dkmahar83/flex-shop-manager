@@ -57,7 +57,7 @@ router.get('/:id', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    db.all(`SELECT * FROM orders WHERE customer_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [id], (err, orders) => {
+    db.all(`SELECT * FROM orders WHERE customer_id = ? AND deleted_at IS NULL ORDER BY order_date DESC, created_at DESC`, [id], (err, orders) => {
       if (err) return res.status(500).json({ error: err.message });
 
       db.all(`
@@ -133,7 +133,7 @@ router.get('/:id', (req, res) => {
                 ...orders.filter(o => o.advance_paid > 0).map(o => ({
                   id: `adv-${o.id}`,
                   amount: o.advance_paid,
-                  date: o.created_at?.split('T')[0],
+                  date: o.order_date || o.created_at?.split('T')[0],
                   source: 'Advance Payment',
                   payment_type: 'Advance',
                   order_description: o.description

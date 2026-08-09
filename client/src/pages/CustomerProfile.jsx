@@ -459,7 +459,7 @@ function CustomerProfile() {
                 <TBody>
                   {orders.filter(o => o.discount_amount > 0).map((o) => (
                     <Tr key={`disc-${o.id}`} className="bg-orange-500/5">
-                      <Td className="pl-4 text-slate-300">{o.created_at?.split(' ')[0] || '—'}</Td>
+                      <Td className="pl-4 text-slate-300">{o.order_date || o.created_at?.split(' ')[0] || '—'}</Td>
                       <Td><Badge tone="orange" icon={Scissors}>Discount</Badge></Td>
                       <Td className="text-slate-300">
                         {o.discount_note || 'Round-off'}
@@ -541,7 +541,7 @@ function CustomerProfile() {
                             </span>
                           : <span className="text-slate-500">—</span>}
                       </Td>
-                      <Td className="pr-4 text-slate-400">{new Date(o.created_at).toLocaleDateString('en-IN')}</Td>
+                      <Td className="pr-4 text-slate-400">{o.order_date ? new Date(o.order_date).toLocaleDateString('en-IN') : '—'}</Td>
                     </Tr>
                   ))}
                 </TBody>

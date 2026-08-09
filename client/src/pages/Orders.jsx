@@ -260,7 +260,8 @@ function Orders() {
             item_name: i.item_name,
             quantity: i.quantity,
             unit_price: i.unit_price,
-            length: '', breadth: '', useSize: false
+            length: '', breadth: '', useSize: false,
+            item_date: i.item_date || new Date().toISOString().split('T')[0]
           })))
         } else {
           setItems([{ item_name: '', length: '', breadth: '', quantity: '', unit_price: '', useSize: false, item_date: new Date().toISOString().split('T')[0] }])
@@ -1047,8 +1048,8 @@ function Orders() {
                               <span className="text-slate-400 text-xs">Order Number</span>
                               <span className="text-white text-lg font-bold tracking-wide font-mono">{orderDetail.order_number}</span>
                               <span className="ml-auto text-xs text-slate-500">
-                                {orderDetail.firm_name} · {orderDetail.created_at
-                                  ? new Date(orderDetail.created_at).toLocaleDateString('en-GB').replace(/\//g, '.')
+                                {orderDetail.firm_name} · {orderDetail.order_date
+                                  ? new Date(orderDetail.order_date).toLocaleDateString('en-GB').replace(/\//g, '.')
                                   : ''}
                               </span>
                             </div>

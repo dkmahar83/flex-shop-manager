@@ -26,7 +26,7 @@ router.get('/', (req, res) => {
   }
 
   const fromJoin = `FROM orders JOIN customers ON orders.customer_id = customers.id ${whereClause}`;
-  const baseQuery = `SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone ${fromJoin} ORDER BY orders.created_at DESC`;
+  const baseQuery = `SELECT orders.*, customers.firm_name, customers.contact_name, customers.phone ${fromJoin} ORDER BY orders.order_date DESC, orders.created_at DESC`;
 
   if (!page) {
     return db.all(baseQuery, params, (err, rows) => {
@@ -238,6 +238,11 @@ router.post('/', validate(createOrderSchema), (req, res) => {
   const createdAt    = nowIST();
   const year         = new Date().getFullYear();
 
+  // Order date = earliest item date entered by the user. created_at stays as
+  // the system insert timestamp and is no longer used for display.
+  const itemDates  = items.map(i => i.item_date).filter(Boolean).sort();
+  const order_date = itemDates.length > 0 ? itemDates[0] : today;
+
   db.get(`SELECT firm_name FROM customers WHERE id = ?`, [customer_id], (err, customer) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -254,13 +259,13 @@ router.post('/', validate(createOrderSchema), (req, res) => {
         INSERT INTO orders
           (customer_id, description, status, total_amount, advance_paid, balance_due,
            advance_payment_mode, follow_up_date, notes, advance_entry_table, advance_entry_id,
-           discount_amount, discount_note, created_at, advance_denomination_breakdown, order_number)
-        VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
+           discount_amount, discount_note, created_at, advance_denomination_breakdown, order_number, order_date)
+        VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
       `,
       [customer_id, description, total_amount, advance, balance_due,
        advance > 0 ? advance_payment_mode : null,
        follow_up_date, notes,
-       discount, discount_note || null, createdAt, breakdownToSave, orderNumber],
+       discount, discount_note || null, createdAt, breakdownToSave, orderNumber, order_date],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -527,6 +532,9 @@ router.put('/:id/items', validate(updateOrderItemsSchema), (req, res) => {
   const total_amount = items.reduce((sum, item) =>
     sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0), 0);
 
+  // Recalculated on every items edit so it can never drift back to "today".
+  const itemDates = items.map(i => i.item_date).filter(Boolean).sort();
+
   db.get(`SELECT * FROM orders WHERE id = ?`, [id], (err, order) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -546,8 +554,10 @@ router.put('/:id/items', validate(updateOrderItemsSchema), (req, res) => {
       });
       stmt.finalize();
 
-      db.run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [total_amount, id], (err) => {
+      const order_date = itemDates.length > 0 ? itemDates[0] : (order.order_date || todayIST());
+
+      db.run(`UPDATE orders SET total_amount = ?, order_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [total_amount, order_date, id], (err) => {
           if (err) return res.status(500).json({ error: err.message });
           recalculateOrderBalance(id, (err, new_balance) => {
             if (err) return res.status(500).json({ error: err.message });

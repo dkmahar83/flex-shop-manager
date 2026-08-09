@@ -477,6 +477,21 @@ db.run(`CREATE TABLE IF NOT EXISTS order_items (
   db.run(`ALTER TABLE expenses ADD COLUMN customer_name TEXT DEFAULT NULL`, () => {})
 
   db.run(`ALTER TABLE orders ADD COLUMN order_number TEXT DEFAULT NULL`, () => {})
+  db.run(`ALTER TABLE orders ADD COLUMN order_date TEXT DEFAULT NULL`, () => {})
+
+  // Backfill order_date for orders that don't have it yet — earliest item_date
+  // for that order, or the order's created_at date if it has no dated items.
+  // Only touches rows where order_date IS NULL, so this is safe to run on
+  // every server start (new orders always get order_date set on creation,
+  // so this becomes a no-op for them going forward).
+  db.run(`
+    UPDATE orders
+    SET order_date = COALESCE(
+      (SELECT MIN(item_date) FROM order_items WHERE order_items.order_id = orders.id),
+      date(orders.created_at)
+    )
+    WHERE order_date IS NULL
+  `, () => {})
 
   db.run(`ALTER TABLE vendor_transactions ADD COLUMN items_json TEXT DEFAULT NULL`, () => {})
   db.run(`ALTER TABLE vendor_transactions ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`, () => {})

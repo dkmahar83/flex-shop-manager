@@ -220,8 +220,8 @@ function renderBill(res, order, items, payments, cheques) {
   doc.fill(PRIMARY).fontSize(13).font('Helvetica-Bold')
      .text(invoiceLabel, MARGIN + iconBoxW + 16, STRIP_TOP + 9, { lineBreak: false })
 
-  const dateText = order.created_at
-    ? new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  const dateText = order.order_date
+    ? new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
 
   doc.fontSize(11).font('Helvetica')
@@ -367,7 +367,7 @@ function renderBill(res, order, items, payments, cheques) {
 
     const itemDate = item.item_date
       ? new Date(item.item_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
-      : (order.created_at ? new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—')
+      : (order.order_date ? new Date(order.order_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—')
 
     doc.fill(GRAY).fontSize(8).font('Helvetica')
        .text(String(index + 1), COL_NO, rowY + 5)
@@ -593,7 +593,7 @@ router.get('/statement/:customerId', (req, res) => {
     db.all(`
       SELECT * FROM orders
       WHERE customer_id = ? AND deleted_at IS NULL
-      ORDER BY created_at ASC
+      ORDER BY order_date ASC, created_at ASC
     `, [customerId], (err, orders) => {
       if (err) return res.status(500).json({ error: err.message })
       if (!orders || orders.length === 0)
@@ -853,7 +853,7 @@ function renderCustomerStatement(res, customer, orders, allItems, allPayments, c
          .text(`  —  ${safeText(order.description, 38)}`, MARGIN + 12 + doc.widthOfString(`Order ${order.order_number || '#' + order.id}`) + 4, currentY + 8, { lineBreak: false })
     }
     doc.fill(GRAY).fontSize(8).font('Helvetica')
-       .text(fmtDate(order.created_at), MARGIN + CONTENT - 120, currentY + 9, { width: 110, align: 'right', lineBreak: false })
+       .text(fmtDate(order.order_date || order.created_at), MARGIN + CONTENT - 120, currentY + 9, { width: 110, align: 'right', lineBreak: false })
     doc.fill(statusColor).fontSize(8).font('Helvetica-Bold')
        .text(statusText, MARGIN + CONTENT - 120, currentY + 18, { width: 110, align: 'right', lineBreak: false })
 
